@@ -261,31 +261,9 @@ dotnet test backend\SosyoBel.Backend.sln --configuration Release
 içindir. Bazıları geçici veritabanı oluşturup test sonunda kaldırır. Şirket test
 veya canlı veritabanına karşı çalıştırılmamalıdır.
 
-## Yapılandırma ve gizli bilgiler
 
-Temel ortam değişkenleri:
 
-| Değişken | Açıklama |
-| --- | --- |
-| `ConnectionStrings__SosyoBel` | Ana SQL Server bağlantısı |
-| `Authentication__Jwt__SigningKeyBase64` | En az 32 byte Base64 JWT anahtarı |
-| `OpenApi__Enabled` | Swagger'ı açar veya kapatır |
-| `ApplicationPhotos__RootPath` | Fotoğraf depolama klasörü |
-| `SOSYOBEL_BOOTSTRAP_*` | İlk sistem yöneticisi bilgileri |
 
-`backend/.env.example` yalnız değişken adlarını gösterir. API `.env` dosyasını
-otomatik yüklemez. Gerçek değerler çalışma ortamı, IIS veya secret store üzerinden
-verilmelidir.
-
-Aşağıdakiler commit edilmemelidir:
-
-- Gerçek `.env` dosyaları, bağlantı cümleleri ve parolalar
-- JWT anahtarları ve Bitbucket/API tokenları
-- Sertifika, keystore ve imzalama dosyaları
-- `android/local.properties`
-- APK, AAB, IPA ve build çıktıları
-- `.dart_tool`, `bin`, `obj`, `.gradle` ve IDE önbellekleri
-- Çalışma zamanı fotoğrafları, loglar ve SQL yedekleri
 
 ## Fotoğraf depolama
 
@@ -299,9 +277,6 @@ için yazma izni gerekir.
 
 ## IIS notu
 
-Yerel geliştirmede IIS gerekli değildir. IIS üzerinde çalıştırılacaksa API önce
-publish edilir, sunucuda uygun .NET Hosting Bundle bulunur ve bağlantı/JWT/fotoğraf
-ayarları IIS ortam değişkenleriyle verilir.
 
 ```powershell
 dotnet publish backend\src\SosyoBel.Api\SosyoBel.Api.csproj --configuration Release --output .\artifacts\publish\api
@@ -313,11 +288,6 @@ olduğu için internetten erişilen canlı ortamda korumasız bırakılmamalıd�
 
 ## Sık karşılaşılan sorunlar
 
-### `localhost:5000` açılmıyor
-
-- API terminalinin açık olduğunu kontrol edin.
-- Başlangıç hatasını API terminalinden okuyun.
-- Portu başka bir uygulamanın kullanmadığını kontrol edin.
 
 ### `JWT imza anahtarı en az 32 byte olmalıdır`
 
