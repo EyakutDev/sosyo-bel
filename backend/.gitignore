@@ -1,0 +1,13 @@
+# .NET derleme/test çıktıları kaynak kontrolüne alınmaz.
+**/bin/
+**/obj/
+**/TestResults/
+
+# Gerçek bağlantı bilgileri yalnız ortam değişkenlerinde veya secret kasasında tutulur.
+.env
+.env.*
+!.env.example
+
+# Geliştirici makinesine özel IDE ayarları paylaşılmaz.
+*.user
+*.suo

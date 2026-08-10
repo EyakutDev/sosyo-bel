@@ -1,0 +1,16 @@
+<svg preserveAspectRatio="none" overflow="visible" style="display: block;" width="387" height="492" viewBox="0 0 387 492" fill="none" xmlns="http://www.w3.org/2000/svg">
+<g id="Subtract" filter="url(#filter0_d_0_110)">
+<path d="M342 26C350.284 26 357 32.7157 357 41V386C352.582 386 349 389.582 349 394C349 398.418 352.582 402 357 402V443C357 451.284 350.284 458 342 458H45C36.7157 458 30 451.284 30 443V402C34.4183 402 38 398.418 38 394C38 389.582 34.4183 386 30 386V41C30 32.7157 36.7157 26 45 26H342Z" fill="white"/>
+</g>
+<defs>
+<filter id="filter0_d_0_110" x="0" y="0" width="387" height="492" filterUnits="userSpaceOnUse" color-interpolation-filters="sRGB">
+<feFlood flood-opacity="0" result="BackgroundImageFix"/>
+<feColorMatrix in="SourceAlpha" type="matrix" values="0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 127 0" result="hardAlpha"/>
+<feOffset dy="4"/>
+<feGaussianBlur stdDeviation="15"/>
+<feColorMatrix type="matrix" values="0 0 0 0 0.211765 0 0 0 0 0.160784 0 0 0 0 0.717647 0 0 0 0.07 0"/>
+<feBlend mode="normal" in2="BackgroundImageFix" result="effect1_dropShadow_0_110"/>
+<feBlend mode="normal" in="SourceGraphic" in2="effect1_dropShadow_0_110" result="shape"/>
+</filter>
+</defs>
+</svg>

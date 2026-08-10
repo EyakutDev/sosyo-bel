@@ -1,0 +1,40 @@
+name: sosyo_bel
+description: "Cats Yazılım Sosyo-Bel saha ekipleri mobil uygulaması."
+publish_to: 'none'
+version: 0.1.0+1
+
+environment:
+  sdk: ^3.11.5
+
+dependencies:
+  dio: ^5.11.0
+  flutter:
+    sdk: flutter
+  flutter_secure_storage: ^11.0.0
+  flutter_svg: ^2.3.0
+  http_parser: ^4.1.2
+  image_picker: 1.2.3
+
+dev_dependencies:
+  flutter_test:
+    sdk: flutter
+  flutter_lints: ^6.0.0
+
+flutter:
+  uses-material-design: true
+  assets:
+    - assets/images/sosyo_bel_logo.png
+    - assets/icons/down_arrow.svg
+    - assets/images/municipality_avatar.png
+    - assets/icons/notification_bell.png
+    - assets/images/activity/
+    - assets/icons/activity/
+  fonts:
+    - family: Poppins
+      fonts:
+        - asset: assets/fonts/Poppins-Regular.ttf
+          weight: 400
+        - asset: assets/fonts/Poppins-Medium.ttf
+          weight: 500
+        - asset: assets/fonts/Poppins-SemiBold.ttf
+          weight: 600

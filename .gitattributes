@@ -1,0 +1,25 @@
+# Flutter, .NET ve SQL kaynaklarında platformlar arası satır sonu farklarını önler.
+* text=auto
+
+*.dart text eol=lf
+*.cs text eol=lf
+*.csproj text eol=lf
+*.props text eol=lf
+*.targets text eol=lf
+*.sql text eol=lf
+*.yaml text eol=lf
+*.yml text eol=lf
+*.json text eol=lf
+*.md text eol=lf
+*.ps1 text eol=crlf
+*.bat text eol=crlf
+*.cmd text eol=crlf
+*.sh text eol=lf
+
+# Görsel, font ve paket dosyaları metin dönüşümüne uğramaz.
+*.png binary
+*.jpg binary
+*.jpeg binary
+*.svg text eol=lf
+*.ttf binary
+*.zip binary

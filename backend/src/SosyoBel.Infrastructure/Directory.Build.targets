@@ -1,0 +1,6 @@
+<Project>
+  <ItemGroup>
+    <!-- Sağlık kontrolü ve DI altyapısı ASP.NET Core ortak çerçevesinden gelir. -->
+    <FrameworkReference Include="Microsoft.AspNetCore.App" />
+  </ItemGroup>
+</Project>
