@@ -6,7 +6,9 @@ using SosyoBel.Api.Applications;
 using SosyoBel.Api.Authentication;
 using SosyoBel.Api.Auditing;
 using SosyoBel.Api.FieldTasks;
+using SosyoBel.Api.Kps;
 using SosyoBel.Api.OpenApi;
+using SosyoBel.Api.References;
 using SosyoBel.Api.Tenant;
 using SosyoBel.Api.WorkItems;
 using SosyoBel.Application.Abstractions;
@@ -77,8 +79,10 @@ app.MapHealthChecks("/health/ready", new HealthCheckOptions
 app.MapAuthenticationEndpoints();
 app.MapAdministrationEndpoints();
 app.MapApplicationEndpoints();
+app.MapApplicationReferenceEndpoints();
 app.MapAuditEndpoints();
 app.MapFieldTaskEndpoints();
+app.MapKpsEndpoints();
 app.MapWorkItemEndpoints();
 app.MapSosyoBelOpenApi();
 

@@ -19,7 +19,18 @@ public interface IApplicationPhotoService
     Task<ApplicationLifecycleResult<ApplicationDetails>> UploadBatchAsync(
         UploadApplicationPhotosCommand command,
         CancellationToken cancellationToken);
+
+    Task<ApplicationLifecycleResult<ApplicationPhotoContent>> OpenReadAsync(
+        ApplicationActorContext actor,
+        Guid applicationPublicId,
+        int photoId,
+        CancellationToken cancellationToken);
 }
+
+public sealed record ApplicationPhotoContent(
+    Stream Content,
+    string ContentType,
+    string DownloadFileName);
 
 public sealed record StoredApplicationPhoto(
     string StorageKey,
@@ -27,7 +38,8 @@ public sealed record StoredApplicationPhoto(
     string ContentType,
     long Length,
     byte[] Sha256,
-    byte Order);
+    byte Order,
+    bool WasCreated);
 
 /// <summary>
 /// Fiziksel dosya sistemini API ve veritabanı kodundan ayırır. Şirket object
@@ -39,5 +51,13 @@ public interface IApplicationPhotoStorage
         int municipalityId,
         Guid applicationPublicId,
         ApplicationPhotoUpload photo,
+        CancellationToken cancellationToken);
+
+    Task DeleteAsync(
+        string storageKey,
+        CancellationToken cancellationToken);
+
+    Task<Stream> OpenReadAsync(
+        string storageKey,
         CancellationToken cancellationToken);
 }

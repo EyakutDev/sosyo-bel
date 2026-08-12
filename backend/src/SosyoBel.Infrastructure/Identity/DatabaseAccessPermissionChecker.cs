@@ -25,8 +25,8 @@ internal sealed class DatabaseAccessPermissionChecker(
                 equals new { membership.UserId, membership.MunicipalityId }
             join municipality in dbContext.Municipalities.AsNoTracking()
                 on membership.MunicipalityId equals municipality.Id
-            join user in dbContext.Users.AsNoTracking()
-                on membership.UserId equals user.Id
+            join userInfo in dbContext.UserApplicationInfos.AsNoTracking()
+                on membership.UserId equals userInfo.UserId
             where permission.UserId == userId &&
                   permission.MunicipalityId == municipalityId &&
                   permission.PermissionCode == permissionCode &&
@@ -34,7 +34,7 @@ internal sealed class DatabaseAccessPermissionChecker(
                   membership.Id == municipalityMembershipId &&
                   membership.IsActive &&
                   municipality.IsActive &&
-                  user.IsActive
+                  userInfo.IsActive
             select permission.Id)
             .AnyAsync(cancellationToken);
     }

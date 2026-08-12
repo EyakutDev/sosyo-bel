@@ -40,11 +40,12 @@ internal sealed class ApplicationPhotoService(
             cancellationToken);
         if (!ApplicationStatusRules.IsEditable(currentStatus)) return Locked();
 
+        var storedPhotos = new List<StoredApplicationPhoto>(command.Photos.Count);
+        var obsoleteStorageKeys = new HashSet<string>(StringComparer.Ordinal);
         try
         {
             // Dosya deposu da ayni hata sinirinin icindedir; boylece disk/IIS klasor
             // sorunlari genel 500 yerine istemcinin anlayabilecegi kontrollu cevaba doner.
-            var storedPhotos = new List<StoredApplicationPhoto>(command.Photos.Count);
             foreach (var photo in command.Photos.OrderBy(value => value.Order))
             {
                 storedPhotos.Add(await storage.SaveAsync(
@@ -58,7 +59,6 @@ internal sealed class ApplicationPhotoService(
                 new
                 {
                     command.ApplicationPublicId,
-                    command.ExpectedRowVersion,
                     Photos = storedPhotos.Select(value => new
                     {
                         value.Order,
@@ -70,26 +70,12 @@ internal sealed class ApplicationPhotoService(
                 JsonOptions));
 
             var strategy = dbContext.Database.CreateExecutionStrategy();
-            return await strategy.ExecuteAsync(async () =>
+            var result = await strategy.ExecuteAsync(async () =>
             {
                 await using var transaction = await dbContext.Database.BeginTransactionAsync(
                     IsolationLevel.Serializable,
                     cancellationToken);
                 var nowUtc = timeProvider.GetUtcNow().UtcDateTime;
-                var normalizedKey = command.IdempotencyKey.Trim();
-                var idempotencyRecords = dbContext.Set<IdempotencyRecord>();
-                var existingRequest = await idempotencyRecords.SingleOrDefaultAsync(
-                    value => value.ActorUserId == command.Actor.ActorUserId &&
-                             value.EndpointCode == UploadEndpoint &&
-                             value.IdempotencyKey == normalizedKey,
-                    cancellationToken);
-                if (existingRequest is not null)
-                {
-                    var replay = Replay(existingRequest, requestHash, nowUtc);
-                    await transaction.CommitAsync(cancellationToken);
-                    return replay;
-                }
-
                 var application = await FindScopedApplicationAsync(
                     command.Actor,
                     command.ApplicationPublicId,
@@ -108,24 +94,51 @@ internal sealed class ApplicationPhotoService(
                     await transaction.RollbackAsync(cancellationToken);
                     return Locked();
                 }
+
+                var normalizedKey = command.IdempotencyKey.Trim();
+                var idempotencyRecords = dbContext.Set<IdempotencyRecord>();
+                var existingRequest = await idempotencyRecords.SingleOrDefaultAsync(
+                    value => value.ActorUserId == command.Actor.ActorUserId &&
+                             value.EndpointCode == UploadEndpoint &&
+                             value.IdempotencyKey == normalizedKey,
+                    cancellationToken);
+                if (existingRequest is not null)
+                {
+                    var replayError = ValidateReplay(existingRequest, requestHash, nowUtc);
+                    if (replayError is not null)
+                    {
+                        await transaction.CommitAsync(cancellationToken);
+                        return replayError;
+                    }
+
+                    // RowVersion baska bir taslak yazimiyla ilerlemis olabilir.
+                    // Ayni fotograf icerigi replay edildiginde guncel temsil donulur.
+                    var currentDetails = await ToDetailsAsync(application, cancellationToken);
+                    await transaction.CommitAsync(cancellationToken);
+                    return Succeeded(currentDetails);
+                }
+
                 if (!RowVersionsMatch(application.RowVersion, expectedRowVersion))
                 {
                     await transaction.RollbackAsync(cancellationToken);
                     return ConcurrentConflict();
                 }
 
-                var hasActivePhotos = await dbContext.Set<ApplicationPhotoRecord>()
-                    .AnyAsync(
+                var activePhotos = await dbContext.Set<ApplicationPhotoRecord>()
+                    .Where(
                         value => value.MunicipalityId == command.Actor.MunicipalityId &&
                                  value.ApplicationId == application.Id &&
-                                 !value.IsDeleted,
-                        cancellationToken);
-                if (hasActivePhotos)
+                                 !value.IsDeleted)
+                    .ToArrayAsync(cancellationToken);
+                foreach (var activePhoto in activePhotos)
                 {
-                    await transaction.RollbackAsync(cancellationToken);
-                    return Conflict(
-                        "photos_already_uploaded",
-                        "Bu başvurunun fotoğrafları daha önce yüklenmiş.");
+                    activePhoto.MarkDeleted(command.Actor.ActorUserId, nowUtc);
+                    obsoleteStorageKeys.Add(activePhoto.StorageKey);
+                }
+                if (activePhotos.Length > 0)
+                {
+                    // Filtreli benzersiz indeksleri yeni anlik kopyadan once bosalt.
+                    await dbContext.SaveChangesAsync(cancellationToken);
                 }
 
                 var reservation = IdempotencyRecord.Create(
@@ -155,17 +168,33 @@ internal sealed class ApplicationPhotoService(
                 await transaction.CommitAsync(cancellationToken);
                 return Succeeded(details);
             });
+
+            if (result.Status == ApplicationLifecycleStatus.Succeeded)
+            {
+                var currentKeys = storedPhotos
+                    .Select(value => value.StorageKey)
+                    .ToHashSet(StringComparer.Ordinal);
+                await DeleteStorageKeysBestEffortAsync(
+                    obsoleteStorageKeys.Where(value => !currentKeys.Contains(value)));
+                return result;
+            }
+
+            await DeleteCreatedPhotosBestEffortAsync(storedPhotos);
+            return result;
         }
         catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
         {
+            await DeleteCreatedPhotosBestEffortAsync(storedPhotos);
             throw;
         }
         catch (DbUpdateConcurrencyException)
         {
+            await DeleteCreatedPhotosBestEffortAsync(storedPhotos);
             return ConcurrentConflict();
         }
         catch (DbUpdateException exception)
         {
+            await DeleteCreatedPhotosBestEffortAsync(storedPhotos);
             logger.LogError(
                 exception,
                 "Application photo metadata persistence failed for {ApplicationPublicId}.",
@@ -176,15 +205,83 @@ internal sealed class ApplicationPhotoService(
         }
         catch (IOException)
         {
+            await DeleteCreatedPhotosBestEffortAsync(storedPhotos);
             return Conflict(
                 "photo_storage_error",
                 "Fotoğraf özel dosya deposuna yazılamadı.");
         }
         catch (InvalidDataException)
         {
+            await DeleteCreatedPhotosBestEffortAsync(storedPhotos);
             return Conflict(
                 "photo_storage_error",
                 "Fotoğraf içeriği aktarım sırasında doğrulanamadı.");
+        }
+        catch
+        {
+            await DeleteCreatedPhotosBestEffortAsync(storedPhotos);
+            throw;
+        }
+    }
+
+    public async Task<ApplicationLifecycleResult<ApplicationPhotoContent>> OpenReadAsync(
+        ApplicationActorContext actor,
+        Guid applicationPublicId,
+        int photoId,
+        CancellationToken cancellationToken)
+    {
+        var errors = new Dictionary<string, string[]>();
+        if (string.IsNullOrWhiteSpace(actor.ActorUserId) ||
+            actor.MunicipalityId <= 0 ||
+            actor.MunicipalityMembershipId <= 0)
+            errors["actor"] = ["Doğrulanmış belediye personeli bulunamadı."];
+        if (applicationPublicId == Guid.Empty)
+            errors["applicationPublicId"] = ["Başvuru kimliği zorunludur."];
+        if (photoId <= 0)
+            errors["photoId"] = ["Fotoğraf kimliği zorunludur."];
+        if (errors.Count > 0)
+            return new(ApplicationLifecycleStatus.InvalidInput, Errors: errors);
+
+        var application = await FindScopedApplicationAsync(
+            actor,
+            applicationPublicId,
+            tracking: false,
+            cancellationToken);
+        if (application is null)
+            return PhotoNotFound();
+
+        var photo = await dbContext.Set<ApplicationPhotoRecord>()
+            .AsNoTracking()
+            .SingleOrDefaultAsync(
+                value => value.Id == photoId &&
+                         value.MunicipalityId == actor.MunicipalityId &&
+                         value.ApplicationId == application.Id &&
+                         !value.IsDeleted,
+                cancellationToken);
+        if (photo is null) return PhotoNotFound();
+
+        try
+        {
+            var stream = await storage.OpenReadAsync(photo.StorageKey, cancellationToken);
+            return new(
+                ApplicationLifecycleStatus.Succeeded,
+                new ApplicationPhotoContent(
+                    stream,
+                    photo.ContentType,
+                    string.IsNullOrWhiteSpace(photo.OriginalFileName)
+                        ? $"photo-{photo.Order}"
+                        : photo.OriginalFileName));
+        }
+        catch (IOException exception)
+        {
+            logger.LogError(
+                exception,
+                "Application photo content is missing for {PhotoId}.",
+                photoId);
+            return new(
+                ApplicationLifecycleStatus.Conflict,
+                Code: "photo_content_missing",
+                Detail: "Fotoğraf kaydı bulundu ancak dosya içeriğine ulaşılamadı.");
         }
     }
 
@@ -205,8 +302,8 @@ internal sealed class ApplicationPhotoService(
         if (string.IsNullOrWhiteSpace(command.IdempotencyKey) ||
             command.IdempotencyKey.Trim().Length is < 8 or > 100)
             errors["Idempotency-Key"] = ["8-100 karakterlik istek anahtarı zorunludur."];
-        if (command.Photos.Count is < 1 or > 15)
-            errors["photos"] = ["Bir defada 1-15 fotoğraf yüklenmelidir."];
+        if (command.Photos.Count > 15)
+            errors["photos"] = ["Bir defada en fazla 15 fotoğraf yüklenmelidir."];
 
         var orders = new HashSet<byte>();
         var index = 0;
@@ -235,7 +332,6 @@ internal sealed class ApplicationPhotoService(
         if (!tracking) query = query.AsNoTracking();
         return query.SingleOrDefaultAsync(
             value => value.PublicId == applicationPublicId &&
-                     value.MunicipalityId == actor.MunicipalityId &&
                      value.CreatedByUserId == actor.ActorUserId,
             cancellationToken);
     }
@@ -243,9 +339,10 @@ internal sealed class ApplicationPhotoService(
     private Task<string?> FindStatusCodeAsync(
         int statusId,
         CancellationToken cancellationToken) =>
-        dbContext.Set<ApplicationStatusReference>()
-            .AsNoTracking()
-            .Where(value => value.Id == statusId)
+        dbContext
+            .Mapped<ApplicationStatusReference>(
+                ApplicationReferenceCodeQueries.ApplicationStatus)
+            .Where(value => value.SourceId == statusId)
             .Select(value => value.Code)
             .SingleOrDefaultAsync(cancellationToken);
 
@@ -255,21 +352,24 @@ internal sealed class ApplicationPhotoService(
     {
         var statusCode = await FindStatusCodeAsync(application.StatusId, cancellationToken)
             ?? throw new InvalidOperationException("Başvuru durum kodu bulunamadı.");
-        var helpTypeCode = await dbContext.Set<HelpTypeReference>()
-            .AsNoTracking()
-            .Where(value => value.Id == application.HelpTypeId)
+        var helpTypeCode = await dbContext
+            .Mapped<HelpTypeReference>(ApplicationReferenceCodeQueries.HelpType)
+            .Where(value => value.SourceId == application.HelpTypeId)
             .Select(value => value.Code)
             .SingleAsync(cancellationToken);
         var disabilityTypeCode = application.DisabilityTypeId is null
             ? null
-            : await dbContext.Set<DisabilityTypeReference>()
-                .AsNoTracking()
-                .Where(value => value.Id == application.DisabilityTypeId)
+            : await dbContext
+                .Mapped<DisabilityTypeReference>(
+                    ApplicationReferenceCodeQueries.DisabilityType)
+                .Where(value => value.SourceId == application.DisabilityTypeId)
                 .Select(value => value.Code)
                 .SingleAsync(cancellationToken);
         return new(
             application.PublicId,
-            application.ApplicationNumber,
+            application.ApplicationNumber ??
+                application.Id.ToString(
+                    System.Globalization.CultureInfo.InvariantCulture),
             statusCode,
             ApplicationStatusRules.IsEditable(statusCode),
             application.IdentityNumber,
@@ -278,7 +378,9 @@ internal sealed class ApplicationPhotoService(
             helpTypeCode,
             application.HasDisability,
             disabilityTypeCode,
-            application.DisabilityRate,
+            application.DisabilityRate is null
+                ? null
+                : checked((byte)application.DisabilityRate.Value),
             application.Description,
             application.ApplicantFirstName,
             application.ApplicantLastName,
@@ -290,7 +392,7 @@ internal sealed class ApplicationPhotoService(
             Convert.ToBase64String(application.RowVersion));
     }
 
-    private static ApplicationLifecycleResult<ApplicationDetails> Replay(
+    private static ApplicationLifecycleResult<ApplicationDetails>? ValidateReplay(
         IdempotencyRecord existing,
         byte[] requestHash,
         DateTime nowUtc)
@@ -306,24 +408,33 @@ internal sealed class ApplicationPhotoService(
                 Code: "photo_idempotency_conflict",
                 Detail: "Fotoğraf yükleme anahtarı yeniden kullanılamadı.");
         }
-        try
+        return null;
+    }
+
+    private Task DeleteCreatedPhotosBestEffortAsync(
+        IEnumerable<StoredApplicationPhoto> photos) =>
+        DeleteStorageKeysBestEffortAsync(
+            photos
+                .Where(value => value.WasCreated)
+                .Select(value => value.StorageKey));
+
+    private async Task DeleteStorageKeysBestEffortAsync(IEnumerable<string> storageKeys)
+    {
+        foreach (var storageKey in storageKeys.Distinct(StringComparer.Ordinal))
         {
-            var value = JsonSerializer.Deserialize<ApplicationDetails>(
-                existing.ResultJson,
-                JsonOptions);
-            return value is null
-                ? new(
-                    ApplicationLifecycleStatus.IdempotencyConflict,
-                    Code: "photo_idempotency_result_invalid",
-                    Detail: "Önceki fotoğraf yükleme sonucu okunamadı.")
-                : Succeeded(value);
-        }
-        catch (JsonException)
-        {
-            return new(
-                ApplicationLifecycleStatus.IdempotencyConflict,
-                Code: "photo_idempotency_result_invalid",
-                Detail: "Önceki fotoğraf yükleme sonucu okunamadı.");
+            try
+            {
+                await storage.DeleteAsync(storageKey, CancellationToken.None);
+            }
+            catch (Exception exception)
+            {
+                // Veritabani sonucu geri alinamayacagi icin temizlik hatasi ana
+                // istegi bozmaz; operasyon ekibi logdan yetki/disk sorununu gorur.
+                logger.LogWarning(
+                    exception,
+                    "Application photo storage cleanup failed for {StorageKey}.",
+                    storageKey);
+            }
         }
     }
 
@@ -344,6 +455,12 @@ internal sealed class ApplicationPhotoService(
             ApplicationLifecycleStatus.NotFound,
             Code: "application_not_found",
             Detail: "Başvuru bulunamadı.");
+
+    private static ApplicationLifecycleResult<ApplicationPhotoContent> PhotoNotFound() =>
+        new(
+            ApplicationLifecycleStatus.NotFound,
+            Code: "photo_not_found",
+            Detail: "Fotoğraf bulunamadı.");
 
     private static ApplicationLifecycleResult<ApplicationDetails> Locked() =>
         new(

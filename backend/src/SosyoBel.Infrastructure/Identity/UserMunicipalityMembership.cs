@@ -31,7 +31,7 @@ internal sealed class UserMunicipalityMembership
         DateTime createdAtUtc)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(userId);
-        if (userId.Trim().Length > 128)
+        if (userId.Trim().Length > 450)
         {
             throw new ArgumentOutOfRangeException(nameof(userId));
         }

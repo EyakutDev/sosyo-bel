@@ -5,8 +5,11 @@ using SosyoBel.Application.Abstractions;
 using SosyoBel.Application.Applications;
 using SosyoBel.Application.Auditing;
 using SosyoBel.Application.FieldTasks;
+using SosyoBel.Application.Kps;
+using SosyoBel.Application.References;
 using SosyoBel.Application.WorkItems;
 using SosyoBel.Infrastructure.Configuration;
+using SosyoBel.Infrastructure.Kps;
 using SosyoBel.Infrastructure.Persistence;
 using SosyoBel.Infrastructure.Storage;
 
@@ -45,9 +48,16 @@ public static class DependencyInjection
         services.AddScoped<IApplicationPhotoService, ApplicationPhotoService>();
         services.AddScoped<IApplicationPhotoStorage, LocalApplicationPhotoStorage>();
         services.AddScoped<IAssignedFieldTaskQuery, AssignedFieldTaskQuery>();
+        services.AddScoped<IApplicationReferenceQuery, ApplicationReferenceQuery>();
         services.AddScoped<IUserWorkItemQuery, UserWorkItemQuery>();
         services.AddScoped<IAuditEventQuery, AuditEventQuery>();
         services.AddSingleton<ISecretResolver, EnvironmentSecretResolver>();
+        services.AddOptions<KpsOptions>()
+            .Bind(configuration.GetSection(KpsOptions.SectionName));
+        // İstemci singleton tutulur; kendi SocketsHttpHandler havuzu DNS
+        // yenilemesini yönetir ve hassas query değerlerini framework loglamaz.
+        services.AddSingleton<IKpsClient, KpsClient>();
+        services.AddScoped<IKpsProfileQuery, KpsProfileQuery>();
 
         return services;
     }

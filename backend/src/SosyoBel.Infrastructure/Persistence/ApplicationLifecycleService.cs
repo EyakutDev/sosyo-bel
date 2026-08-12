@@ -65,6 +65,133 @@ internal sealed class ApplicationLifecycleService(
             : Succeeded(await ToDetailsAsync(application, cancellationToken));
     }
 
+    public async Task<ApplicationLifecycleResult<ApplicationDraftSnapshot>> GetDraftSnapshotAsync(
+        ApplicationActorContext actor,
+        Guid applicationPublicId,
+        CancellationToken cancellationToken)
+    {
+        if (!TryValidateActor(actor, out var errors) || applicationPublicId == Guid.Empty)
+        {
+            return Invalid<ApplicationDraftSnapshot>(errors);
+        }
+
+        var application = await FindScopedApplicationAsync(
+            actor,
+            applicationPublicId,
+            tracking: false,
+            cancellationToken);
+        if (application is null) return NotFound<ApplicationDraftSnapshot>();
+
+        var familyRows = await dbContext.Set<ApplicationFamilyMemberRecord>()
+            .AsNoTracking()
+            .Where(value => value.ApplicationId == application.Id)
+            .OrderBy(value => value.Id)
+            .ToArrayAsync(cancellationToken);
+        var householdRows = await dbContext.Set<ApplicationHouseholdAnswerRecord>()
+            .AsNoTracking()
+            .Where(value => value.MunicipalityId == actor.MunicipalityId &&
+                            value.ApplicationId == application.Id)
+            .OrderBy(value => value.Id)
+            .ToArrayAsync(cancellationToken);
+        var photoRows = await dbContext.Set<ApplicationPhotoRecord>()
+            .AsNoTracking()
+            .Where(value => value.MunicipalityId == actor.MunicipalityId &&
+                            value.ApplicationId == application.Id &&
+                            !value.IsDeleted)
+            .OrderBy(value => value.Order)
+            .ToArrayAsync(cancellationToken);
+
+        // Şirket lookup tablolarındaki değişebilir Türkçe adlar yerine, mobil
+        // sözleşmenin kararlı kodlarını tek seferde geri çözüyoruz.
+        var relationshipCodes = await LoadMappedCodesAsync<RelationshipReference>(
+            ApplicationReferenceCodeQueries.Relationship,
+            familyRows.Select(value => value.RelationshipId),
+            cancellationToken);
+        var employmentCodes = await LoadMappedCodesAsync<EmploymentStatusReference>(
+            ApplicationReferenceCodeQueries.EmploymentStatus,
+            familyRows.Where(value => value.EmploymentStatusId.HasValue)
+                .Select(value => value.EmploymentStatusId!.Value),
+            cancellationToken);
+        var educationCodes = await LoadMappedCodesAsync<EducationStatusReference>(
+            ApplicationReferenceCodeQueries.EducationStatus,
+            familyRows.Where(value => value.EducationStatusId.HasValue)
+                .Select(value => value.EducationStatusId!.Value),
+            cancellationToken);
+        var disabilityCodes = await LoadMappedCodesAsync<DisabilityTypeReference>(
+            ApplicationReferenceCodeQueries.DisabilityType,
+            familyRows.Where(value => value.DisabilityTypeId.HasValue)
+                .Select(value => value.DisabilityTypeId!.Value),
+            cancellationToken);
+        var vitalIds = familyRows.Select(value => value.VitalStatusId).ToHashSet();
+        var vitalCodes = vitalIds.Count == 0
+            ? new Dictionary<int, string>()
+            : await dbContext.Set<VitalStatusReference>()
+                .AsNoTracking()
+                .Where(value => vitalIds.Contains(value.Id))
+                .ToDictionaryAsync(value => value.Id, value => value.Code, cancellationToken);
+
+        var questionIds = householdRows.Select(value => value.QuestionId).ToHashSet();
+        var questionCodes = questionIds.Count == 0
+            ? new Dictionary<int, string>()
+            : await dbContext.Set<HouseholdQuestionReference>()
+                .AsNoTracking()
+                .Where(value => questionIds.Contains(value.Id))
+                .ToDictionaryAsync(value => value.Id, value => value.Code, cancellationToken);
+        var optionIds = householdRows
+            .Where(value => value.OptionId.HasValue)
+            .Select(value => value.OptionId!.Value)
+            .ToHashSet();
+        var optionCodes = optionIds.Count == 0
+            ? new Dictionary<int, string>()
+            : await dbContext.Set<HouseholdQuestionOptionReference>()
+                .AsNoTracking()
+                .Where(value => optionIds.Contains(value.Id))
+                .ToDictionaryAsync(value => value.Id, value => value.Code, cancellationToken);
+
+        var family = familyRows.Select(value => new ApplicationFamilyMemberSnapshot(
+            value.FullName,
+            value.Age,
+            relationshipCodes.GetValueOrDefault(value.RelationshipId),
+            value.OtherRelationshipDescription,
+            value.HasDisability,
+            value.DisabilityTypeId is null
+                ? null
+                : disabilityCodes.GetValueOrDefault(value.DisabilityTypeId.Value),
+            value.DisabilityDescription,
+            value.EmploymentStatusId is null
+                ? null
+                : employmentCodes.GetValueOrDefault(value.EmploymentStatusId.Value),
+            value.EducationStatusId is null
+                ? null
+                : educationCodes.GetValueOrDefault(value.EducationStatusId.Value),
+            vitalCodes.GetValueOrDefault(value.VitalStatusId)))
+            .ToArray();
+        var household = householdRows
+            .Where(value => value.OptionId.HasValue &&
+                            questionCodes.ContainsKey(value.QuestionId) &&
+                            optionCodes.ContainsKey(value.OptionId.Value))
+            .Select(value => new ApplicationHouseholdAnswerData(
+                questionCodes[value.QuestionId],
+                optionCodes[value.OptionId!.Value]))
+            .ToArray();
+        var photos = photoRows.Select(value => new ApplicationPhotoSnapshot(
+            value.Id,
+            value.OriginalFileName,
+            value.ContentType,
+            value.Length,
+            value.Order))
+            .ToArray();
+
+        return Succeeded(new ApplicationDraftSnapshot(
+            await ToDetailsAsync(application, cancellationToken),
+            family,
+            household,
+            // Bu seçenek vatandaş profili bağlantısı kurulana kadar yazma katmanında
+            // reddedildiği için kalıcı bir değer üretmez.
+            SaveToBeneficiaryDirectory: false,
+            photos));
+    }
+
     public async Task<ApplicationLifecycleResult<ApplicationDetails>> UpdateDraftAsync(
         UpdateApplicationDraftCommand command,
         CancellationToken cancellationToken)
@@ -95,10 +222,7 @@ internal sealed class ApplicationLifecycleService(
         if (!ApplicationStatusRules.IsEditable(currentStatus)) return Locked();
         if (!RowVersionsMatch(application.RowVersion, expectedRowVersion)) return ConcurrentConflict();
 
-        var references = await ResolveDraftReferencesAsync(
-            command.Actor.MunicipalityId,
-            draft,
-            cancellationToken);
+        var references = await ResolveDraftReferencesAsync(draft, cancellationToken);
         if (references.Error is not null) return references.Error;
 
         application.UpdateDraft(
@@ -188,30 +312,27 @@ internal sealed class ApplicationLifecycleService(
         var draftStatus = await FindActiveStatusAsync(
             ApplicationStatusCodes.Draft,
             cancellationToken);
-        var requestChannel = await dbContext.Set<RequestChannelReference>()
-            .AsNoTracking()
+        var requestChannel = await dbContext
+            .Active<RequestChannelReference>(
+                ApplicationReferenceCodeQueries.RequestChannel)
             .SingleOrDefaultAsync(
-                value => value.Code == MobileRequestChannelCode && value.IsActive,
+                value => value.Code == MobileRequestChannelCode,
                 cancellationToken);
         if (draftStatus is null || requestChannel is null)
         {
             return ConfigurationConflict();
         }
 
-        var references = await ResolveDraftReferencesAsync(
-            actor.MunicipalityId,
-            draft,
-            cancellationToken);
+        var references = await ResolveDraftReferencesAsync(draft, cancellationToken);
         if (references.Error is not null) return references.Error;
 
-        var nextNumber = await GetNextApplicationNumberAsync(cancellationToken);
+        // Kurumun başvuru numarası biçimi henüz doğrulanmadığı için BasvuruNo
+        // uydurulmaz. API cevabında geçici gösterim olarak dbo kimliği kullanılır.
         var application = ApplicationRecord.Create(
-            actor.MunicipalityId,
-            nextNumber.ToString(System.Globalization.CultureInfo.InvariantCulture),
-            draftStatus.Id,
+            draftStatus.SourceId,
             references.HelpTypeId,
             references.DisabilityTypeId,
-            requestChannel.Id,
+            requestChannel.SourceId,
             actor.ActorUserId,
             nowUtc,
             draft);
@@ -220,12 +341,11 @@ internal sealed class ApplicationLifecycleService(
 
         dbContext.Set<ApplicationStatusHistoryRecord>().Add(
             ApplicationStatusHistoryRecord.Create(
-                actor.MunicipalityId,
                 application.Id,
                 previousStatusId: null,
-                draftStatus.Id,
-                actor.ActorUserId,
-                nowUtc));
+                newStatusId: draftStatus.SourceId,
+                actorUserId: actor.ActorUserId,
+                nowUtc: nowUtc));
         await dbContext.SaveChangesAsync(cancellationToken);
         return Succeeded(await ToDetailsAsync(application, cancellationToken));
     }
@@ -254,13 +374,12 @@ internal sealed class ApplicationLifecycleService(
         if (pendingStatus is null) return ConfigurationConflict();
 
         var previousStatusId = application.StatusId;
-        application.SubmitToBoard(pendingStatus.Id, actor.ActorUserId, nowUtc);
+        application.SubmitToBoard(pendingStatus.SourceId, actor.ActorUserId, nowUtc);
         dbContext.Set<ApplicationStatusHistoryRecord>().Add(
             ApplicationStatusHistoryRecord.Create(
-                actor.MunicipalityId,
                 application.Id,
                 previousStatusId,
-                pendingStatus.Id,
+                pendingStatus.SourceId,
                 actor.ActorUserId,
                 nowUtc));
         await dbContext.SaveChangesAsync(cancellationToken);
@@ -319,10 +438,16 @@ internal sealed class ApplicationLifecycleService(
                     return references.Error;
                 }
 
-                await dbContext.Set<ApplicationFamilyMemberRecord>()
-                    .Where(value => value.MunicipalityId == actor.MunicipalityId &&
-                                    value.ApplicationId == application.Id)
-                    .ExecuteDeleteAsync(cancellationToken);
+                // Entity iki tabloya bolundugu icin toplu SQL DELETE kullanilmaz.
+                // EF kayitlari dogru FK sirasiyla uzanti ve dbo tablosundan siler.
+                var existingFamilyMembers = await dbContext
+                    .Set<ApplicationFamilyMemberRecord>()
+                    .Where(value => value.ApplicationId == application.Id)
+                    .ToArrayAsync(cancellationToken);
+                dbContext.RemoveRange(existingFamilyMembers);
+
+                // PUT istegi aile ve hane koleksiyonlarini tam bir anlik kopya olarak
+                // ele alir. Bos hane listesi de onceki cevaplari bilincli olarak temizler.
                 await dbContext.Set<ApplicationHouseholdAnswerRecord>()
                     .Where(value => value.MunicipalityId == actor.MunicipalityId &&
                                     value.ApplicationId == application.Id)
@@ -336,7 +461,6 @@ internal sealed class ApplicationLifecycleService(
                         : references.DisabilityTypes[member.DisabilityTypeCode];
                     dbContext.Set<ApplicationFamilyMemberRecord>().Add(
                         ApplicationFamilyMemberRecord.Create(
-                            actor.MunicipalityId,
                             application.Id,
                             references.Relationships[member.RelationshipCode],
                             disabilityTypeId,
@@ -389,30 +513,15 @@ internal sealed class ApplicationLifecycleService(
         }
     }
 
-    private async Task<long> GetNextApplicationNumberAsync(
-        CancellationToken cancellationToken)
-    {
-        var currentTransaction = dbContext.Database.CurrentTransaction
-            ?? throw new InvalidOperationException("Başvuru numarası transaction dışında üretilemez.");
-        await using var command = dbContext.Database.GetDbConnection().CreateCommand();
-        command.CommandText = "SELECT NEXT VALUE FOR sosyobel.BasvuruNumaralari;";
-        command.Transaction = currentTransaction.GetDbTransaction();
-        var value = await command.ExecuteScalarAsync(cancellationToken);
-        return Convert.ToInt64(value, System.Globalization.CultureInfo.InvariantCulture);
-    }
-
     private async Task<DraftReferenceResolution> ResolveDraftReferencesAsync(
-        int municipalityId,
         ApplicationDraftData draft,
         CancellationToken cancellationToken)
     {
-        var helpTypeId = await dbContext.Set<HelpTypeReference>()
-            .AsNoTracking()
-            .Where(value => value.IsActive && value.Code == draft.HelpTypeCode &&
-                            (value.MunicipalityId == null || value.MunicipalityId == municipalityId))
-            .OrderByDescending(value => value.MunicipalityId == municipalityId)
-            .Select(value => value.Id)
-            .FirstOrDefaultAsync(cancellationToken);
+        var helpTypeId = await dbContext
+            .Active<HelpTypeReference>(ApplicationReferenceCodeQueries.HelpType)
+            .Where(value => value.Code == draft.HelpTypeCode)
+            .Select(value => value.SourceId)
+            .SingleOrDefaultAsync(cancellationToken);
         if (helpTypeId == 0)
         {
             return DraftReferenceResolution.Failed(Invalid(
@@ -425,13 +534,12 @@ internal sealed class ApplicationLifecycleService(
         int? disabilityTypeId = null;
         if (draft.HasDisability)
         {
-            disabilityTypeId = await dbContext.Set<DisabilityTypeReference>()
-                .AsNoTracking()
-                .Where(value => value.IsActive && value.Code == draft.DisabilityTypeCode &&
-                                (value.MunicipalityId == null || value.MunicipalityId == municipalityId))
-                .OrderByDescending(value => value.MunicipalityId == municipalityId)
-                .Select(value => (int?)value.Id)
-                .FirstOrDefaultAsync(cancellationToken);
+            disabilityTypeId = await dbContext
+                .Active<DisabilityTypeReference>(
+                    ApplicationReferenceCodeQueries.DisabilityType)
+                .Where(value => value.Code == draft.DisabilityTypeCode)
+                .Select(value => (int?)value.SourceId)
+                .SingleOrDefaultAsync(cancellationToken);
             if (disabilityTypeId is null)
             {
                 return DraftReferenceResolution.Failed(Invalid(
@@ -471,41 +579,48 @@ internal sealed class ApplicationLifecycleService(
             .Select(value => value.QuestionCode)
             .ToHashSet(StringComparer.Ordinal);
 
-        var relationships = await dbContext.Set<RelationshipReference>()
-            .AsNoTracking()
-            .Where(value => value.IsActive && relationshipCodes.Contains(value.Code))
-            .ToDictionaryAsync(value => value.Code, value => value.Id, cancellationToken);
-        var employmentStatuses = await dbContext.Set<EmploymentStatusReference>()
-            .AsNoTracking()
-            .Where(value => value.IsActive && employmentCodes.Contains(value.Code))
-            .ToDictionaryAsync(value => value.Code, value => value.Id, cancellationToken);
-        var educationStatuses = await dbContext.Set<EducationStatusReference>()
-            .AsNoTracking()
-            .Where(value => value.IsActive && educationCodes.Contains(value.Code))
-            .ToDictionaryAsync(value => value.Code, value => value.Id, cancellationToken);
+        var relationships = await dbContext
+            .Active<RelationshipReference>(ApplicationReferenceCodeQueries.Relationship)
+            .Where(value => relationshipCodes.Contains(value.Code))
+            .ToDictionaryAsync(
+                value => value.Code,
+                value => value.SourceId,
+                cancellationToken);
+        var employmentStatuses = await dbContext
+            .Active<EmploymentStatusReference>(
+                ApplicationReferenceCodeQueries.EmploymentStatus)
+            .Where(value => employmentCodes.Contains(value.Code))
+            .ToDictionaryAsync(
+                value => value.Code,
+                value => value.SourceId,
+                cancellationToken);
+        var educationStatuses = await dbContext
+            .Active<EducationStatusReference>(
+                ApplicationReferenceCodeQueries.EducationStatus)
+            .Where(value => educationCodes.Contains(value.Code))
+            .ToDictionaryAsync(
+                value => value.Code,
+                value => value.SourceId,
+                cancellationToken);
         var vitalStatuses = await dbContext.Set<VitalStatusReference>()
             .AsNoTracking()
             .Where(value => value.IsActive && vitalCodes.Contains(value.Code))
             .ToDictionaryAsync(value => value.Code, value => value.Id, cancellationToken);
 
-        var disabilityRows = await dbContext.Set<DisabilityTypeReference>()
-            .AsNoTracking()
-            .Where(value => value.IsActive && disabilityCodes.Contains(value.Code) &&
-                            (value.MunicipalityId == null ||
-                             value.MunicipalityId == municipalityId))
-            .ToArrayAsync(cancellationToken);
-        var disabilityTypes = disabilityRows
-            .GroupBy(value => value.Code, StringComparer.Ordinal)
-            .ToDictionary(
-                group => group.Key,
-                group => group
-                    .OrderByDescending(value => value.MunicipalityId == municipalityId)
-                    .First().Id,
-                StringComparer.Ordinal);
+        var disabilityTypes = await dbContext
+            .Active<DisabilityTypeReference>(
+                ApplicationReferenceCodeQueries.DisabilityType)
+            .Where(value => disabilityCodes.Contains(value.Code))
+            .ToDictionaryAsync(
+                value => value.Code,
+                value => value.SourceId,
+                cancellationToken);
 
+        // Gönderilmeyen zorunlu soruları da belirleyebilmek için belediyenin etkin
+        // soru kümesi bütünüyle okunur; belediyeye özel kayıt global kaydı ezer.
         var questionRows = await dbContext.Set<HouseholdQuestionReference>()
             .AsNoTracking()
-            .Where(value => value.IsActive && questionCodes.Contains(value.Code) &&
+            .Where(value => value.IsActive &&
                             (value.MunicipalityId == null ||
                              value.MunicipalityId == municipalityId))
             .ToArrayAsync(cancellationToken);
@@ -523,12 +638,16 @@ internal sealed class ApplicationLifecycleService(
         var optionCodes = householdAnswers
             .Select(value => value.OptionCode)
             .ToHashSet(StringComparer.Ordinal);
-        var optionRows = await dbContext.Set<HouseholdQuestionOptionReference>()
-            .AsNoTracking()
-            .Where(value => value.IsActive &&
-                            selectedQuestionIds.Contains(value.QuestionId) &&
-                            optionCodes.Contains(value.Code))
-            .ToArrayAsync(cancellationToken);
+        HouseholdQuestionOptionReference[] optionRows = [];
+        if (selectedQuestionIds.Count > 0 && optionCodes.Count > 0)
+        {
+            optionRows = await dbContext.Set<HouseholdQuestionOptionReference>()
+                .AsNoTracking()
+                .Where(value => value.IsActive &&
+                                selectedQuestionIds.Contains(value.QuestionId) &&
+                                optionCodes.Contains(value.Code))
+                .ToArrayAsync(cancellationToken);
+        }
 
         var errors = new Dictionary<string, string[]>();
         AddMissingCodes(relationshipCodes, relationships.Keys, "familyMembers.relationshipCode", errors);
@@ -537,6 +656,18 @@ internal sealed class ApplicationLifecycleService(
         AddMissingCodes(vitalCodes, vitalStatuses.Keys, "familyMembers.vitalStatusCode", errors);
         AddMissingCodes(disabilityCodes, disabilityTypes.Keys, "familyMembers.disabilityTypeCode", errors);
         AddMissingCodes(questionCodes, selectedQuestions.Keys, "householdAnswers.questionCode", errors);
+
+        var missingRequiredQuestions = selectedQuestions.Values
+            .Where(value => value.IsRequired && !questionCodes.Contains(value.Code))
+            .OrderBy(value => value.Order)
+            .ThenBy(value => value.Id)
+            .Select(value => value.Label)
+            .ToArray();
+        if (missingRequiredQuestions.Length > 0)
+        {
+            errors["householdAnswers"] =
+                [$"Zorunlu hane soruları cevaplanmalıdır: {string.Join(", ", missingRequiredQuestions)}"];
+        }
 
         var questions = new Dictionary<string, HouseholdQuestionResolution>(
             StringComparer.Ordinal);
@@ -597,28 +728,43 @@ internal sealed class ApplicationLifecycleService(
         if (!tracking) query = query.AsNoTracking();
         return query.SingleOrDefaultAsync(
             value => value.PublicId == applicationPublicId &&
-                     value.MunicipalityId == actor.MunicipalityId &&
                      value.CreatedByUserId == actor.ActorUserId,
             cancellationToken);
     }
 
-    private Task<ApplicationStatusReference?> FindActiveStatusAsync(
+    private Task<ReferenceCodeRecord?> FindActiveStatusAsync(
         string code,
         CancellationToken cancellationToken) =>
-        dbContext.Set<ApplicationStatusReference>()
-            .AsNoTracking()
+        dbContext
+            .Active<ApplicationStatusReference>(
+                ApplicationReferenceCodeQueries.ApplicationStatus)
             .SingleOrDefaultAsync(
-                value => value.Code == code && value.IsActive,
+                value => value.Code == code,
                 cancellationToken);
 
     private Task<string?> FindStatusCodeAsync(
         int statusId,
         CancellationToken cancellationToken) =>
-        dbContext.Set<ApplicationStatusReference>()
-            .AsNoTracking()
-            .Where(value => value.Id == statusId)
+        dbContext
+            .Mapped<ApplicationStatusReference>(
+                ApplicationReferenceCodeQueries.ApplicationStatus)
+            .Where(value => value.SourceId == statusId)
             .Select(value => value.Code)
             .SingleOrDefaultAsync(cancellationToken);
+
+    private async Task<IReadOnlyDictionary<int, string>> LoadMappedCodesAsync<TSource>(
+        string referenceTypeCode,
+        IEnumerable<int> sourceIds,
+        CancellationToken cancellationToken)
+        where TSource : class, ICompanyReferenceSource
+    {
+        var ids = sourceIds.ToHashSet();
+        if (ids.Count == 0) return new Dictionary<int, string>();
+
+        return await dbContext.Mapped<TSource>(referenceTypeCode)
+            .Where(value => ids.Contains(value.SourceId))
+            .ToDictionaryAsync(value => value.SourceId, value => value.Code, cancellationToken);
+    }
 
     private async Task<ApplicationDetails> ToDetailsAsync(
         ApplicationRecord application,
@@ -626,22 +772,25 @@ internal sealed class ApplicationLifecycleService(
     {
         var statusCode = await FindStatusCodeAsync(application.StatusId, cancellationToken)
             ?? throw new InvalidOperationException("Başvuru durum kodu bulunamadı.");
-        var helpTypeCode = await dbContext.Set<HelpTypeReference>()
-            .AsNoTracking()
-            .Where(value => value.Id == application.HelpTypeId)
+        var helpTypeCode = await dbContext
+            .Mapped<HelpTypeReference>(ApplicationReferenceCodeQueries.HelpType)
+            .Where(value => value.SourceId == application.HelpTypeId)
             .Select(value => value.Code)
             .SingleAsync(cancellationToken);
         var disabilityTypeCode = application.DisabilityTypeId is null
             ? null
-            : await dbContext.Set<DisabilityTypeReference>()
-                .AsNoTracking()
-                .Where(value => value.Id == application.DisabilityTypeId)
+            : await dbContext
+                .Mapped<DisabilityTypeReference>(
+                    ApplicationReferenceCodeQueries.DisabilityType)
+                .Where(value => value.SourceId == application.DisabilityTypeId)
                 .Select(value => value.Code)
                 .SingleAsync(cancellationToken);
 
         return new ApplicationDetails(
             application.PublicId,
-            application.ApplicationNumber,
+            application.ApplicationNumber ??
+                application.Id.ToString(
+                    System.Globalization.CultureInfo.InvariantCulture),
             statusCode,
             ApplicationStatusRules.IsEditable(statusCode),
             application.IdentityNumber,
@@ -650,7 +799,9 @@ internal sealed class ApplicationLifecycleService(
             helpTypeCode,
             application.HasDisability,
             disabilityTypeCode,
-            application.DisabilityRate,
+            application.DisabilityRate is null
+                ? null
+                : checked((byte)application.DisabilityRate.Value),
             application.Description,
             application.ApplicantFirstName,
             application.ApplicantLastName,
@@ -824,7 +975,24 @@ internal sealed class ApplicationLifecycleService(
                 }
                 : errors);
 
+    private static ApplicationLifecycleResult<T> Invalid<T>(
+        IReadOnlyDictionary<string, string[]> errors) =>
+        new(
+            ApplicationLifecycleStatus.InvalidInput,
+            Errors: errors.Count == 0
+                ? new Dictionary<string, string[]>
+                {
+                    ["request"] = ["İstek alanları doğrulanamadı."],
+                }
+                : errors);
+
     private static ApplicationLifecycleResult<ApplicationDetails> NotFound() =>
+        new(
+            ApplicationLifecycleStatus.NotFound,
+            Code: "application_not_found",
+            Detail: "Başvuru bulunamadı.");
+
+    private static ApplicationLifecycleResult<T> NotFound<T>() =>
         new(
             ApplicationLifecycleStatus.NotFound,
             Code: "application_not_found",

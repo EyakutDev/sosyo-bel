@@ -4,8 +4,9 @@ using SosyoBel.Domain.Municipalities;
 namespace SosyoBel.Infrastructure.Persistence;
 
 /// <summary>
-/// Yalnız V2 `sosyobel` şemasına bağlanır. Eski dbo iş tablolarının yanlışlıkla
-/// API modeline dâhil edilmesini engellemek için eşlemeler açıkça tanımlanır.
+/// Şirketin mevcut `dbo` iş tabloları ile yalnız API'ye ait `sosyobel` uzantılarını
+/// aynı bağlantıda kullanır. Her iki sınır da yanlış tabloya yazmayı önlemek için
+/// açıkça eşlenir.
 /// </summary>
 public sealed class SosyoBelDbContext(DbContextOptions<SosyoBelDbContext> options)
     : DbContext(options)
@@ -80,9 +81,9 @@ public sealed class SosyoBelDbContext(DbContextOptions<SosyoBelDbContext> option
         entity.Property(value => value.LastSuccessfulConnectionUtc)
             .HasColumnName("SonBasariliBaglantiUtc");
         entity.Property(value => value.LastErrorCode).HasColumnName("SonHataKodu").HasMaxLength(100);
-        entity.Property(value => value.CreatedByUserId).HasColumnName("OlusturanUserId").HasMaxLength(128);
+        entity.Property(value => value.CreatedByUserId).HasColumnName("OlusturanUserId").HasMaxLength(450);
         entity.Property(value => value.CreatedAtUtc).HasColumnName("OlusturulmaTarihiUtc");
-        entity.Property(value => value.UpdatedByUserId).HasColumnName("GuncelleyenUserId").HasMaxLength(128);
+        entity.Property(value => value.UpdatedByUserId).HasColumnName("GuncelleyenUserId").HasMaxLength(450);
         entity.Property(value => value.UpdatedAtUtc).HasColumnName("GuncellenmeTarihiUtc");
         entity.Property(value => value.RowVersion).HasColumnName("RowVersion").IsRowVersion();
 

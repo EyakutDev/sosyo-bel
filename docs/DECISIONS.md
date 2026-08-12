@@ -165,3 +165,29 @@ Bu dosyada yalnızca açıkça onaylanmış kararlar tutulur.
   sonraki alanlar aşağı kayacak ve menünün altında kalmayacak.
 - Karar: Doğum tarihi alanı yalnızca rakam girişini kabul ederek yazım
   sırasında otomatik `GG/AA/YYYY` biçimine dönüşecek.
+
+## D-020 — Şirket veritabanıyla uyumluluk
+
+- Durum: Onaylandı
+- Karar: Cats Yazılım tarafından paylaşılan `sosyaldb.ipynb` şeması uyumluluk
+  çalışmasının başlangıç şeması olarak kullanılacak.
+- Karar: Mevcut `dbo` tabloları silinmeyecek, yeniden adlandırılmayacak veya
+  onaysız biçimde değiştirilmeyecek; backend mevcut tablolara uyarlanacak.
+- Karar: Mobil akışın şirkette karşılığı bulunmayan verileri ayrı `sosyobel`
+  tamamlayıcı tablolarında tutulacak.
+- Karar: Paylaşılan notebook ile gerçek hedef veritabanının aynı olduğu
+  varsayılmayacak; migration öncesinde salt-okunur şema kontrolü yapılacak.
+- Karar: Temiz yerel kurulum için hazırlanmış `000`–`005` migration zinciri
+  şirketin mevcut veritabanına uygulanmayacak.
+
+## D-021 — Mevcut kullanıcılar için güvenli geçiş
+
+- Durum: Yetkili doğrulaması bekleyen geçici teknik karar
+- Karar: `dbo.AspNetUsers` satırı bulunup
+  `sosyobel.KullaniciUygulamaBilgileri` satırı bulunmayan hesap otomatik aktif
+  kabul edilmeyecek.
+- Karar: Mevcut şirket kullanıcılarına canlı ortamda otomatik profil kaydı
+  açılmayacak; kurumun onayladığı kullanıcı ve rol listesi geldikten sonra ayrı,
+  denetlenebilir bir geçiş betiği hazırlanacak.
+- Karar: Gerçek `dbo.AspNetRoles` değerleri doğrulanana kadar canlı veriye rol
+  ekleme, yeniden adlandırma veya dönüştürme işlemi uygulanmayacak.

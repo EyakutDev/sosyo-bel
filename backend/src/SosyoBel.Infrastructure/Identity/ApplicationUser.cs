@@ -3,8 +3,9 @@ using Microsoft.AspNetCore.Identity;
 namespace SosyoBel.Infrastructure.Identity;
 
 /// <summary>
-/// Personel hesabıdır. Parola yönetimi bu sınıfta değil ASP.NET Core Identity'de
-/// yapılır; burada yalnız Sosyo-Bel'e ait profil ve hesap durumu tutulur.
+/// Şirketin mevcut dbo.AspNetUsers kaydıdır. Parola yönetimi ASP.NET Core Identity
+/// tarafından yapılır; şirkette bulunmayan hesap yaşam döngüsü alanları ayrı
+/// KullaniciUygulamaBilgileri kaydında tutulur.
 /// </summary>
 public sealed class ApplicationUser : IdentityUser
 {
@@ -12,21 +13,25 @@ public sealed class ApplicationUser : IdentityUser
 
     public string LastName { get; private set; } = string.Empty;
 
-    public bool IsActive { get; private set; } = true;
+    public UserApplicationInfo? ApplicationInfo { get; private set; }
 
-    public DateTime CreatedAtUtc { get; private set; }
+    // Uzantı kaydı bulunmayan eski hesaplar, kurum onaylı geçiş yapılana kadar
+    // güvenlik gereği aktif kabul edilmez.
+    public bool IsActive => ApplicationInfo?.IsActive == true;
 
-    public DateTime? UpdatedAtUtc { get; private set; }
+    public DateTime CreatedAtUtc => ApplicationInfo?.CreatedAtUtc ?? default;
 
-    public string? CreatedByUserId { get; private set; }
+    public DateTime? UpdatedAtUtc => ApplicationInfo?.UpdatedAtUtc;
 
-    public string? DeactivatedByUserId { get; private set; }
+    public string? CreatedByUserId => ApplicationInfo?.CreatedByUserId;
 
-    public DateTime? DeactivatedAtUtc { get; private set; }
+    public string? DeactivatedByUserId => ApplicationInfo?.DeactivatedByUserId;
 
-    public string? DeactivationReason { get; private set; }
+    public DateTime? DeactivatedAtUtc => ApplicationInfo?.DeactivatedAtUtc;
 
-    public byte[] RowVersion { get; private set; } = [];
+    public string? DeactivationReason => ApplicationInfo?.DeactivationReason;
+
+    public byte[] RowVersion => ApplicationInfo?.RowVersion ?? [];
 
     public string DisplayName => $"{FirstName} {LastName}".Trim();
 
@@ -39,25 +44,32 @@ public sealed class ApplicationUser : IdentityUser
     {
         var normalizedEmail = NormalizeRequired(email, nameof(email), 256);
 
-        return new ApplicationUser
+        var user = new ApplicationUser
         {
             Email = normalizedEmail,
             UserName = normalizedEmail,
             EmailConfirmed = true,
             FirstName = NormalizeRequired(firstName, nameof(firstName), 100),
             LastName = NormalizeRequired(lastName, nameof(lastName), 100),
-            IsActive = true,
             LockoutEnabled = true,
-            CreatedAtUtc = DateTime.SpecifyKind(createdAtUtc, DateTimeKind.Utc),
-            CreatedByUserId = NormalizeOptional(createdByUserId, 128),
         };
+
+        user.ApplicationInfo = UserApplicationInfo.Create(
+            user.Id,
+            createdAtUtc,
+            NormalizeOptional(createdByUserId, 450));
+        return user;
     }
 
-    public void UpdateProfile(string firstName, string lastName, DateTime updatedAtUtc)
+    public void UpdateProfile(
+        string firstName,
+        string lastName,
+        string updatedByUserId,
+        DateTime updatedAtUtc)
     {
         FirstName = NormalizeRequired(firstName, nameof(firstName), 100);
         LastName = NormalizeRequired(lastName, nameof(lastName), 100);
-        UpdatedAtUtc = DateTime.SpecifyKind(updatedAtUtc, DateTimeKind.Utc);
+        RequireApplicationInfo().MarkUpdated(updatedByUserId, updatedAtUtc);
     }
 
     public void Deactivate(
@@ -65,28 +77,12 @@ public sealed class ApplicationUser : IdentityUser
         string reason,
         DateTime updatedAtUtc)
     {
-        if (!IsActive)
-        {
-            return;
-        }
-
-        var normalizedReason = NormalizeRequired(reason, nameof(reason), 1000);
-        if (normalizedReason.Length < 10)
-        {
-            throw new ArgumentOutOfRangeException(
-                nameof(reason),
-                "Hesap kapatma gerekçesi en az 10 karakter olmalıdır.");
-        }
-
-        IsActive = false;
-        DeactivatedByUserId = NormalizeRequired(
-            deactivatedByUserId,
-            nameof(deactivatedByUserId),
-            128);
-        DeactivatedAtUtc = DateTime.SpecifyKind(updatedAtUtc, DateTimeKind.Utc);
-        DeactivationReason = normalizedReason;
-        UpdatedAtUtc = DeactivatedAtUtc;
+        RequireApplicationInfo().Deactivate(deactivatedByUserId, reason, updatedAtUtc);
     }
+
+    private UserApplicationInfo RequireApplicationInfo() =>
+        ApplicationInfo ?? throw new InvalidOperationException(
+            "Kullanıcının uygulama profil kaydı bulunamadı.");
 
     private static string NormalizeRequired(string value, string parameterName, int maxLength)
     {

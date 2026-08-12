@@ -106,6 +106,40 @@ public sealed record ApplicationDetails(
     DateTime? SubmittedToBoardAtUtc,
     string RowVersion);
 
+/// <summary>
+/// Kaydedilmiş aile üyesinin ekranı yeniden kurmak için gereken kod tabanlı görünümüdür.
+/// Nullable alanlar, şirketin eski kayıtlarında eksik bırakılmış değerlerin okunmasını engellemez.
+/// </summary>
+public sealed record ApplicationFamilyMemberSnapshot(
+    string FullName,
+    int Age,
+    string? RelationshipCode,
+    string? OtherRelationshipDescription,
+    bool HasDisability,
+    string? DisabilityTypeCode,
+    string? DisabilityDescription,
+    string? EmploymentStatusCode,
+    string? EducationStatusCode,
+    string? VitalStatusCode);
+
+public sealed record ApplicationPhotoSnapshot(
+    int PhotoId,
+    string? OriginalFileName,
+    string ContentType,
+    long Length,
+    byte Order);
+
+/// <summary>
+/// Mobil uygulamanın bekleyen bir taslağı ağ kaybı veya uygulama kapanması sonrasında
+/// eksiksiz yeniden açabilmesi için gereken tek, tutarlı okuma sözleşmesidir.
+/// </summary>
+public sealed record ApplicationDraftSnapshot(
+    ApplicationDetails Application,
+    IReadOnlyCollection<ApplicationFamilyMemberSnapshot> FamilyMembers,
+    IReadOnlyCollection<ApplicationHouseholdAnswerData> HouseholdAnswers,
+    bool SaveToBeneficiaryDirectory,
+    IReadOnlyCollection<ApplicationPhotoSnapshot> Photos);
+
 public sealed record ApplicationLifecycleResult<T>(
     ApplicationLifecycleStatus Status,
     T? Value = default,

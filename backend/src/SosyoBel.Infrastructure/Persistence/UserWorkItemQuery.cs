@@ -20,115 +20,60 @@ internal sealed class UserWorkItemQuery(
         if (limit is < 1 or > 100)
             throw new ArgumentOutOfRangeException(nameof(limit));
 
-        // Önce iki meşru kaynak birleştirilir. ROW_NUMBER aynı başvurunun hem
-        // personele atanmış görev hem kendi başvurusu olması durumunda görev satırını seçer.
+        // Şirketin başvuru iş verisi dbo.Basvurular'da, mobil kimlik ve audit
+        // alanları ise bire bir sosyobel uzantısında tutulur. Eski, bağımsız
+        // sosyobel.Basvurular modeline dönülmez.
+        //
+        // Şirketin görev atama tablosu henüz kesin eşlenmediği için bu sorgu
+        // yalnız personelin kendi oluşturduğu başvuruları listeler. Doğrulanmamış
+        // bir SahaGorevleri tablosu varsaymak yerine görev kaynağı daha sonra
+        // aynı DTO'ya UNION edilecektir.
         var rows = await dbContext.Database.SqlQuery<UserWorkItemRow>($"""
-            WITH Birlesik AS
-            (
-                SELECT
-                    basvuru.PublicId AS ApplicationPublicId,
-                    gorev.PublicId AS TaskPublicId,
-                    basvuru.BasvuruNo AS ApplicationNumber,
-                    NULLIF(LTRIM(RTRIM(CONCAT(
-                        COALESCE(NULLIF(basvuru.BasvuranAd, N''), vatandas.Ad, N''),
-                        N' ',
-                        COALESCE(NULLIF(basvuru.BasvuranSoyad, N''), vatandas.Soyad, N'')))), N'')
-                        AS ApplicantFullName,
-                    COALESCE(NULLIF(basvuru.BasvuruAcikAdres, N''), NULLIF(vatandas.AcikAdres, N''))
-                        AS Address,
-                    CAST(N'ASSIGNED_TASK' AS nvarchar(30)) AS SourceCode,
-                    CASE WHEN basvuruDurumu.Kod = N'TAMAMLANDI'
-                         THEN basvuruDurumu.Kod ELSE gorev.DurumKodu END AS StatusCode,
-                    CAST(CASE WHEN gorev.TamamlanmaTarihiUtc IS NOT NULL
-                                   OR gorev.DurumKodu = N'TAMAMLANDI'
-                                   OR basvuruDurumu.Kod = N'TAMAMLANDI'
-                              THEN 1 ELSE 0 END AS bit) AS IsCompleted,
-                    CAST(CASE WHEN basvuruDurumu.Kod = N'TASLAK'
-                                   AND basvuru.OlusturanUserId = {userId}
-                              THEN 1 ELSE 0 END AS bit) AS IsEditable,
-                    COALESCE(NULLIF(gorev.Aciklama, N''), NULLIF(basvuru.TalepAciklamasi, N''))
-                        AS Description,
-                    COALESCE(gorev.TamamlanmaTarihiUtc, gorev.BaslamaTarihiUtc,
-                             gorev.AtanmaTarihiUtc) AS ActivityAtUtc,
-                    CAST(1 AS tinyint) AS SourcePriority
-                FROM sosyobel.SahaGorevleri AS gorev
-                INNER JOIN sosyobel.Basvurular AS basvuru
-                    ON basvuru.BelediyeId = gorev.BelediyeId
-                   AND basvuru.Id = gorev.BasvuruId
-                INNER JOIN sosyobel.BasvuruDurumlari AS basvuruDurumu
-                    ON basvuruDurumu.Id = basvuru.BasvuruDurumuId
-                LEFT JOIN sosyobel.Vatandaslar AS vatandas
-                    ON vatandas.BelediyeId = basvuru.BelediyeId
-                   AND vatandas.Id = basvuru.VatandasId
-                INNER JOIN sosyobel.KullaniciBelediyeleri AS uyelik
-                    ON uyelik.BelediyeId = gorev.BelediyeId
-                   AND uyelik.Id = gorev.AtananKullaniciBelediyesiId
-                   AND uyelik.UserId = gorev.AtananUserId
-                INNER JOIN sosyobel.Belediyeler AS belediye ON belediye.Id = uyelik.BelediyeId
-                INNER JOIN dbo.AspNetUsers AS kullanici ON kullanici.Id = uyelik.UserId
-                WHERE gorev.BelediyeId = {municipalityId}
-                  AND gorev.AtananKullaniciBelediyesiId = {municipalityMembershipId}
-                  AND gorev.AtananUserId = {userId}
-                  AND uyelik.AktifMi = CAST(1 AS bit)
-                  AND uyelik.RolKodu = {RoleCodes.Personnel}
-                  AND belediye.AktifMi = CAST(1 AS bit)
-                  AND kullanici.AktifMi = CAST(1 AS bit)
-
-                UNION ALL
-
-                SELECT
-                    basvuru.PublicId AS ApplicationPublicId,
-                    CAST(NULL AS uniqueidentifier) AS TaskPublicId,
-                    basvuru.BasvuruNo AS ApplicationNumber,
-                    NULLIF(LTRIM(RTRIM(CONCAT(
-                        COALESCE(NULLIF(basvuru.BasvuranAd, N''), vatandas.Ad, N''),
-                        N' ',
-                        COALESCE(NULLIF(basvuru.BasvuranSoyad, N''), vatandas.Soyad, N'')))), N'')
-                        AS ApplicantFullName,
-                    COALESCE(NULLIF(basvuru.BasvuruAcikAdres, N''), NULLIF(vatandas.AcikAdres, N''))
-                        AS Address,
-                    CAST(N'OWN_APPLICATION' AS nvarchar(30)) AS SourceCode,
-                    basvuruDurumu.Kod AS StatusCode,
-                    CAST(CASE WHEN basvuruDurumu.Kod = N'TAMAMLANDI'
-                              THEN 1 ELSE 0 END AS bit) AS IsCompleted,
-                    CAST(CASE WHEN basvuruDurumu.Kod = N'TASLAK'
-                              THEN 1 ELSE 0 END AS bit) AS IsEditable,
-                    NULLIF(basvuru.TalepAciklamasi, N'') AS Description,
-                    COALESCE(basvuru.GuncellenmeTarihiUtc,
-                             basvuru.OlusturulmaTarihiUtc) AS ActivityAtUtc,
-                    CAST(2 AS tinyint) AS SourcePriority
-                FROM sosyobel.Basvurular AS basvuru
-                INNER JOIN sosyobel.BasvuruDurumlari AS basvuruDurumu
-                    ON basvuruDurumu.Id = basvuru.BasvuruDurumuId
-                LEFT JOIN sosyobel.Vatandaslar AS vatandas
-                    ON vatandas.BelediyeId = basvuru.BelediyeId
-                   AND vatandas.Id = basvuru.VatandasId
-                INNER JOIN sosyobel.KullaniciBelediyeleri AS uyelik
-                    ON uyelik.Id = {municipalityMembershipId}
-                   AND uyelik.BelediyeId = basvuru.BelediyeId
-                   AND uyelik.UserId = basvuru.OlusturanUserId
-                INNER JOIN sosyobel.Belediyeler AS belediye ON belediye.Id = uyelik.BelediyeId
-                INNER JOIN dbo.AspNetUsers AS kullanici ON kullanici.Id = uyelik.UserId
-                WHERE basvuru.BelediyeId = {municipalityId}
-                  AND basvuru.OlusturanUserId = {userId}
-                  AND uyelik.AktifMi = CAST(1 AS bit)
-                  AND uyelik.RolKodu = {RoleCodes.Personnel}
-                  AND belediye.AktifMi = CAST(1 AS bit)
-                  AND kullanici.AktifMi = CAST(1 AS bit)
-            ),
-            Tekil AS
-            (
-                SELECT *, ROW_NUMBER() OVER
-                    (PARTITION BY ApplicationPublicId
-                     ORDER BY SourcePriority, ActivityAtUtc DESC) AS DedupRowNumber
-                FROM Birlesik
-            )
             SELECT TOP ({limit})
-                ApplicationPublicId, TaskPublicId, ApplicationNumber,
-                ApplicantFullName, Address, SourceCode, StatusCode,
-                IsCompleted, IsEditable, Description, ActivityAtUtc
-            FROM Tekil
-            WHERE DedupRowNumber = 1
+                metadata.PublicId AS ApplicationPublicId,
+                CAST(NULL AS uniqueidentifier) AS TaskPublicId,
+                COALESCE(
+                    NULLIF(metadata.BasvuruNo, N''),
+                    CONCAT(N'#', CONVERT(nvarchar(20), application.Id)))
+                    AS ApplicationNumber,
+                NULLIF(LTRIM(RTRIM(CONCAT(
+                    COALESCE(NULLIF(application.BasvuranAd, N''), N''),
+                    N' ',
+                    COALESCE(NULLIF(application.BasvuranSoyad, N''), N'')))), N'')
+                    AS ApplicantFullName,
+                NULLIF(application.BasvuruAcikAdres, N'') AS Address,
+                CAST(N'OWN_APPLICATION' AS nvarchar(30)) AS SourceCode,
+                statusCode.Kod AS StatusCode,
+                CAST(CASE WHEN statusCode.Kod = N'TAMAMLANDI'
+                          THEN 1 ELSE 0 END AS bit) AS IsCompleted,
+                CAST(CASE WHEN statusCode.Kod = N'TASLAK'
+                          THEN 1 ELSE 0 END AS bit) AS IsEditable,
+                NULLIF(application.TalepAciklamasi, N'') AS Description,
+                COALESCE(
+                    metadata.GuncellenmeTarihiUtc,
+                    metadata.KurulaGonderilmeTarihiUtc,
+                    application.BasvuruTarihi,
+                    metadata.OlusturulmaTarihiUtc) AS ActivityAtUtc
+            FROM dbo.Basvurular AS application
+            INNER JOIN sosyobel.BasvuruUygulamaBilgileri AS metadata
+                ON metadata.BasvuruId = application.Id
+            INNER JOIN sosyobel.ReferansKodlari AS statusCode
+                ON statusCode.ReferansTuruKodu = N'BASVURU_DURUMU'
+               AND statusCode.KaynakId = application.BasvuruDurumuId
+            INNER JOIN sosyobel.KullaniciBelediyeleri AS membership
+                ON membership.Id = {municipalityMembershipId}
+               AND membership.BelediyeId = {municipalityId}
+               AND membership.UserId = application.OlusturanUserId
+            INNER JOIN sosyobel.Belediyeler AS municipality
+                ON municipality.Id = membership.BelediyeId
+            INNER JOIN sosyobel.KullaniciUygulamaBilgileri AS userInfo
+                ON userInfo.UserId = membership.UserId
+            WHERE application.OlusturanUserId = {userId}
+              AND membership.UserId = {userId}
+              AND membership.AktifMi = CAST(1 AS bit)
+              AND membership.RolKodu = {RoleCodes.Personnel}
+              AND municipality.AktifMi = CAST(1 AS bit)
+              AND userInfo.AktifMi = CAST(1 AS bit)
             ORDER BY IsCompleted, ActivityAtUtc DESC
             """)
             .ToArrayAsync(cancellationToken);

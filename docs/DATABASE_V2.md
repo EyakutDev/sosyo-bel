@@ -1,5 +1,10 @@
 # Sosyo-Bel V2 Veritabanı Tasarımı
 
+> **Önemli:** Bu belgedeki `000`–`005` migration zinciri boş yerel geliştirme
+> veritabanı içindir. Cats Yazılım tarafından paylaşılan mevcut `dbo` şemasına
+> uygulanmayacaktır. Şirket şemasını koruyan güncel yaklaşım ve çakışma analizi
+> için `docs/DATABASE_COMPATIBILITY.md` belgesine bakın.
+
 ## Durum
 
 Veritabanı şemasının kaynak kontrolündeki tek doğruluk kaynağı `database/`
@@ -35,12 +40,11 @@ Yeni şema şu yararları sağlar:
    `003_development_household_options.sql` yalnız yerel geliştirme/test içindir;
    şirketin kesin referans verisi yerine üretimde kullanılmaz.
 
-Yerel ve boş bir veritabanı için bu sıra
-`backend/scripts/initialize-local-development.ps1` tarafından uygulanabilir.
-
-İlk migration, `sosyobel.Basvurular` zaten varsa çalışmayı reddeder. Böylece aynı
-betiğin yanlışlıkla ikinci kez çalıştırılması sessiz bir şema bozulmasına neden
-olmaz.
+Bu eski bağımsız zincir yalnız `backend/scripts/validate-schema.ps1` içindeki
+izole şema doğrulamasında korunur. Güncel yerel kurulum
+`backend/scripts/initialize-local-development.ps1` ile şirketin veri içermeyen
+`dbo` snapshot'ını ve `database/compatibility/` zincirini kullanır. Güncel
+kurulum yaklaşımı için `docs/DATABASE_COMPATIBILITY.md` esas alınır.
 
 ## Eski şemaya göre yapılan temel revizyonlar
 
@@ -169,9 +173,10 @@ yapmayacak; API/worker doğrulamasından geçecektir.
 
 ### 11. Kimlik doğrulama
 
-Identity tabloları yeniden oluşturulmamıştır. V2, mevcut `dbo.AspNetUsers`
-tablosuna bağlanır. `YenilemeTokenlari`, mobil oturumlar için refresh tokenın açık
-değerini değil SHA-256 özetini tutar.
+Temiz yerel kurulum zincirindeki `000` migration'ı Identity tablolarını oluşturur.
+Şirket uyumluluk yaklaşımında bu migration çalıştırılmaz ve mevcut
+`dbo.AspNetUsers` tablosu korunur. `YenilemeTokenlari`, mobil oturumlar için
+refresh tokenın açık değerini değil SHA-256 özetini tutar.
 
 ## Flutter alanlarının V2 karşılıkları
 

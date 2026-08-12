@@ -4,6 +4,7 @@ import 'package:sosyo_bel/core/constants/app_assets.dart';
 import 'package:sosyo_bel/core/theme/app_theme.dart';
 import 'package:sosyo_bel/features/activity/presentation/household_status_page.dart';
 import 'package:sosyo_bel/features/activity/presentation/models/household_status_view_data.dart';
+import '../../../support/application_reference_test_catalog.dart';
 
 void main() {
   const designPhoto = HouseholdPhotoViewData.asset(
@@ -18,6 +19,7 @@ void main() {
     HouseholdPhotoCapture? onCapturePhoto,
     HouseholdStatusStage initialStage = HouseholdStatusStage.questions,
     List<HouseholdPhotoViewData> initialPhotos = const [],
+    List<HouseholdQuestionViewData> questions = householdQuestionTestViewData,
   }) async {
     tester.view.physicalSize = const Size(375, 812);
     tester.view.devicePixelRatio = 1;
@@ -28,6 +30,7 @@ void main() {
       MaterialApp(
         theme: AppTheme.light,
         home: HouseholdStatusPage(
+          questions: questions,
           initialStage: initialStage,
           initialPhotos: initialPhotos,
           onBack: onBack ?? () {},
@@ -85,6 +88,38 @@ void main() {
     expect(externalBackCount, 1);
   });
 
+  testWidgets('zorunlu soru cevaplanmadan fotoğraf aşamasına geçirmez', (
+    tester,
+  ) async {
+    const requiredQuestions = [
+      HouseholdQuestionViewData(
+        id: 'EV_TEMIZLIGI',
+        label: 'Ev Temiz mi?',
+        isRequired: true,
+        options: [HouseholdQuestionOptionViewData(code: 'EVET', label: 'Evet')],
+      ),
+    ];
+    await pumpPage(tester, questions: requiredQuestions);
+
+    await tester.tap(find.byKey(const Key('household-continue-button')));
+    await tester.pump();
+
+    expect(
+      find.text('Lütfen "Ev Temiz mi?" sorusunu cevaplayın.'),
+      findsOneWidget,
+    );
+    expect(find.byKey(const Key('household-camera-button')), findsNothing);
+
+    await tester.tap(find.byKey(const Key('household-question-EV_TEMIZLIGI')));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Evet').last);
+    await tester.pumpAndSettle();
+    await tester.tap(find.byKey(const Key('household-continue-button')));
+    await tester.pump();
+
+    expect(find.byKey(const Key('household-camera-button')), findsOneWidget);
+  });
+
   testWidgets('cevap, fotoğraf ve dizin tercihini taslakta korur', (
     tester,
   ) async {
@@ -96,7 +131,7 @@ void main() {
     );
 
     await tester.tap(
-      find.byKey(const Key('household-question-ownership-status')),
+      find.byKey(const Key('household-question-MULKIYET_DURUMU')),
     );
     await tester.pumpAndSettle();
     await tester.tap(find.text('Ev Sahibi').last);
@@ -112,7 +147,7 @@ void main() {
     await tester.tap(find.byKey(const Key('household-continue-button')));
     await tester.pump();
 
-    expect(submittedDraft?.answers['ownership-status'], 'Ev Sahibi');
+    expect(submittedDraft?.answers['MULKIYET_DURUMU'], 'EV_SAHIBI');
     expect(submittedDraft?.photos, hasLength(1));
     expect(submittedDraft?.saveToBeneficiaryDirectory, isTrue);
   });

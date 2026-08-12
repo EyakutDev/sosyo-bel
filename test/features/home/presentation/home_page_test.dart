@@ -13,6 +13,7 @@ void main() {
     WidgetTester tester, {
     MunicipalityBranding branding = MunicipalityBranding.demo,
     WorkItemsRepository? repository,
+    Future<void> Function(WorkItem item)? onOpenEditableDraft,
   }) async {
     tester.view.physicalSize = const Size(375, 864);
     tester.view.devicePixelRatio = 1;
@@ -25,6 +26,7 @@ void main() {
           municipalityBranding: branding,
           workItemsRepository:
               repository ?? _FakeWorkItemsRepository(() async => _workItems),
+          onOpenEditableDraft: onOpenEditableDraft,
         ),
       ),
     );
@@ -109,6 +111,32 @@ void main() {
 
     expect((image.image as AssetImage).assetName, AppAssets.logo);
     expect(find.bySemanticsLabel('Cats Belediyesi logosu'), findsOneWidget);
+  });
+
+  testWidgets('yalnız düzenlenebilir taslak kartını açma callbackine iletir', (
+    tester,
+  ) async {
+    WorkItem? openedItem;
+    final editableDraft = WorkItem(
+      applicationPublicId: 'draft-1',
+      applicationNumber: 'B-2026-152',
+      sourceCode: 'OWN_APPLICATION',
+      statusCode: 'TASLAK',
+      isCompleted: false,
+      isEditable: true,
+      activityAtUtc: DateTime.utc(2026, 8, 11, 10),
+    );
+    await pumpHome(
+      tester,
+      repository: _FakeWorkItemsRepository(() async => [editableDraft]),
+      onOpenEditableDraft: (item) async => openedItem = item,
+    );
+    await tester.pumpAndSettle();
+
+    await tester.tap(find.text('B-2026-152'));
+    await tester.pump();
+
+    expect(openedItem, same(editableDraft));
   });
 }
 

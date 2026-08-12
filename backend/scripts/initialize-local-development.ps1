@@ -1,6 +1,6 @@
 param(
     [string]$SqlServer = 'localhost',
-    [string]$DatabaseName = 'SosyoBel'
+    [string]$DatabaseName = 'SosyoBelCompanyLocal'
 )
 
 $ErrorActionPreference = 'Stop'
@@ -8,26 +8,31 @@ $workspaceRoot = (Resolve-Path (Join-Path $PSScriptRoot '..\..')).Path
 $connection = $null
 $createdDatabase = $false
 
+$companySchemaFile = 'database\company\000_sosyalhizmet_schema_snapshot.sql'
+$inspectionFile = 'database\compatibility\000_inspect_company_schema.sql'
+
 $migrationFiles = @(
-    'database\migrations\000_create_aspnet_identity_schema.sql',
-    'database\migrations\001_create_sosyobel_v2_schema.sql',
-    'database\migrations\002_create_municipality_integrations.sql',
-    'database\migrations\003_create_access_control_and_audit.sql',
-    'database\migrations\004_harden_identity_tasks_and_idempotency.sql',
-    'database\migrations\005_create_application_number_sequence.sql',
-    'database\seed\001_confirmed_reference_data.sql',
-    'database\seed\002_development_form_options.sql',
-    'database\seed\003_development_household_options.sql'
+    'database\compatibility\migrations\001_create_foundation_extensions.sql',
+    'database\compatibility\migrations\002_create_auth_support.sql',
+    'database\compatibility\migrations\003_create_application_core_support.sql',
+    'database\compatibility\migrations\004_create_application_family_support.sql',
+    'database\compatibility\migrations\005_create_application_household_support.sql',
+    'database\compatibility\migrations\006_create_application_photo_support.sql',
+    'database\compatibility\migrations\007_add_kps_lookup_permission.sql'
 )
 
 $checkFiles = @(
-    'database\checks\000_verify_aspnet_identity.sql',
-    'database\checks\001_verify_sosyobel_v2.sql',
-    'database\checks\002_verify_municipality_integrations.sql',
-    'database\checks\003_verify_access_control_and_audit.sql',
-    'database\checks\004_verify_identity_tasks_and_idempotency.sql',
-    'database\checks\005_verify_application_lifecycle.sql'
+    'database\compatibility\checks\001_verify_foundation_extensions.sql',
+    'database\compatibility\checks\002_verify_auth_support.sql',
+    'database\compatibility\checks\003_verify_application_core_support.sql',
+    'database\compatibility\checks\004_verify_application_family_support.sql',
+    'database\compatibility\checks\005_verify_application_household_support.sql',
+    'database\compatibility\checks\006_verify_application_photo_support.sql',
+    'database\compatibility\checks\007_verify_kps_lookup_permission.sql'
 )
+
+$developmentSeedFile =
+    'database\compatibility\seed\001_local_development_reference_data.sql'
 
 function Test-LocalSqlServer([string]$serverName) {
     $normalized = $serverName.Trim().ToLowerInvariant()
@@ -44,14 +49,23 @@ function Test-LocalSqlServer([string]$serverName) {
 }
 
 function Invoke-CommandText([string]$commandText) {
-    $command = $connection.CreateCommand()
-    try {
-        $command.CommandTimeout = 180
-        $command.CommandText = $commandText
-        $null = $command.ExecuteNonQuery()
-    }
-    finally {
-        $command.Dispose()
+    # SQL Server istemcisi GO ifadesini tanımaz. Şirket snapshot'ındaki batch'ler
+    # dosyadaki sırayı koruyacak biçimde burada ayrıştırılır.
+    $batches = [regex]::Split($commandText, '(?im)^\s*GO\s*(?:--.*)?$')
+    foreach ($batch in $batches) {
+        if ([string]::IsNullOrWhiteSpace($batch)) {
+            continue
+        }
+
+        $command = $connection.CreateCommand()
+        try {
+            $command.CommandTimeout = 180
+            $command.CommandText = $batch
+            $null = $command.ExecuteNonQuery()
+        }
+        finally {
+            $command.Dispose()
+        }
     }
 }
 
@@ -103,14 +117,25 @@ try {
         $createdDatabase = $true
         $connection.ChangeDatabase($DatabaseName)
 
-        foreach ($file in $migrationFiles) {
-            Invoke-SqlFile $file
-        }
+        # Yerel temel, şirketin verdiği dbo snapshot'ıdır. Eski bağımsız
+        # database/migrations zinciri bu kurulumda bilinçli olarak kullanılmaz.
+        Invoke-SqlFile $companySchemaFile
     }
     else {
         Write-Output ('VERIFY_EXISTING_DATABASE ' + $DatabaseName)
         $connection.ChangeDatabase($DatabaseName)
     }
+
+    # Inspection başarısızsa hiçbir uyumluluk migration'ı çalıştırılmaz. Böylece
+    # yanlış şemaya teknik tablolar eklenmesi engellenir.
+    Invoke-SqlFile $inspectionFile
+
+    foreach ($file in $migrationFiles) {
+        Invoke-SqlFile $file
+    }
+
+    # Bu seed yalnız yerel demo akışını çalıştırır; şirket/canlı verisine uygulanmaz.
+    Invoke-SqlFile $developmentSeedFile
 
     # Yeni veya daha önce kurulmuş veritabanı aynı doğrulama zincirinden geçer.
     foreach ($file in $checkFiles) {

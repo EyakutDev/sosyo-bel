@@ -1,6 +1,7 @@
 import 'package:sosyo_bel/features/activity/presentation/models/citizen_profile_view_data.dart';
 import 'package:sosyo_bel/features/activity/presentation/models/family_information_view_data.dart';
 import 'package:sosyo_bel/features/activity/presentation/models/household_status_view_data.dart';
+import 'package:sosyo_bel/features/application/domain/kps_profile.dart';
 
 /// Yeni Başvuru ekranında personelin girdiği kesinleşmiş kişi ve talep alanları.
 ///
@@ -11,16 +12,20 @@ final class NewApplicationFormData {
   const NewApplicationFormData({
     required this.identityNumber,
     required this.birthDate,
+    required this.disabilityStatusCode,
     required this.disabilityStatus,
     required this.phoneNumber,
+    required this.helpTypeCode,
     required this.helpType,
     required this.description,
   });
 
   final String identityNumber;
   final String birthDate;
+  final String disabilityStatusCode;
   final String disabilityStatus;
   final String phoneNumber;
+  final String helpTypeCode;
   final String helpType;
   final String description;
 }
@@ -36,12 +41,14 @@ final class ApplicationDraft {
     required this.citizenProfile,
     required this.familyInformation,
     this.applicationForm,
+    this.kpsProfile,
     this.householdStatus,
     this.completionNote = '',
   });
 
   /// Form henüz geçerli şekilde tamamlanmadıysa `null` kalır.
   final NewApplicationFormData? applicationForm;
+  final KpsProfile? kpsProfile;
   final CitizenProfileViewData citizenProfile;
   final FamilyInformationViewData familyInformation;
   final HouseholdStatusDraft? householdStatus;
@@ -51,6 +58,7 @@ final class ApplicationDraft {
   /// toplanmış bilgiler aynı başvuru taslağında korunur.
   ApplicationDraft copyWith({
     NewApplicationFormData? applicationForm,
+    KpsProfile? kpsProfile,
     CitizenProfileViewData? citizenProfile,
     FamilyInformationViewData? familyInformation,
     HouseholdStatusDraft? householdStatus,
@@ -58,6 +66,7 @@ final class ApplicationDraft {
   }) {
     return ApplicationDraft(
       applicationForm: applicationForm ?? this.applicationForm,
+      kpsProfile: kpsProfile ?? this.kpsProfile,
       citizenProfile: citizenProfile ?? this.citizenProfile,
       familyInformation: familyInformation ?? this.familyInformation,
       householdStatus: householdStatus ?? this.householdStatus,

@@ -114,6 +114,9 @@ try {
         'database\migrations\002_create_municipality_integrations.sql',
         'database\migrations\003_create_access_control_and_audit.sql',
         'database\migrations\004_harden_identity_tasks_and_idempotency.sql',
+        'database\migrations\005_create_application_number_sequence.sql',
+        'database\migrations\006_add_kps_lookup_permission.sql',
+        'database\migrations\007_create_user_application_info.sql',
         'database\seed\001_confirmed_reference_data.sql')) {
         Write-Output "RUN $file"
         Invoke-SqlFile $file
@@ -253,9 +256,12 @@ try {
             -ContentType 'application/json' -Body $personnelBody -TimeoutSec 10
     }
 
-    $assignedTasks = @(Invoke-RestMethod `
+    $assignedTasksResponse = Invoke-RestMethod `
         -Uri "http://127.0.0.1:$ApiPort/api/v1/tasks/assigned" `
-        -Headers $personnelHeaders -TimeoutSec 10)
+        -Headers $personnelHeaders -TimeoutSec 10
+    # Windows PowerShell 5.1 boş JSON dizisini tek, iç içe dizi olarak döndürebilir.
+    # Pipeline üzerinden geçirmek gerçek öğe sayısını kararlı biçimde verir.
+    $assignedTasks = @($assignedTasksResponse | ForEach-Object { $_ })
 
     $municipalityHeaders['Idempotency-Key'] = 'reset-personnel-0001'
     $null = Invoke-RestMethod -Method Post `
@@ -280,7 +286,7 @@ try {
     $permission = Invoke-RestMethod -Method Put `
         -Uri "http://127.0.0.1:$ApiPort/api/v1/system/municipalities/DEMO/personnel/$($personnel.userId)/permissions/locked-application-edit" `
         -Headers $systemHeaders -ContentType 'application/json' `
-        -Body (@{ enabled = $true; reason = 'Doğrulama testi için geçici yetki.' } | ConvertTo-Json) `
+        -Body (@{ enabled = $true; reason = 'Gecici dogrulama yetkisi verildi.' } | ConvertTo-Json) `
         -TimeoutSec 10
 
     $systemAudit = @(Invoke-RestMethod `
@@ -294,7 +300,7 @@ try {
     $null = Invoke-RestMethod -Method Post `
         -Uri "http://127.0.0.1:$ApiPort/api/v1/municipality/personnel/$($personnel.userId)/deactivate" `
         -Headers $municipalityHeaders -ContentType 'application/json' `
-        -Body (@{ reason = 'Doğrulama testi tamamlandığı için kapatıldı.' } | ConvertTo-Json) `
+        -Body (@{ reason = 'Gecici dogrulama hesabi kapatildi.' } | ConvertTo-Json) `
         -TimeoutSec 10
 
     $staleAccessStatus = Get-HttpErrorStatus {
@@ -340,6 +346,21 @@ WHERE Id = (SELECT MIN(Id) FROM sosyobel.IslemGecmisleri);
         $appendOnlyProtected = $_.Exception.Errors.Number -contains 51073
     }
 
+    $validationDetails = [pscustomobject]@{
+        PersonnelAdminStatus = $personnelAdminStatus
+        OldRefreshStatus = $oldRefreshStatus
+        StaleAccessStatus = $staleAccessStatus
+        InactiveLoginStatus = $inactiveLoginStatus
+        AssignedTaskCount = $assignedTasks.Count
+        PermissionEnabled = $permission.enabled
+        SystemAuditCount = $systemAudit.Count
+        MunicipalityAuditCount = $municipalityAudit.Count
+        GlobalTenantRoleCount = $globalTenantRoleCount
+        IdempotencyCount = $idempotencyCount
+        SecretLeakCount = $secretLeakCount
+        AppendOnlyProtected = $appendOnlyProtected
+    }
+
     if ($personnelAdminStatus -ne 403 -or
         $oldRefreshStatus -ne 401 -or
         $staleAccessStatus -ne 403 -or
@@ -352,6 +373,7 @@ WHERE Id = (SELECT MIN(Id) FROM sosyobel.IslemGecmisleri);
         $idempotencyCount -lt 5 -or
         $secretLeakCount -ne 0 -or
         -not $appendOnlyProtected) {
+        Write-Output ($validationDetails | Format-List | Out-String)
         throw 'Yönetim akışı doğrulama beklentilerinden en az biri sağlanmadı.'
     }
 

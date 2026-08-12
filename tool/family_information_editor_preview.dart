@@ -3,6 +3,7 @@ import 'package:sosyo_bel/core/theme/app_theme.dart';
 import 'package:sosyo_bel/features/activity/presentation/family_information_editor_page.dart';
 import 'package:sosyo_bel/features/activity/presentation/fixtures/family_information_design_fixture.dart';
 import 'package:sosyo_bel/features/activity/presentation/models/family_information_view_data.dart';
+import 'preview_application_references.dart';
 
 void main() {
   runApp(const _FamilyInformationEditorPreviewApp());
@@ -28,6 +29,7 @@ class _FamilyInformationEditorPreviewAppState
       theme: AppTheme.light,
       home: FamilyInformationEditorPage(
         data: _data,
+        referenceCatalog: previewApplicationReferenceCatalog,
         onChanged: (FamilyInformationViewData data) {
           setState(() => _data = data);
         },

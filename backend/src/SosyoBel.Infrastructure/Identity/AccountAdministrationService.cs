@@ -21,6 +21,7 @@ internal sealed class AccountAdministrationService(
     private const string DeactivatePersonnelEndpoint = "MUNICIPALITY_DEACTIVATE_PERSONNEL";
     private const string ResetPersonnelPasswordEndpoint = "MUNICIPALITY_RESET_PERSONNEL_PASSWORD";
     private const string SetLockedEditPermissionEndpoint = "SYSTEM_SET_LOCKED_EDIT_PERMISSION";
+    private const string SetKpsLookupPermissionEndpoint = "MUNICIPALITY_SET_KPS_LOOKUP_PERMISSION";
 
     private static readonly JsonSerializerOptions JsonOptions =
         new(JsonSerializerDefaults.Web);
@@ -241,7 +242,7 @@ internal sealed class AccountAdministrationService(
     {
         if (!IsValid(command.Actor) ||
             !IsValidIdempotencyKey(command.IdempotencyKey) ||
-            !IsValidText(command.TargetUserId, 128) ||
+            !IsValidText(command.TargetUserId, 450) ||
             !IsValidReason(command.Reason))
         {
             return Task.FromResult(InvalidRequest<ManagedUserSummary>());
@@ -345,7 +346,7 @@ internal sealed class AccountAdministrationService(
     {
         if (!IsValid(command.Actor) ||
             !IsValidIdempotencyKey(command.IdempotencyKey) ||
-            !IsValidText(command.TargetUserId, 128) ||
+            !IsValidText(command.TargetUserId, 450) ||
             !IsValidPassword(command.NewPassword))
         {
             return Task.FromResult(InvalidRequest<ManagedUserSummary>());
@@ -448,7 +449,7 @@ internal sealed class AccountAdministrationService(
         if (!IsValid(command.Actor) ||
             !IsValidIdempotencyKey(command.IdempotencyKey) ||
             !IsValidText(command.MunicipalityCode, 50) ||
-            !IsValidText(command.TargetUserId, 128) ||
+            !IsValidText(command.TargetUserId, 450) ||
             !IsValidReason(command.Reason))
         {
             return Task.FromResult(InvalidRequest<PermissionChangeSummary>());
@@ -492,9 +493,11 @@ internal sealed class AccountAdministrationService(
                         value.MunicipalityId == municipality.Id &&
                         value.IsActive,
                         token);
-                var targetUserIsActive = await dbContext.Users
+                var targetUserIsActive = await dbContext.UserApplicationInfos
                     .AsNoTracking()
-                    .AnyAsync(value => value.Id == targetUserId && value.IsActive, token);
+                    .AnyAsync(
+                        value => value.UserId == targetUserId && value.IsActive,
+                        token);
                 if (!membershipExists || !targetUserIsActive)
                 {
                     return NotFound<PermissionChangeSummary>(
@@ -559,6 +562,131 @@ internal sealed class AccountAdministrationService(
                             before = new { enabled = !command.Enabled },
                             after = new { enabled = command.Enabled },
                             permissionCode = PermissionCodes.LockedApplicationEdit,
+                        }, JsonOptions),
+                        reason: command.Reason,
+                        actorIp: command.Actor.IpAddress,
+                        deviceId: command.Actor.DeviceId));
+                }
+
+                await dbContext.SaveChangesAsync(token);
+                return Success(summary);
+            },
+            cancellationToken);
+    }
+
+    public Task<AdministrationResult<PermissionChangeSummary>> SetKpsLookupPermissionAsync(
+        SetKpsLookupPermissionCommand command,
+        CancellationToken cancellationToken)
+    {
+        if (!IsValid(command.Actor) ||
+            !IsValidIdempotencyKey(command.IdempotencyKey) ||
+            !IsValidText(command.TargetUserId, 450) ||
+            !IsValidReason(command.Reason))
+        {
+            return Task.FromResult(InvalidRequest<PermissionChangeSummary>());
+        }
+
+        var targetUserId = command.TargetUserId.Trim();
+        var requestHash = HashSafeValues(
+            command.Actor.MunicipalityId.ToString(CultureInfo.InvariantCulture),
+            command.Actor.MunicipalityMembershipId.ToString(CultureInfo.InvariantCulture),
+            targetUserId,
+            PermissionCodes.KpsLookup,
+            command.Enabled ? "1" : "0",
+            command.Reason.Trim());
+
+        return ExecuteIdempotentAsync(
+            command.Actor.ActorUserId,
+            SetKpsLookupPermissionEndpoint,
+            command.IdempotencyKey,
+            requestHash,
+            async (nowUtc, token) =>
+            {
+                if (!await IsMunicipalityAdministratorAsync(command.Actor, token))
+                {
+                    return AccessDenied<PermissionChangeSummary>();
+                }
+
+                var municipalityCode = await dbContext.Municipalities
+                    .AsNoTracking()
+                    .Where(value =>
+                        value.Id == command.Actor.MunicipalityId && value.IsActive)
+                    .Select(value => value.Code)
+                    .SingleAsync(token);
+                var targetIsActivePersonnel = await (
+                    from membership in dbContext.UserMunicipalities.AsNoTracking()
+                    join userInfo in dbContext.UserApplicationInfos.AsNoTracking()
+                        on membership.UserId equals userInfo.UserId
+                    where membership.UserId == targetUserId &&
+                          membership.MunicipalityId == command.Actor.MunicipalityId &&
+                          membership.RoleCode == RoleCodes.Personnel &&
+                          membership.IsActive &&
+                          userInfo.IsActive
+                    select membership.Id)
+                    .AnyAsync(token);
+                if (!targetIsActivePersonnel)
+                {
+                    return NotFound<PermissionChangeSummary>(
+                        "active_personnel_not_found",
+                        "Hedef aktif personel kaydı bulunamadı.");
+                }
+
+                var permission = await dbContext.UserPermissions
+                    .SingleOrDefaultAsync(value =>
+                        value.UserId == targetUserId &&
+                        value.MunicipalityId == command.Actor.MunicipalityId &&
+                        value.PermissionCode == PermissionCodes.KpsLookup,
+                        token);
+                var wasEnabled = permission?.IsActive == true;
+
+                if (command.Enabled)
+                {
+                    if (permission is null)
+                    {
+                        permission = UserPermissionRecord.Create(
+                            targetUserId,
+                            command.Actor.MunicipalityId,
+                            PermissionCodes.KpsLookup,
+                            command.Actor.ActorUserId,
+                            nowUtc);
+                        dbContext.UserPermissions.Add(permission);
+                    }
+                    else if (!permission.IsActive)
+                    {
+                        permission.Grant(command.Actor.ActorUserId, nowUtc);
+                    }
+                }
+                else if (permission?.IsActive is true)
+                {
+                    permission.Revoke(command.Actor.ActorUserId, nowUtc);
+                }
+
+                var summary = new PermissionChangeSummary(
+                    targetUserId,
+                    municipalityCode,
+                    PermissionCodes.KpsLookup,
+                    command.Enabled);
+                if (wasEnabled != command.Enabled)
+                {
+                    dbContext.AdministrationAudit.Add(AdministrationAuditRecord.Create(
+                        command.Actor.MunicipalityId,
+                        "KULLANICI_YETKISI",
+                        null,
+                        command.Enabled
+                            ? "KPS_SORGULAMA_YETKISI_VER"
+                            : "KPS_SORGULAMA_YETKISI_IPTAL",
+                        command.Actor.ActorUserId,
+                        nowUtc,
+                        command.Actor.CorrelationId,
+                        targetUserId: targetUserId,
+                        description: command.Enabled
+                            ? "KPS sorgulama yetkisi verildi."
+                            : "KPS sorgulama yetkisi iptal edildi.",
+                        changeSummaryJson: JsonSerializer.Serialize(new
+                        {
+                            before = new { enabled = wasEnabled },
+                            after = new { enabled = command.Enabled },
+                            permissionCode = PermissionCodes.KpsLookup,
                         }, JsonOptions),
                         reason: command.Reason,
                         actorIp: command.Actor.IpAddress,
@@ -700,15 +828,15 @@ internal sealed class AccountAdministrationService(
             from membership in dbContext.UserMunicipalities.AsNoTracking()
             join municipality in dbContext.Municipalities.AsNoTracking()
                 on membership.MunicipalityId equals municipality.Id
-            join user in dbContext.Users.AsNoTracking()
-                on membership.UserId equals user.Id
+            join userInfo in dbContext.UserApplicationInfos.AsNoTracking()
+                on membership.UserId equals userInfo.UserId
             where membership.Id == actor.MunicipalityMembershipId &&
                   membership.UserId == actor.ActorUserId &&
                   membership.MunicipalityId == actor.MunicipalityId &&
                   membership.RoleCode == RoleCodes.MunicipalityAdministrator &&
                   membership.IsActive &&
                   municipality.IsActive &&
-                  user.IsActive
+                  userInfo.IsActive
             select membership.Id)
             .AnyAsync(cancellationToken);
     }
@@ -759,7 +887,7 @@ internal sealed class AccountAdministrationService(
         string? ipAddress,
         string? deviceId,
         Guid correlationId) =>
-        IsValidText(actorUserId, 128) &&
+        IsValidText(actorUserId, 450) &&
         (ipAddress is null || ipAddress.Length <= 45) &&
         (deviceId is null || deviceId.Length <= 200) &&
         correlationId != Guid.Empty;

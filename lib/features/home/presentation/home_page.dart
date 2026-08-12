@@ -24,6 +24,7 @@ class HomePage extends StatefulWidget {
     this.initialFilter = HomeListFilter.pending,
     this.onBack,
     this.initialSuccessMessage,
+    this.onOpenEditableDraft,
     this.municipalityBranding = MunicipalityBranding.demo,
     super.key,
   });
@@ -32,6 +33,7 @@ class HomePage extends StatefulWidget {
   final WorkItemsRepository workItemsRepository;
   final VoidCallback? onBack;
   final String? initialSuccessMessage;
+  final Future<void> Function(WorkItem item)? onOpenEditableDraft;
   final MunicipalityBranding municipalityBranding;
 
   @override
@@ -45,6 +47,31 @@ class _HomePageState extends State<HomePage> {
   List<WorkItem> _workItems = const [];
   bool _isLoading = true;
   String? _loadErrorMessage;
+  String? _openingApplicationId;
+
+  Future<void> _openEditableDraft(WorkItem item) async {
+    final callback = widget.onOpenEditableDraft;
+    if (callback == null || !item.isEditable || _openingApplicationId != null) {
+      return;
+    }
+    setState(() => _openingApplicationId = item.applicationPublicId);
+    try {
+      await callback(item);
+    } on ApiException catch (error) {
+      _showOpenError(error.message);
+    } catch (_) {
+      _showOpenError('Taslak açılamadı. Lütfen tekrar deneyin.');
+    } finally {
+      if (mounted) setState(() => _openingApplicationId = null);
+    }
+  }
+
+  void _showOpenError(String message) {
+    if (!mounted) return;
+    ScaffoldMessenger.of(context)
+      ..hideCurrentSnackBar()
+      ..showSnackBar(SnackBar(content: Text(message)));
+  }
 
   @override
   void initState() {
@@ -147,7 +174,8 @@ class _HomePageState extends State<HomePage> {
           ? item.isCompleted
           : !item.isCompleted;
     });
-    final applications = visibleWorkItems
+    final listedWorkItems = visibleWorkItems.toList(growable: false);
+    final applications = listedWorkItems
         .map(WorkItemCardMapper.toViewData)
         .toList(growable: false);
     final pendingCount = _workItems.where((item) => !item.isCompleted).length;
@@ -279,7 +307,13 @@ class _HomePageState extends State<HomePage> {
                     },
                   ),
                   SizedBox(height: 36 * scale),
-                  Expanded(child: _buildTaskContent(applications, scale)),
+                  Expanded(
+                    child: _buildTaskContent(
+                      listedWorkItems,
+                      applications,
+                      scale,
+                    ),
+                  ),
                 ],
               ),
             ),
@@ -290,6 +324,7 @@ class _HomePageState extends State<HomePage> {
   }
 
   Widget _buildTaskContent(
+    List<WorkItem> listedWorkItems,
     List<ApplicationCardViewData> applications,
     double scale,
   ) {
@@ -343,6 +378,9 @@ class _HomePageState extends State<HomePage> {
           return ApplicationSummaryCard(
             data: applications[index],
             scale: scale,
+            onTap: listedWorkItems[index].isEditable
+                ? () => _openEditableDraft(listedWorkItems[index])
+                : null,
           );
         },
       ),

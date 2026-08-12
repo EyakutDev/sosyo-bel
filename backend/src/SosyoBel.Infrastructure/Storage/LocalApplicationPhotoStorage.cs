@@ -84,6 +84,7 @@ internal sealed class LocalApplicationPhotoStorage
             var finalPath = ResolveInsideRoot(relativePath);
             Directory.CreateDirectory(Path.GetDirectoryName(finalPath)!);
 
+            var wasCreated = true;
             try
             {
                 File.Move(temporaryPath, finalPath);
@@ -92,6 +93,7 @@ internal sealed class LocalApplicationPhotoStorage
             {
                 // İçerik hash'i aynıysa ağ tekrarında aynı güvenli nesne kullanılır.
                 File.Delete(temporaryPath);
+                wasCreated = false;
             }
 
             return new StoredApplicationPhoto(
@@ -100,13 +102,46 @@ internal sealed class LocalApplicationPhotoStorage
                 photo.ContentType,
                 written,
                 hash,
-                photo.Order);
+                photo.Order,
+                wasCreated);
         }
         catch
         {
             if (File.Exists(temporaryPath)) File.Delete(temporaryPath);
             throw;
         }
+    }
+
+    public Task DeleteAsync(
+        string storageKey,
+        CancellationToken cancellationToken)
+    {
+        cancellationToken.ThrowIfCancellationRequested();
+        var normalizedKey = storageKey
+            .Replace('/', Path.DirectorySeparatorChar)
+            .Replace('\\', Path.DirectorySeparatorChar);
+        var fullPath = ResolveInsideRoot(normalizedKey);
+        if (File.Exists(fullPath)) File.Delete(fullPath);
+        return Task.CompletedTask;
+    }
+
+    public Task<Stream> OpenReadAsync(
+        string storageKey,
+        CancellationToken cancellationToken)
+    {
+        cancellationToken.ThrowIfCancellationRequested();
+        var normalizedKey = storageKey
+            .Replace('/', Path.DirectorySeparatorChar)
+            .Replace('\\', Path.DirectorySeparatorChar);
+        var fullPath = ResolveInsideRoot(normalizedKey);
+        Stream stream = new FileStream(
+            fullPath,
+            FileMode.Open,
+            FileAccess.Read,
+            FileShare.Read,
+            bufferSize: 81920,
+            useAsync: true);
+        return Task.FromResult(stream);
     }
 
     private string ResolveInsideRoot(string relativePath)

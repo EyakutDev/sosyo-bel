@@ -23,4 +23,8 @@ public interface IAccountAdministrationService
         SetLockedApplicationEditPermissionAsync(
             SetLockedApplicationEditPermissionCommand command,
             CancellationToken cancellationToken);
+
+    Task<AdministrationResult<PermissionChangeSummary>> SetKpsLookupPermissionAsync(
+        SetKpsLookupPermissionCommand command,
+        CancellationToken cancellationToken);
 }

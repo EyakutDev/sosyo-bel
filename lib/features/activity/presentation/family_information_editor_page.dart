@@ -3,6 +3,7 @@ import 'package:flutter/services.dart';
 import 'package:sosyo_bel/core/theme/app_colors.dart';
 import 'package:sosyo_bel/features/activity/presentation/models/family_information_view_data.dart';
 import 'package:sosyo_bel/features/activity/presentation/widgets/family_member_form_sheet.dart';
+import 'package:sosyo_bel/features/application/domain/application_reference_catalog.dart';
 
 /// Kalemli genel eylemin açtığı manuel aile bilgileri yönetim ekranı.
 ///
@@ -12,11 +13,13 @@ class FamilyInformationEditorPage extends StatefulWidget {
   const FamilyInformationEditorPage({
     required this.data,
     required this.onChanged,
+    required this.referenceCatalog,
     super.key,
   });
 
   final FamilyInformationViewData data;
   final ValueChanged<FamilyInformationViewData> onChanged;
+  final ApplicationReferenceCatalog referenceCatalog;
 
   @override
   State<FamilyInformationEditorPage> createState() =>
@@ -40,7 +43,10 @@ class _FamilyInformationEditorPageState
   }
 
   Future<void> _addMember() async {
-    final member = await showFamilyMemberFormSheet(context);
+    final member = await showFamilyMemberFormSheet(
+      context,
+      referenceCatalog: widget.referenceCatalog,
+    );
     if (!mounted || member == null) return;
 
     setState(() => _members.add(member));
@@ -51,6 +57,7 @@ class _FamilyInformationEditorPageState
   Future<void> _editMember(int index) async {
     final updatedMember = await showFamilyMemberFormSheet(
       context,
+      referenceCatalog: widget.referenceCatalog,
       initialMember: _members[index],
     );
     if (!mounted || updatedMember == null) return;

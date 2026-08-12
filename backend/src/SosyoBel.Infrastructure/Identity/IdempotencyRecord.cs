@@ -1,3 +1,5 @@
+using System.Security.Cryptography;
+using System.Text;
 using System.Text.Json;
 
 namespace SosyoBel.Infrastructure.Identity;
@@ -15,6 +17,10 @@ internal sealed class IdempotencyRecord
     public long Id { get; private set; }
 
     public string ActorUserId { get; private set; } = string.Empty;
+
+    // Geniş kullanıcı anahtarını benzersiz birleşik indekse doğrudan koymamayı
+    // sağlar. Özet yalnız indeks içindir; asıl foreign key ActorUserId alanıdır.
+    public byte[] ActorUserIdHash { get; private set; } = [];
 
     public string EndpointCode { get; private set; } = string.Empty;
 
@@ -51,9 +57,16 @@ internal sealed class IdempotencyRecord
             throw new ArgumentOutOfRangeException(nameof(expiresAtUtc));
         }
 
+        var normalizedActorUserId = NormalizeRequired(
+            actorUserId,
+            nameof(actorUserId),
+            450);
+
         return new IdempotencyRecord
         {
-            ActorUserId = NormalizeRequired(actorUserId, nameof(actorUserId), 128),
+            ActorUserId = normalizedActorUserId,
+            ActorUserIdHash = SHA256.HashData(
+                Encoding.UTF8.GetBytes(normalizedActorUserId)),
             EndpointCode = NormalizeRequired(endpointCode, nameof(endpointCode), 150),
             IdempotencyKey = NormalizeIdempotencyKey(idempotencyKey),
             RequestHash = requestHash.ToArray(),

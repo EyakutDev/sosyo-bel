@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:sosyo_bel/core/theme/app_theme.dart';
 import 'package:sosyo_bel/features/activity/presentation/household_status_page.dart';
 import 'package:sosyo_bel/features/application/presentation/widgets/application_exit_dialog.dart';
+import 'preview_application_references.dart';
 
 void main() {
   runApp(const _ApplicationExitDialogPreviewApp());
@@ -42,6 +43,7 @@ class _ApplicationExitDialogPreviewPageState
   @override
   Widget build(BuildContext context) {
     return HouseholdStatusPage(
+      questions: previewHouseholdQuestions,
       onBack: () => showApplicationExitDialog(context),
       onContinue: (_) {},
       onCapturePhoto: () async => null,

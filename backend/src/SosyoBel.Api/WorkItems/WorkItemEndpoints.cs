@@ -15,8 +15,9 @@ internal static class WorkItemEndpoints
             .WithTags("İş Listesi")
             .WithSummary("Personelin bekleyen ve tamamlanan işlerini getirir")
             .WithDescription(
-                "Personelin kendi oluşturduğu başvurular ile kendisine atanmış saha görevlerini tek listede döndürür. " +
-                "Aynı başvuru iki kaynakta da bulunuyorsa yalnızca görev kaydı gösterilir. " +
+                "Şirketin dbo.Basvurular tablosundaki, personelin kendi oluşturduğu başvuruları mobil metadata ve " +
+                "kararlı durum kodlarıyla listeler. Görev atama tablosunun şirket eşlemesi kesinleştiğinde aynı " +
+                "yanıt sözleşmesine ikinci kaynak olarak eklenecektir. " +
                 "limit değeri 1-100 arasındadır ve varsayılanı 50'dir.")
             .RequireAuthorization(AuthorizationPolicyNames.Personnel);
 

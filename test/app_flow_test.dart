@@ -7,16 +7,24 @@ import 'package:sosyo_bel/core/auth/auth_tokens.dart';
 import 'package:sosyo_bel/features/auth/domain/auth_repository.dart';
 import 'package:sosyo_bel/features/auth/domain/authentication_session.dart';
 import 'package:sosyo_bel/features/application/domain/application_lifecycle_entry.dart';
+import 'package:sosyo_bel/features/application/domain/application_reference_catalog.dart';
 import 'package:sosyo_bel/features/application/domain/application_repository.dart';
+import 'package:sosyo_bel/features/application/domain/kps_profile.dart';
 import 'package:sosyo_bel/features/application/presentation/models/application_draft.dart';
+import 'package:sosyo_bel/features/activity/presentation/fixtures/citizen_profile_design_fixture.dart';
+import 'package:sosyo_bel/features/activity/presentation/models/family_information_view_data.dart';
+import 'package:sosyo_bel/features/activity/presentation/models/household_status_view_data.dart';
 import 'package:sosyo_bel/features/home/domain/work_item.dart';
 import 'package:sosyo_bel/features/home/domain/work_items_repository.dart';
+import 'support/application_reference_test_catalog.dart';
 
 void main() {
   Future<void> pumpApp(
     WidgetTester tester, {
     AuthRepository? authRepository,
     ApplicationRepository? applicationRepository,
+    KpsProfileRepository? kpsProfileRepository,
+    WorkItemsRepository? workItemsRepository,
     bool waitForRestore = true,
     bool enterCredentials = true,
   }) async {
@@ -30,7 +38,10 @@ void main() {
         authRepository: authRepository ?? _SuccessfulAuthRepository(),
         applicationRepository:
             applicationRepository ?? _FakeApplicationRepository(),
-        workItemsRepository: _EmptyWorkItemsRepository(),
+        applicationReferenceRepository: _FakeApplicationReferenceRepository(),
+        kpsProfileRepository:
+            kpsProfileRepository ?? _SuccessfulKpsProfileRepository(),
+        workItemsRepository: workItemsRepository ?? _EmptyWorkItemsRepository(),
       ),
     );
     if (waitForRestore) {
@@ -48,6 +59,25 @@ void main() {
       find.byKey(const Key('login-password-field')),
       'TestSifresi123!',
     );
+  }
+
+  Future<void> answerRequiredHouseholdQuestions(WidgetTester tester) async {
+    const answers = {
+      'MULKIYET_DURUMU': 'Ev Sahibi',
+      'MULK_TIPI': 'Apartman Dairesi',
+      'EV_TEMIZLIGI': 'Evet',
+      'BARINMA_DURUMU': 'İyi',
+      'EV_ESYALARI': 'Yeterli',
+    };
+
+    for (final answer in answers.entries) {
+      final dropdown = find.byKey(Key('household-question-${answer.key}'));
+      await tester.ensureVisible(dropdown);
+      await tester.tap(dropdown);
+      await tester.pumpAndSettle();
+      await tester.tap(find.text(answer.value).last);
+      await tester.pumpAndSettle();
+    }
   }
 
   testWidgets('kayıtlı geçerli oturumla giriş formunu geçip işlemleri açar', (
@@ -104,6 +134,69 @@ void main() {
 
     expect(find.text('Bekleyen Liste'), findsOneWidget);
     expect(find.text('Tamamlanmış'), findsOneWidget);
+  });
+
+  testWidgets('bekleyen taslağı sunucudan yükleyip formda yeniden açar', (
+    tester,
+  ) async {
+    const applicationPublicId = '22222222-2222-2222-2222-222222222222';
+    final repository = _FakeApplicationRepository(
+      loadedDraft: const LoadedApplicationDraft(
+        entry: ApplicationLifecycleEntry(
+          applicationPublicId: applicationPublicId,
+          applicationNumber: 'B-2026-152',
+          statusCode: 'TASLAK',
+          isEditable: true,
+          rowVersion: 'AAAAAAAAAAE=',
+        ),
+        draft: ApplicationDraft(
+          applicationForm: NewApplicationFormData(
+            identityNumber: '12345678901',
+            birthDate: '03.11.2002',
+            disabilityStatusCode: 'YOK',
+            disabilityStatus: 'Yok',
+            phoneNumber: '5345512872',
+            helpTypeCode: 'GIDA',
+            helpType: 'Gıda Yardımı',
+            description: 'Geri yüklenen taslak',
+          ),
+          citizenProfile: CitizenProfileDesignFixture.profile,
+          familyInformation: FamilyInformationViewData(members: []),
+          householdStatus: HouseholdStatusDraft(
+            answers: {},
+            photos: [],
+            saveToBeneficiaryDirectory: false,
+            replaceRemotePhotosOnSave: true,
+          ),
+        ),
+      ),
+    );
+    final item = WorkItem(
+      applicationPublicId: applicationPublicId,
+      applicationNumber: 'B-2026-152',
+      sourceCode: 'OWN_APPLICATION',
+      statusCode: 'TASLAK',
+      isCompleted: false,
+      isEditable: true,
+      activityAtUtc: DateTime.utc(2026, 8, 11, 10),
+    );
+    await pumpApp(
+      tester,
+      applicationRepository: repository,
+      workItemsRepository: _FixedWorkItemsRepository([item]),
+    );
+
+    await tester.tap(find.byKey(const Key('login-submit-button')));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Görevler'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('B-2026-152'));
+    await tester.pumpAndSettle();
+
+    expect(repository.getCount, 1);
+    expect(find.text('Yeni Başvuru'), findsOneWidget);
+    expect(find.text('12345678901'), findsOneWidget);
+    expect(find.text('Geri yüklenen taslak'), findsOneWidget);
   });
 
   testWidgets('Başvuru Yap yeni formu açar', (tester) async {
@@ -222,6 +315,8 @@ void main() {
     expect(find.text('01/01/1990'), findsOneWidget);
     expect(find.text('(555)-123-4567'), findsOneWidget);
     expect(find.text('Yok'), findsOneWidget);
+    expect(find.text('ÖRNEK KİŞİ'), findsOneWidget);
+    expect(find.text('Örnek Mah. Test Sk. No: 1'), findsOneWidget);
     await tester.tap(find.byKey(const Key('citizen-profile-back-button')));
     await tester.pumpAndSettle();
     expect(find.text('Başvuru Ekranına Dön'), findsOneWidget);
@@ -279,13 +374,17 @@ void main() {
     await tester.tap(find.byKey(const Key('activity-return-stay-button')));
     await tester.pumpAndSettle();
 
+    await answerRequiredHouseholdQuestions(tester);
     await tester.tap(find.byKey(const Key('household-continue-button')));
     await tester.pump();
     expect(find.byKey(const Key('household-camera-button')), findsOneWidget);
 
     await tester.tap(find.byKey(const Key('household-back-button')));
     await tester.pump();
-    expect(find.text('Mülkiyet Durumu'), findsOneWidget);
+    expect(
+      find.byKey(const Key('household-question-MULKIYET_DURUMU')),
+      findsOneWidget,
+    );
     expect(find.byKey(const Key('activity-return-dialog')), findsNothing);
 
     await tester.tap(find.byKey(const Key('household-continue-button')));
@@ -359,6 +458,7 @@ void main() {
       find.byKey(const Key('family-information-continue-button')),
     );
     await tester.pumpAndSettle();
+    await answerRequiredHouseholdQuestions(tester);
     await tester.tap(find.byKey(const Key('household-continue-button')));
     await tester.pump();
     await tester.tap(find.byKey(const Key('household-continue-button')));
@@ -420,13 +520,74 @@ class _EmptyWorkItemsRepository implements WorkItemsRepository {
   Future<List<WorkItem>> getMyWorkItems({int limit = 100}) async => const [];
 }
 
+class _FakeApplicationReferenceRepository
+    implements ApplicationReferenceRepository {
+  @override
+  void clearCache() {}
+
+  @override
+  Future<ApplicationReferenceCatalog> getCatalog() async =>
+      applicationReferenceTestCatalog;
+}
+
+class _FixedWorkItemsRepository implements WorkItemsRepository {
+  const _FixedWorkItemsRepository(this.items);
+
+  final List<WorkItem> items;
+
+  @override
+  Future<List<WorkItem>> getMyWorkItems({int limit = 100}) async => items;
+}
+
+class _SuccessfulKpsProfileRepository implements KpsProfileRepository {
+  int lookupCount = 0;
+  String? lastIdentityNumber;
+  String? lastBirthDate;
+
+  @override
+  Future<KpsProfile> getProfile({
+    required String identityNumber,
+    required String birthDate,
+  }) async {
+    lookupCount += 1;
+    lastIdentityNumber = identityNumber;
+    lastBirthDate = birthDate;
+    return KpsProfile(
+      identityNumber: identityNumber,
+      firstName: 'ÖRNEK',
+      lastName: 'KİŞİ',
+      birthDate: birthDate,
+      fullAddress: 'Örnek Mah. Test Sk. No: 1',
+      maritalStatus: 'Evli',
+    );
+  }
+}
+
 class _FakeApplicationRepository implements ApplicationRepository {
+  _FakeApplicationRepository({this.loadedDraft});
+
+  final LoadedApplicationDraft? loadedDraft;
+  int getCount = 0;
   int createCount = 0;
   int saveFieldDataCount = 0;
   int uploadCount = 0;
   int submitCount = 0;
   ApplicationDraft? lastCreatedDraft;
   String? lastSubmittedRowVersion;
+
+  @override
+  Future<LoadedApplicationDraft> getDraft({
+    required String applicationPublicId,
+    required ApplicationReferenceCatalog referenceCatalog,
+  }) async {
+    getCount += 1;
+    final result = loadedDraft;
+    if (result == null) {
+      throw UnimplementedError('Bu fake testte taslak okuma kullanılmıyor.');
+    }
+    expect(result.entry.applicationPublicId, applicationPublicId);
+    return result;
+  }
 
   @override
   Future<ApplicationLifecycleEntry> createDraft({
@@ -442,6 +603,21 @@ class _FakeApplicationRepository implements ApplicationRepository {
       statusCode: 'TASLAK',
       isEditable: true,
       rowVersion: 'AAAAAAAAAAE=',
+    );
+  }
+
+  @override
+  Future<ApplicationLifecycleEntry> updateDraft({
+    required ApplicationDraft draft,
+    required String applicationPublicId,
+    required String expectedRowVersion,
+  }) async {
+    return ApplicationLifecycleEntry(
+      applicationPublicId: applicationPublicId,
+      applicationNumber: '150',
+      statusCode: 'TASLAK',
+      isEditable: true,
+      rowVersion: expectedRowVersion,
     );
   }
 

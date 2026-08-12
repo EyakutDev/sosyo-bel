@@ -1,6 +1,10 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:sosyo_bel/core/network/api_exception.dart';
 import 'package:sosyo_bel/core/theme/app_theme.dart';
+import 'package:sosyo_bel/features/application/domain/application_reference_catalog.dart';
 import 'package:sosyo_bel/features/application/presentation/formatters/day_month_year_input_formatter.dart';
 import 'package:sosyo_bel/features/application/presentation/formatters/phone_number_input_formatter.dart';
 import 'package:sosyo_bel/features/application/presentation/models/application_draft.dart';
@@ -46,7 +50,7 @@ void main() {
 
   Future<void> pumpPage(
     WidgetTester tester, {
-    required ValueChanged<NewApplicationFormData> onContinue,
+    required Future<void> Function(NewApplicationFormData) onContinue,
     NewApplicationFormData? initialData,
   }) async {
     tester.view.physicalSize = const Size(390, 844);
@@ -58,6 +62,7 @@ void main() {
       MaterialApp(
         theme: AppTheme.light,
         home: NewApplicationPage(
+          referenceCatalog: _referenceCatalog,
           initialData: initialData,
           onContinue: onContinue,
         ),
@@ -66,7 +71,7 @@ void main() {
   }
 
   testWidgets('paylaşılan form alanlarını gösterir', (tester) async {
-    await pumpPage(tester, onContinue: (_) {});
+    await pumpPage(tester, onContinue: (_) async {});
 
     expect(find.text('Yeni Başvuru'), findsOneWidget);
     expect(find.text('Kişi Bilgileri'), findsOneWidget);
@@ -83,7 +88,7 @@ void main() {
   testWidgets('TCKN alanı yalnızca en fazla 11 rakam kabul eder', (
     tester,
   ) async {
-    await pumpPage(tester, onContinue: (_) {});
+    await pumpPage(tester, onContinue: (_) async {});
 
     await tester.enterText(
       find.byKey(const Key('new-application-tckn-field')),
@@ -102,7 +107,7 @@ void main() {
   testWidgets('telefon alanını yazarken otomatik biçimlendirir', (
     tester,
   ) async {
-    await pumpPage(tester, onContinue: (_) {});
+    await pumpPage(tester, onContinue: (_) async {});
 
     await tester.enterText(
       find.byKey(const Key('new-application-phone-field')),
@@ -121,7 +126,7 @@ void main() {
   testWidgets(
     'yardım türü listesi alanla aynı genişlikte açılır ve açıklamayı aşağı iter',
     (tester) async {
-      await pumpPage(tester, onContinue: (_) {});
+      await pumpPage(tester, onContinue: (_) async {});
 
       final control = find.byKey(
         const Key('new-application-help-dropdown-control'),
@@ -157,7 +162,7 @@ void main() {
     NewApplicationFormData? submittedData;
     await pumpPage(
       tester,
-      onContinue: (data) {
+      onContinue: (data) async {
         continueCount++;
         submittedData = data;
       },
@@ -199,8 +204,10 @@ void main() {
     expect(continueCount, 1);
     expect(submittedData?.identityNumber, '12345678901');
     expect(submittedData?.birthDate, '01/01/1990');
+    expect(submittedData?.disabilityStatusCode, 'YOK');
     expect(submittedData?.disabilityStatus, 'Yok');
     expect(submittedData?.phoneNumber, '(555)-123-4567');
+    expect(submittedData?.helpTypeCode, 'GIDA');
     expect(submittedData?.helpType, 'Gıda Yardımı');
     expect(submittedData?.description, 'Gıda desteği talebi');
   });
@@ -211,12 +218,14 @@ void main() {
     const initialData = NewApplicationFormData(
       identityNumber: '12345678901',
       birthDate: '03/11/2002',
+      disabilityStatusCode: 'ORTOPEDIK',
       disabilityStatus: 'Ortopedik',
       phoneNumber: '(534)-551-2872',
+      helpTypeCode: 'NAKDI',
       helpType: 'Nakdi Yardım',
       description: 'Korunan açıklama',
     );
-    await pumpPage(tester, initialData: initialData, onContinue: (_) {});
+    await pumpPage(tester, initialData: initialData, onContinue: (_) async {});
 
     String fieldText(String key) {
       final field = tester.widget<TextFormField>(
@@ -241,4 +250,105 @@ void main() {
     expect(find.text(initialData.disabilityStatus), findsOneWidget);
     expect(find.text(initialData.helpType), findsOneWidget);
   });
+
+  testWidgets('KPS sorgusu sürerken butonu kilitler ve yükleme gösterir', (
+    tester,
+  ) async {
+    final completer = Completer<void>();
+    var callCount = 0;
+    await pumpPage(
+      tester,
+      onContinue: (_) {
+        callCount += 1;
+        return completer.future;
+      },
+    );
+    await _enterRequiredFormData(tester);
+
+    final button = find.byKey(const Key('new-application-continue-button'));
+    await tester.ensureVisible(button);
+    await tester.tap(button);
+    await tester.pump();
+
+    expect(callCount, 1);
+    expect(
+      find.byKey(const Key('new-application-kps-loading-indicator')),
+      findsOneWidget,
+    );
+    await tester.tap(button);
+    await tester.pump();
+    expect(callCount, 1);
+
+    completer.complete();
+    await tester.pumpAndSettle();
+    expect(
+      find.byKey(const Key('new-application-kps-loading-indicator')),
+      findsNothing,
+    );
+  });
+
+  testWidgets('KPS hatasında formu koruyup temalı uyarı gösterir', (
+    tester,
+  ) async {
+    await pumpPage(
+      tester,
+      onContinue: (_) => throw const ApiException(
+        kind: ApiErrorKind.forbidden,
+        message: 'KPS sorgulama yetkisi bulunmuyor.',
+      ),
+    );
+    await _enterRequiredFormData(tester);
+
+    final button = find.byKey(const Key('new-application-continue-button'));
+    await tester.ensureVisible(button);
+    await tester.tap(button);
+    await tester.pumpAndSettle();
+
+    expect(
+      find.byKey(const Key('new-application-kps-error-notice')),
+      findsOneWidget,
+    );
+    expect(find.text('KPS sorgulama yetkisi bulunmuyor.'), findsOneWidget);
+    expect(find.text('Yeni Başvuru'), findsOneWidget);
+    expect(find.text('12345678901'), findsOneWidget);
+  });
 }
+
+Future<void> _enterRequiredFormData(WidgetTester tester) async {
+  await tester.enterText(
+    find.byKey(const Key('new-application-tckn-field')),
+    '12345678901',
+  );
+  await tester.enterText(
+    find.byKey(const Key('new-application-birth-date-field')),
+    '14.09.1986',
+  );
+  await tester.enterText(
+    find.byKey(const Key('new-application-phone-field')),
+    '05551234567',
+  );
+  final helpDropdownControl = find.byKey(
+    const Key('new-application-help-dropdown-control'),
+  );
+  await tester.ensureVisible(helpDropdownControl);
+  await tester.tap(helpDropdownControl);
+  await tester.pumpAndSettle();
+  await tester.tap(find.text('Gıda Yardımı').last);
+  await tester.pumpAndSettle();
+}
+
+const _referenceCatalog = ApplicationReferenceCatalog(
+  helpTypes: [
+    ApplicationReferenceOption(code: 'GIDA', label: 'Gıda Yardımı'),
+    ApplicationReferenceOption(code: 'NAKDI', label: 'Nakdi Yardım'),
+  ],
+  disabilityStatuses: [
+    ApplicationReferenceOption(code: 'YOK', label: 'Yok'),
+    ApplicationReferenceOption(code: 'ORTOPEDIK', label: 'Ortopedik'),
+  ],
+  relationships: [],
+  employmentStatuses: [],
+  educationStatuses: [],
+  vitalStatuses: [],
+  householdQuestions: [],
+);

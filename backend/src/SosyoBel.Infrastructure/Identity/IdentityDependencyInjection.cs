@@ -34,7 +34,8 @@ public static class IdentityDependencyInjection
             .AddIdentityCore<ApplicationUser>(options =>
             {
                 options.User.RequireUniqueEmail = true;
-                options.Stores.MaxLengthForKeys = 128;
+                // Şirketin mevcut ASP.NET Identity tablolarındaki anahtar uzunluğu.
+                options.Stores.MaxLengthForKeys = 450;
                 options.SignIn.RequireConfirmedEmail = true;
 
                 options.Password.RequiredLength = 10;
@@ -50,7 +51,9 @@ public static class IdentityDependencyInjection
             })
             .AddRoles<IdentityRole>()
             .AddSignInManager()
-            .AddEntityFrameworkStores<AuthenticationDbContext>();
+            .AddEntityFrameworkStores<AuthenticationDbContext>()
+            // Belediye yöneticisinin parola sıfırlama akışı bu sağlayıcıyı kullanır.
+            .AddDefaultTokenProviders();
 
         services
             .AddOptions<AuthenticationSessionOptions>()

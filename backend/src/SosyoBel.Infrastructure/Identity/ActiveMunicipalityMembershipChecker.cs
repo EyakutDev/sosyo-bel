@@ -22,15 +22,15 @@ internal sealed class ActiveMunicipalityMembershipChecker(
             from membership in dbContext.UserMunicipalities.AsNoTracking()
             join municipality in dbContext.Municipalities.AsNoTracking()
                 on membership.MunicipalityId equals municipality.Id
-            join user in dbContext.Users.AsNoTracking()
-                on membership.UserId equals user.Id
+            join userInfo in dbContext.UserApplicationInfos.AsNoTracking()
+                on membership.UserId equals userInfo.UserId
             where membership.Id == municipalityMembershipId &&
                   membership.UserId == userId &&
                   membership.MunicipalityId == municipalityId &&
                   membership.RoleCode == requiredRoleCode &&
                   membership.IsActive &&
                   municipality.IsActive &&
-                  user.IsActive
+                  userInfo.IsActive
             select membership.Id)
             .AnyAsync(cancellationToken);
     }

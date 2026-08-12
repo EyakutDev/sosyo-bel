@@ -64,6 +64,21 @@ class ApiClient {
     cancelToken: cancelToken,
   );
 
+  /// Yetkilendirilmiş fotoğraf gibi ikili içerikleri JSON dönüşümüne sokmadan indirir.
+  Future<ApiResponse<List<int>>> getBytes(
+    String path, {
+    Map<String, dynamic>? queryParameters,
+    Map<String, dynamic>? headers,
+    CancelToken? cancelToken,
+  }) => request<List<int>>(
+    'GET',
+    path,
+    queryParameters: queryParameters,
+    headers: headers,
+    cancelToken: cancelToken,
+    responseType: ResponseType.bytes,
+  );
+
   Future<ApiResponse<T>> post<T>(
     String path, {
     Object? data,
@@ -140,6 +155,7 @@ class ApiClient {
     Map<String, dynamic>? headers,
     bool skipAuthorization = false,
     CancelToken? cancelToken,
+    ResponseType? responseType,
   }) async {
     try {
       final response = await _dio.request<T>(
@@ -150,6 +166,7 @@ class ApiClient {
         options: Options(
           method: method,
           headers: headers,
+          responseType: responseType,
           extra: {skipAuthorizationKey: skipAuthorization},
         ),
       );

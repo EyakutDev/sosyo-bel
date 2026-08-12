@@ -137,12 +137,129 @@ public sealed class ApplicationLifecycleTests
         using var context = new SosyoBelDbContext(options);
         var metadata = context.Model.FindEntityType(typeof(ApplicationRecord));
         var property = metadata?.FindProperty(nameof(ApplicationRecord.RowVersion));
-        var table = StoreObjectIdentifier.Table("Basvurular", "sosyobel");
+        var table = StoreObjectIdentifier.Table(
+            "BasvuruUygulamaBilgileri",
+            "sosyobel");
 
         Assert.NotNull(property);
         Assert.True(property.IsConcurrencyToken);
         Assert.Equal(ValueGenerated.OnAddOrUpdate, property.ValueGenerated);
         Assert.Equal("RowVersion", property.GetColumnName(table));
+    }
+
+    [Fact]
+    public void ApplicationUsesCompanyTableAndOneToOneMetadataExtension()
+    {
+        var options = new DbContextOptionsBuilder<SosyoBelDbContext>()
+            .UseSqlServer("Server=unused;Database=unused;Integrated Security=True;TrustServerCertificate=True")
+            .Options;
+        using var context = new SosyoBelDbContext(options);
+        var metadata = context.Model.FindEntityType(typeof(ApplicationRecord));
+        var companyTable = StoreObjectIdentifier.Table("Basvurular", "dbo");
+        var extensionTable = StoreObjectIdentifier.Table(
+            "BasvuruUygulamaBilgileri",
+            "sosyobel");
+
+        Assert.NotNull(metadata);
+        Assert.Equal(
+            "BasvuranTcKimlikNo",
+            metadata.FindProperty(nameof(ApplicationRecord.IdentityNumber))
+                ?.GetColumnName(companyTable));
+        Assert.Equal(
+            "PublicId",
+            metadata.FindProperty(nameof(ApplicationRecord.PublicId))
+                ?.GetColumnName(extensionTable));
+        Assert.Equal(
+            "BasvuruId",
+            metadata.FindProperty(nameof(ApplicationRecord.Id))
+                ?.GetColumnName(extensionTable));
+        Assert.Null(metadata.FindProperty("MunicipalityId"));
+    }
+
+    [Fact]
+    public void FamilyMemberUsesCompanyTableAndOneToOneMetadataExtension()
+    {
+        var options = new DbContextOptionsBuilder<SosyoBelDbContext>()
+            .UseSqlServer("Server=unused;Database=unused;Integrated Security=True;TrustServerCertificate=True")
+            .Options;
+        using var context = new SosyoBelDbContext(options);
+        var metadata = context.Model.FindEntityType(typeof(ApplicationFamilyMemberRecord));
+        var companyTable = StoreObjectIdentifier.Table("BasvuruAileFertleri", "dbo");
+        var extensionTable = StoreObjectIdentifier.Table(
+            "BasvuruAileFertiUygulamaBilgileri",
+            "sosyobel");
+
+        Assert.NotNull(metadata);
+        Assert.Equal(
+            "AdSoyad",
+            metadata.FindProperty(nameof(ApplicationFamilyMemberRecord.FullName))
+                ?.GetColumnName(companyTable));
+        Assert.Equal(
+            "YasamDurumuId",
+            metadata.FindProperty(nameof(ApplicationFamilyMemberRecord.VitalStatusId))
+                ?.GetColumnName(extensionTable));
+        Assert.Equal(
+            "BasvuruAileFertiId",
+            metadata.FindProperty(nameof(ApplicationFamilyMemberRecord.Id))
+                ?.GetColumnName(extensionTable));
+        Assert.Null(metadata.FindProperty("MunicipalityId"));
+        Assert.Null(metadata.FindProperty("SourceFamilyMemberId"));
+    }
+
+    [Theory]
+    [InlineData(typeof(ApplicationStatusReference), "BasvuruDurumlari")]
+    [InlineData(typeof(HelpTypeReference), "YardimTurleri")]
+    [InlineData(typeof(DisabilityTypeReference), "EngelTurleri")]
+    [InlineData(typeof(RequestChannelReference), "TalepGelisKanallari")]
+    [InlineData(typeof(RelationshipReference), "Yakinliklar")]
+    [InlineData(typeof(EmploymentStatusReference), "CalismaDurumlari")]
+    [InlineData(typeof(EducationStatusReference), "EgitimDurumlari")]
+    public void CoreReferencesUseExistingCompanyLookupTables(
+        Type entityType,
+        string tableName)
+    {
+        var options = new DbContextOptionsBuilder<SosyoBelDbContext>()
+            .UseSqlServer("Server=unused;Database=unused;Integrated Security=True;TrustServerCertificate=True")
+            .Options;
+        using var context = new SosyoBelDbContext(options);
+        var metadata = context.Model.FindEntityType(entityType);
+
+        Assert.NotNull(metadata);
+        Assert.Equal(tableName, metadata.GetTableName());
+        Assert.Equal("dbo", metadata.GetSchema());
+    }
+
+    [Fact]
+    public void ReferenceCatalogFieldsMatchCompanyAndSosyoBelColumns()
+    {
+        var options = new DbContextOptionsBuilder<SosyoBelDbContext>()
+            .UseSqlServer("Server=unused;Database=unused;Integrated Security=True;TrustServerCertificate=True")
+            .Options;
+        using var context = new SosyoBelDbContext(options);
+
+        var help = context.Model.FindEntityType(typeof(HelpTypeReference));
+        var vital = context.Model.FindEntityType(typeof(VitalStatusReference));
+        var question = context.Model.FindEntityType(typeof(HouseholdQuestionReference));
+        var option = context.Model.FindEntityType(typeof(HouseholdQuestionOptionReference));
+        var helpTable = StoreObjectIdentifier.Table("YardimTurleri", "dbo");
+        var vitalTable = StoreObjectIdentifier.Table("YasamDurumlari", "sosyobel");
+        var questionTable = StoreObjectIdentifier.Table("HaneSorulari", "sosyobel");
+        var optionTable = StoreObjectIdentifier.Table("HaneSoruSecenekleri", "sosyobel");
+
+        Assert.Equal("Name", help?.FindProperty(nameof(HelpTypeReference.Name))
+            ?.GetColumnName(helpTable));
+        Assert.Equal("Ad", vital?.FindProperty(nameof(VitalStatusReference.Name))
+            ?.GetColumnName(vitalTable));
+        Assert.Equal("SiraNo", vital?.FindProperty(nameof(VitalStatusReference.Order))
+            ?.GetColumnName(vitalTable));
+        Assert.Equal("SoruMetni", question?.FindProperty(nameof(HouseholdQuestionReference.Label))
+            ?.GetColumnName(questionTable));
+        Assert.Equal("ZorunluMu", question?.FindProperty(nameof(HouseholdQuestionReference.IsRequired))
+            ?.GetColumnName(questionTable));
+        Assert.Equal("Etiket", option?.FindProperty(nameof(HouseholdQuestionOptionReference.Label))
+            ?.GetColumnName(optionTable));
+        Assert.Equal("Sira", option?.FindProperty(nameof(HouseholdQuestionOptionReference.Order))
+            ?.GetColumnName(optionTable));
     }
 
     [Theory]
@@ -160,6 +277,61 @@ public sealed class ApplicationLifecycleTests
         Assert.NotNull(property);
         Assert.Equal(typeof(int), property.ClrType);
         Assert.Equal("int", property.GetColumnType(table));
+    }
+
+    [Fact]
+    public void HouseholdPersistenceUsesSosyoBelExtensionTables()
+    {
+        var options = new DbContextOptionsBuilder<SosyoBelDbContext>()
+            .UseSqlServer("Server=unused;Database=unused;Integrated Security=True;TrustServerCertificate=True")
+            .Options;
+        using var context = new SosyoBelDbContext(options);
+
+        var answer = context.Model.FindEntityType(typeof(ApplicationHouseholdAnswerRecord));
+        var question = context.Model.FindEntityType(typeof(HouseholdQuestionReference));
+        var option = context.Model.FindEntityType(typeof(HouseholdQuestionOptionReference));
+        var answerTable = StoreObjectIdentifier.Table("BasvuruHaneCevaplari", "sosyobel");
+
+        Assert.NotNull(answer);
+        Assert.NotNull(question);
+        Assert.NotNull(option);
+        Assert.Equal("sosyobel", answer.GetSchema());
+        Assert.Equal("sosyobel", question.GetSchema());
+        Assert.Equal("sosyobel", option.GetSchema());
+        Assert.Equal(
+            "BasvuruId",
+            answer.FindProperty(nameof(ApplicationHouseholdAnswerRecord.ApplicationId))
+                ?.GetColumnName(answerTable));
+        Assert.Equal(
+            "SecenekId",
+            answer.FindProperty(nameof(ApplicationHouseholdAnswerRecord.OptionId))
+                ?.GetColumnName(answerTable));
+    }
+
+    [Fact]
+    public void PhotoPersistenceUsesApplicationScopedSosyoBelTable()
+    {
+        var options = new DbContextOptionsBuilder<SosyoBelDbContext>()
+            .UseSqlServer("Server=unused;Database=unused;Integrated Security=True;TrustServerCertificate=True")
+            .Options;
+        using var context = new SosyoBelDbContext(options);
+        var metadata = context.Model.FindEntityType(typeof(ApplicationPhotoRecord));
+        var table = StoreObjectIdentifier.Table("BasvuruFotograflari", "sosyobel");
+
+        Assert.NotNull(metadata);
+        Assert.Equal("sosyobel", metadata.GetSchema());
+        Assert.Equal(
+            "BasvuruId",
+            metadata.FindProperty(nameof(ApplicationPhotoRecord.ApplicationId))
+                ?.GetColumnName(table));
+        Assert.Equal(
+            "SiraNo",
+            metadata.FindProperty(nameof(ApplicationPhotoRecord.Order))
+                ?.GetColumnName(table));
+        Assert.Equal(
+            "binary(32)",
+            metadata.FindProperty(nameof(ApplicationPhotoRecord.Sha256))
+                ?.GetColumnType(table));
     }
 
     private static ApplicationDraftData Draft() =>

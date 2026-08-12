@@ -27,6 +27,11 @@ internal static class ApplicationEndpoints
             .WithSummary("Başvuru ayrıntılarını getirir")
             .WithDescription(
                 "Yalnız başvuruyu oluşturan personel ve aynı belediye kapsamı kaydı okuyabilir.");
+        group.MapGet("/{applicationPublicId:guid}/draft-snapshot", GetDraftSnapshotAsync)
+            .WithSummary("Kaydedilmiş başvuru taslağını yeniden açmak için getirir")
+            .WithDescription(
+                "Çekirdek başvuru, manuel aile üyeleri, hane cevapları ve aktif fotoğraf metadata bilgisini " +
+                "tek yanıtta döndürür. Fotoğraf içerikleri yetkilendirilmiş ayrı endpoint üzerinden alınır.");
         group.MapPut("/{applicationPublicId:guid}/draft", UpdateDraftAsync)
             .WithSummary("Başvuru taslağını günceller")
             .WithDescription(
@@ -36,16 +41,23 @@ internal static class ApplicationEndpoints
             .WithSummary("Başvurunun aile ve hane saha verisini kaydeder")
             .WithDescription(
                 "Manuel aile üyelerini ve yönetilebilir hane soru cevaplarını başvurunun değişmez anlık kopyası olarak kaydeder. " +
+                "Referans kataloğunda zorunlu işaretlenen etkin hane sorularının tamamı cevaplanmalıdır. " +
                 "Yalnız TASLAK kayıt güncellenebilir ve güncel RowVersion zorunludur.");
         group.MapPost("/{applicationPublicId:guid}/photos", UploadPhotosAsync)
             .WithSummary("Başvurunun hane fotoğraflarını yükler")
             .WithDescription(
-                "1-15 JPEG, PNG, HEIC veya HEIF fotoğrafını özel dosya deposuna aktarır; " +
+                "0-15 JPEG, PNG, HEIC veya HEIF fotoğrafını özel dosya deposuna aktarır; boş liste aktif fotoğrafları temizler. " +
                 "SQL Server yalnız metadata ve SHA-256 özetini saklar. Her dosya en fazla 10 MB olabilir. " +
-                "Idempotency-Key ve güncel RowVersion zorunludur.")
+                "TASLAK durumunda yeni toplu yükleme aktif fotoğraf anlık kopyasını değiştirir; eski metadata audit için korunur. " +
+                "Idempotency-Key ve güncel RowVersion zorunludur, kurula gönderilen başvuru değiştirilemez.")
             .WithMetadata(new Microsoft.AspNetCore.Mvc.RequestSizeLimitAttribute(
                 160L * 1024 * 1024))
             .DisableAntiforgery();
+        group.MapGet("/{applicationPublicId:guid}/photos/{photoId:int}", DownloadPhotoAsync)
+            .WithSummary("Başvuru fotoğrafını güvenli depodan indirir")
+            .WithDescription(
+                "Yalnız başvuruyu oluşturan aynı belediye personeli aktif fotoğrafı okuyabilir; " +
+                "fiziksel depolama yolu istemciye açıklanmaz.");
         group.MapPost("/{applicationPublicId:guid}/submit", SubmitAsync)
             .WithSummary("Başvuruyu kurula gönderir ve kilitler")
             .WithDescription(
@@ -86,6 +98,22 @@ internal static class ApplicationEndpoints
         if (errors.Count > 0) return Results.ValidationProblem(errors);
 
         return ToHttpResult(await service.GetAsync(
+            actor!,
+            applicationPublicId,
+            cancellationToken));
+    }
+
+    private static async Task<IResult> GetDraftSnapshotAsync(
+        Guid applicationPublicId,
+        ClaimsPrincipal principal,
+        IApplicationLifecycleService service,
+        CancellationToken cancellationToken)
+    {
+        var errors = new Dictionary<string, string[]>();
+        var actor = ReadActor(principal, errors);
+        if (errors.Count > 0) return Results.ValidationProblem(errors);
+
+        return ToHttpResult(await service.GetDraftSnapshotAsync(
             actor!,
             applicationPublicId,
             cancellationToken));
@@ -182,8 +210,6 @@ internal static class ApplicationEndpoints
             : null;
         ValidateRowVersion(expectedRowVersion, errors);
         var files = form.Files.GetFiles("photos");
-        if (files.Count == 0)
-            errors["photos"] = ["En az bir fotoğraf zorunludur."];
         if (errors.Count > 0) return Results.ValidationProblem(errors);
 
         var streams = new List<Stream>(files.Count);
@@ -218,8 +244,34 @@ internal static class ApplicationEndpoints
         }
     }
 
-    private static IResult ToHttpResult(
-        ApplicationLifecycleResult<ApplicationDetails> result) =>
+    private static async Task<IResult> DownloadPhotoAsync(
+        Guid applicationPublicId,
+        int photoId,
+        ClaimsPrincipal principal,
+        IApplicationPhotoService service,
+        CancellationToken cancellationToken)
+    {
+        var errors = new Dictionary<string, string[]>();
+        var actor = ReadActor(principal, errors);
+        if (errors.Count > 0) return Results.ValidationProblem(errors);
+
+        var result = await service.OpenReadAsync(
+            actor!,
+            applicationPublicId,
+            photoId,
+            cancellationToken);
+        if (result.Status != ApplicationLifecycleStatus.Succeeded || result.Value is null)
+            return ToHttpResult(result);
+
+        return Results.File(
+            result.Value.Content,
+            result.Value.ContentType,
+            fileDownloadName: result.Value.DownloadFileName,
+            enableRangeProcessing: true);
+    }
+
+    private static IResult ToHttpResult<T>(
+        ApplicationLifecycleResult<T> result) =>
         result.Status switch
         {
             ApplicationLifecycleStatus.Succeeded => Results.Ok(result.Value),

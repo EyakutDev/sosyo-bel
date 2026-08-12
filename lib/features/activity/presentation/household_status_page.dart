@@ -6,7 +6,6 @@ import 'package:flutter/services.dart';
 import 'package:flutter_svg/flutter_svg.dart';
 import 'package:sosyo_bel/core/constants/app_assets.dart';
 import 'package:sosyo_bel/core/theme/app_colors.dart';
-import 'package:sosyo_bel/features/activity/presentation/fixtures/household_status_design_fixture.dart';
 import 'package:sosyo_bel/features/activity/presentation/models/household_status_view_data.dart';
 import 'package:sosyo_bel/features/activity/presentation/widgets/activity_step_tabs.dart';
 
@@ -27,10 +26,10 @@ class HouseholdStatusPage extends StatefulWidget {
     required this.onBack,
     required this.onContinue,
     required this.onCapturePhoto,
+    required this.questions,
     this.onHeaderBack,
     this.onDraftChanged,
     this.onRecoverLostPhotos,
-    this.questions = HouseholdStatusDesignFixture.questions,
     this.initialPhotos = const [],
     this.initialDraft,
     this.initialStage = HouseholdStatusStage.questions,
@@ -63,6 +62,7 @@ class _HouseholdStatusPageState extends State<HouseholdStatusPage> {
   late final List<HouseholdPhotoViewData> _photos;
   late HouseholdStatusStage _stage;
   bool _saveToBeneficiaryDirectory = false;
+  bool _replaceRemotePhotosOnSave = false;
   bool _isCapturingPhoto = false;
 
   @override
@@ -75,6 +75,8 @@ class _HouseholdStatusPageState extends State<HouseholdStatusPage> {
         .toList();
     _saveToBeneficiaryDirectory =
         widget.initialDraft?.saveToBeneficiaryDirectory ?? false;
+    _replaceRemotePhotosOnSave =
+        widget.initialDraft?.replaceRemotePhotosOnSave ?? false;
 
     if (widget.onRecoverLostPhotos != null) {
       WidgetsBinding.instance.addPostFrameCallback((_) => _recoverLostPhotos());
@@ -85,6 +87,7 @@ class _HouseholdStatusPageState extends State<HouseholdStatusPage> {
     answers: Map.unmodifiable(_answers),
     photos: List.unmodifiable(_photos),
     saveToBeneficiaryDirectory: _saveToBeneficiaryDirectory,
+    replaceRemotePhotosOnSave: _replaceRemotePhotosOnSave,
   );
 
   void _notifyDraftChanged() {
@@ -126,6 +129,21 @@ class _HouseholdStatusPageState extends State<HouseholdStatusPage> {
 
   void _continue() {
     if (_stage == HouseholdStatusStage.questions) {
+      // Zorunluluk API referans kataloğından gelir. Kod ve seçenek birlikte
+      // doğrulanarak eski veya artık aktif olmayan bir taslak cevabı kabul edilmez.
+      final missingQuestion = widget.questions
+          .where((question) => question.isRequired)
+          .where(
+            (question) => !question.options.any(
+              (option) => option.code == _answers[question.id],
+            ),
+          )
+          .firstOrNull;
+      if (missingQuestion != null) {
+        _showMessage('Lütfen "${missingQuestion.label}" sorusunu cevaplayın.');
+        return;
+      }
+
       setState(() => _stage = HouseholdStatusStage.photos);
       return;
     }
@@ -526,7 +544,7 @@ class _QuestionDropdown extends StatelessWidget {
           ),
           items: [
             for (final option in question.options)
-              DropdownMenuItem(value: option, child: Text(option)),
+              DropdownMenuItem(value: option.code, child: Text(option.label)),
           ],
           onChanged: (selectedValue) {
             if (selectedValue != null) {

@@ -10,6 +10,7 @@ import 'package:sosyo_bel/features/activity/presentation/family_information_edit
 import 'package:sosyo_bel/features/activity/presentation/models/family_information_view_data.dart';
 import 'package:sosyo_bel/features/activity/presentation/widgets/activity_step_tabs.dart';
 import 'package:sosyo_bel/features/activity/presentation/widgets/family_member_form_sheet.dart';
+import 'package:sosyo_bel/features/application/domain/application_reference_catalog.dart';
 
 /// Figma'daki `Aile Bilgileri` ekranlarının (2015:24213 ve 2020:24542)
 /// Flutter karşılığı.
@@ -22,6 +23,7 @@ class FamilyInformationPage extends StatefulWidget {
     required this.onContinue,
     required this.onUpdateInformation,
     required this.onEditMember,
+    required this.referenceCatalog,
     this.onHeaderBack,
     this.onFamilyChanged,
     this.data = FamilyInformationDesignFixture.family,
@@ -36,6 +38,7 @@ class FamilyInformationPage extends StatefulWidget {
   final VoidCallback onContinue;
   final VoidCallback onUpdateInformation;
   final ValueChanged<FamilyMemberViewData> onEditMember;
+  final ApplicationReferenceCatalog referenceCatalog;
   final ValueChanged<FamilyInformationViewData>? onFamilyChanged;
   final FamilyInformationViewData data;
 
@@ -94,6 +97,7 @@ class _FamilyInformationPageState extends State<FamilyInformationPage> {
       MaterialPageRoute<void>(
         builder: (editorContext) => FamilyInformationEditorPage(
           data: _currentData,
+          referenceCatalog: widget.referenceCatalog,
           onChanged: (updatedData) {
             if (!mounted) return;
             setState(() {
@@ -113,6 +117,7 @@ class _FamilyInformationPageState extends State<FamilyInformationPage> {
   Future<void> _editMember(int index) async {
     final updatedMember = await showFamilyMemberFormSheet(
       context,
+      referenceCatalog: widget.referenceCatalog,
       initialMember: _members[index],
     );
     if (!mounted || updatedMember == null) return;

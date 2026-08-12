@@ -1,9 +1,20 @@
 using SosyoBel.Infrastructure.Identity;
+using System.Security.Cryptography;
+using System.Text;
 
 namespace SosyoBel.UnitTests;
 
 public sealed class IdentityModelTests
 {
+    [Fact]
+    public void UserWithoutApplicationInfoIsNotTreatedAsActive()
+    {
+        // Eski Identity satırına kurum onayı olmadan otomatik yetki verilmez.
+        var userWithoutApplicationInfo = new ApplicationUser();
+
+        Assert.False(userWithoutApplicationInfo.IsActive);
+    }
+
     [Fact]
     public void AdministratorCreatedUserUsesEmailAsUsername()
     {
@@ -58,6 +69,23 @@ public sealed class IdentityModelTests
         Assert.Equal(0, token.TokenHash[0]);
         Assert.False(token.IsRevoked);
         Assert.False(token.IsExpired(DateTime.UnixEpoch.AddDays(1)));
+    }
+
+    [Fact]
+    public void IdempotencyRecordHashesNormalizedActorUserId()
+    {
+        var record = IdempotencyRecord.Create(
+            " user-1 ",
+            "TEST_ENDPOINT",
+            "test-key-0001",
+            new byte[32],
+            DateTime.UnixEpoch,
+            DateTime.UnixEpoch.AddHours(1));
+
+        Assert.Equal("user-1", record.ActorUserId);
+        Assert.Equal(
+            SHA256.HashData(Encoding.UTF8.GetBytes("user-1")),
+            record.ActorUserIdHash);
     }
 
     [Fact]

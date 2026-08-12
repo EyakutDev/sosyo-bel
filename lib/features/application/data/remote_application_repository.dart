@@ -6,7 +6,9 @@ import 'package:sosyo_bel/core/network/api_client.dart';
 import 'package:sosyo_bel/core/network/api_exception.dart';
 import 'package:sosyo_bel/features/activity/presentation/models/household_status_view_data.dart';
 import 'package:sosyo_bel/features/application/data/application_draft_api_mapper.dart';
+import 'package:sosyo_bel/features/application/data/application_draft_snapshot_mapper.dart';
 import 'package:sosyo_bel/features/application/domain/application_lifecycle_entry.dart';
+import 'package:sosyo_bel/features/application/domain/application_reference_catalog.dart';
 import 'package:sosyo_bel/features/application/domain/application_repository.dart';
 import 'package:sosyo_bel/features/application/presentation/models/application_draft.dart';
 
@@ -19,6 +21,68 @@ class RemoteApplicationRepository implements ApplicationRepository {
   final ApiClient _apiClient;
 
   @override
+  Future<LoadedApplicationDraft> getDraft({
+    required String applicationPublicId,
+    required ApplicationReferenceCatalog referenceCatalog,
+  }) async {
+    Directory? downloadDirectory;
+    try {
+      final response = await _apiClient.get<Map<String, dynamic>>(
+        'api/v1/applications/$applicationPublicId/draft-snapshot',
+      );
+      final data = response.data;
+      if (data == null) {
+        throw const FormatException('Sunucunun taslak cevabı boş.');
+      }
+
+      final references = ApplicationDraftSnapshotMapper.readPhotoReferences(
+        data,
+      );
+      final photos = <HouseholdPhotoViewData>[];
+      if (references.isNotEmpty) {
+        downloadDirectory = await Directory.systemTemp.createTemp(
+          'sosyo-bel-draft-',
+        );
+      }
+      for (final reference in references) {
+        final photoResponse = await _apiClient.getBytes(
+          'api/v1/applications/$applicationPublicId/photos/${reference.photoId}',
+        );
+        final bytes = photoResponse.data;
+        if (bytes == null || bytes.length != reference.length) {
+          throw const FormatException('Fotoğraf içeriği eksik indirildi.');
+        }
+        final extension = _extensionForContentType(reference.contentType);
+        final file = File(
+          '${downloadDirectory!.path}${Platform.pathSeparator}'
+          '${reference.order.toString().padLeft(2, '0')}-'
+          '${reference.photoId}$extension',
+        );
+        await file.writeAsBytes(bytes, flush: true);
+        photos.add(HouseholdPhotoViewData.file(file.path));
+      }
+      return ApplicationDraftSnapshotMapper.fromJson(
+        data,
+        photos: photos,
+        referenceCatalog: referenceCatalog,
+      );
+    } on FormatException catch (_) {
+      if (downloadDirectory != null && await downloadDirectory.exists()) {
+        await downloadDirectory.delete(recursive: true);
+      }
+      throw const ApiException(
+        kind: ApiErrorKind.invalidResponse,
+        message: 'Sunucunun taslak cevabı geçersiz.',
+      );
+    } catch (_) {
+      if (downloadDirectory != null && await downloadDirectory.exists()) {
+        await downloadDirectory.delete(recursive: true);
+      }
+      rethrow;
+    }
+  }
+
+  @override
   Future<ApplicationLifecycleEntry> createDraft({
     required ApplicationDraft draft,
     required String idempotencyKey,
@@ -29,6 +93,26 @@ class RemoteApplicationRepository implements ApplicationRepository {
         'api/v1/applications/drafts',
         data: ApplicationDraftApiMapper.toCreateRequest(draft),
         headers: {_idempotencyHeader: idempotencyKey},
+      );
+      return _readEntry(response.data);
+    } on FormatException catch (error) {
+      throw ApiException(kind: ApiErrorKind.validation, message: error.message);
+    }
+  }
+
+  @override
+  Future<ApplicationLifecycleEntry> updateDraft({
+    required ApplicationDraft draft,
+    required String applicationPublicId,
+    required String expectedRowVersion,
+  }) async {
+    try {
+      final response = await _apiClient.put<Map<String, dynamic>>(
+        'api/v1/applications/$applicationPublicId/draft',
+        data: {
+          'expectedRowVersion': expectedRowVersion,
+          ...ApplicationDraftApiMapper.toCreateRequest(draft),
+        },
       );
       return _readEntry(response.data);
     } on FormatException catch (error) {
@@ -69,14 +153,9 @@ class RemoteApplicationRepository implements ApplicationRepository {
             .where((photo) => photo.kind == HouseholdPhotoKind.file)
             .toList(growable: false) ??
         const <HouseholdPhotoViewData>[];
-    if (photos.isEmpty) {
-      throw const ApiException(
-        kind: ApiErrorKind.validation,
-        message: 'Yüklenecek gerçek hane fotoğrafı bulunamadı.',
-      );
-    }
-
-    // Dosyalar SQL govdesine gomulmez; multipart olarak ozel dosya deposuna gider.
+    // Boş koleksiyon, sunucudan yeniden açılan taslaktaki tüm fotoğrafların
+    // kullanıcı tarafından silindiğini ifade edebilir. Bu nedenle geçerli bir
+    // snapshot değiştirme isteğidir.
     final formData = FormData();
     formData.fields.add(MapEntry('expectedRowVersion', expectedRowVersion));
     for (final photo in photos) {
@@ -155,6 +234,16 @@ class RemoteApplicationRepository implements ApplicationRepository {
         kind: ApiErrorKind.validation,
         message: 'Yalnız JPEG, PNG, HEIC veya HEIF fotoğraf yüklenebilir.',
       ),
+    };
+  }
+
+  String _extensionForContentType(String contentType) {
+    return switch (contentType.toLowerCase()) {
+      'image/jpeg' => '.jpg',
+      'image/png' => '.png',
+      'image/heic' => '.heic',
+      'image/heif' => '.heif',
+      _ => throw const FormatException('Fotoğraf içerik türü desteklenmiyor.'),
     };
   }
 }

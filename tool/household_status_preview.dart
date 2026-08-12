@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:sosyo_bel/core/theme/app_theme.dart';
 import 'package:sosyo_bel/features/activity/presentation/fixtures/household_status_design_fixture.dart';
 import 'package:sosyo_bel/features/activity/presentation/household_status_page.dart';
+import 'preview_application_references.dart';
 
 void main() {
   runApp(const _HouseholdStatusPreviewApp());
@@ -18,6 +19,7 @@ class _HouseholdStatusPreviewApp extends StatelessWidget {
       debugShowCheckedModeBanner: false,
       theme: AppTheme.light,
       home: HouseholdStatusPage(
+        questions: previewHouseholdQuestions,
         initialStage: HouseholdStatusStage.photos,
         initialPhotos: HouseholdStatusDesignFixture.previewPhotos,
         onBack: _ignore,

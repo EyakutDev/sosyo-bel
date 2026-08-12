@@ -67,6 +67,20 @@ public sealed class AccessControlModelTests
     }
 
     [Fact]
+    public void KpsLookupPermissionIsAValidPersistedPermission()
+    {
+        var permission = UserPermissionRecord.Create(
+            "personnel-1",
+            42,
+            PermissionCodes.KpsLookup,
+            "municipality-admin-1",
+            DateTime.UnixEpoch);
+
+        Assert.Equal(PermissionCodes.KpsLookup, permission.PermissionCode);
+        Assert.True(permission.IsActive);
+    }
+
+    [Fact]
     public void IdempotencyRecordCopiesHashAndAcceptsOnlyJsonResult()
     {
         var hash = Enumerable.Range(0, 32).Select(value => (byte)value).ToArray();

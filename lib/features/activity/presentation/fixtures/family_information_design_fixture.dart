@@ -8,32 +8,41 @@ abstract final class FamilyInformationDesignFixture {
     members: [
       FamilyMemberViewData(
         fullName: 'Ahmet YILMAZ',
+        relationshipCode: 'BABA',
         relationship: 'Baba',
         age: '63',
       ),
       FamilyMemberViewData(
         fullName: 'Emel YILMAZ',
+        relationshipCode: 'ES',
         relationship: 'Eş',
         age: '50',
         details: FamilyMemberDetailsViewData(
+          disabilityStatusCode: 'YOK',
           disabilityStatus: 'Yok',
+          employmentStatusCode: 'CALISMIYOR',
           employmentStatus: 'Çalışmıyor',
+          educationStatusCode: 'ILKOGRETIM_TERK',
           educationStatus: 'İlk Öğretim Terk',
+          vitalStatusCode: 'SAG',
           vitalStatus: 'Sağ',
         ),
       ),
       FamilyMemberViewData(
         fullName: 'Sercan YILMAZ',
+        relationshipCode: 'COCUK',
         relationship: 'Çocuk',
         age: '15',
       ),
       FamilyMemberViewData(
         fullName: 'Sevinc YILMAZ',
+        relationshipCode: 'COCUK',
         relationship: 'Çocuk',
         age: '12',
       ),
       FamilyMemberViewData(
         fullName: 'Mehmet YILMAZ',
+        relationshipCode: 'COCUK',
         relationship: 'Çocuk',
         age: '8',
       ),

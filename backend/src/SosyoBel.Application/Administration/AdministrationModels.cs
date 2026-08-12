@@ -70,6 +70,13 @@ public sealed record SetLockedApplicationEditPermissionCommand(
     bool Enabled,
     string Reason);
 
+public sealed record SetKpsLookupPermissionCommand(
+    MunicipalityActorContext Actor,
+    string IdempotencyKey,
+    string TargetUserId,
+    bool Enabled,
+    string Reason);
+
 public sealed record ManagedUserSummary(
     string UserId,
     string Email,

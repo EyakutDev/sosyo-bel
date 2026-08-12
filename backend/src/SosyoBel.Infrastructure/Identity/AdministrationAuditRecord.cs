@@ -72,12 +72,12 @@ internal sealed class AdministrationAuditRecord
             EntityType = NormalizeRequired(entityType, nameof(entityType), 100),
             EntityPublicId = entityPublicId,
             OperationCode = NormalizeRequired(operationCode, nameof(operationCode), 100),
-            ActorUserId = NormalizeRequired(actorUserId, nameof(actorUserId), 128),
+            ActorUserId = NormalizeRequired(actorUserId, nameof(actorUserId), 450),
             CreatedAtUtc = DateTime.SpecifyKind(createdAtUtc, DateTimeKind.Utc),
             CorrelationId = correlationId != Guid.Empty
                 ? correlationId
                 : throw new ArgumentOutOfRangeException(nameof(correlationId)),
-            TargetUserId = NormalizeOptional(targetUserId, 128),
+            TargetUserId = NormalizeOptional(targetUserId, 450),
             Description = NormalizeOptional(description, 1000),
             ChangeSummaryJson = normalizedJson,
             Reason = NormalizeOptional(reason, 1000),

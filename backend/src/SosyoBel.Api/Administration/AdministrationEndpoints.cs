@@ -58,6 +58,14 @@ internal static class AdministrationEndpoints
             .WithDescription(
                 "Belediye yöneticisinin kendi belediyesindeki personele yeni bir şifre belirlemesini " +
                 "sağlar. Yeni şifre 10-256 karakter olmalı ve Idempotency-Key başlığı gönderilmelidir.");
+        municipalityGroup.MapPut(
+            "/{targetUserId}/permissions/kps-lookup",
+            SetKpsLookupPermissionAsync)
+            .WithSummary("Personelin KPS sorgulama yetkisini değiştirir")
+            .WithDescription(
+                "Belediye yöneticisinin yalnız kendi belediyesindeki aktif personele KPS kimlik ve " +
+                "adres sorgulama yetkisi vermesini veya bu yetkiyi kaldırmasını sağlar. Gerekçe ve " +
+                "Idempotency-Key başlığı zorunludur.");
 
         return endpoints;
     }
@@ -206,6 +214,36 @@ internal static class AdministrationEndpoints
                 actor!,
                 idempotencyKey!,
                 municipalityCode.Trim(),
+                targetUserId.Trim(),
+                request.Enabled,
+                request.Reason!.Trim()),
+            cancellationToken);
+
+        return ToHttpResult(result);
+    }
+
+    private static async Task<IResult> SetKpsLookupPermissionAsync(
+        string targetUserId,
+        SetPermissionRequest request,
+        HttpContext httpContext,
+        IAccountAdministrationService service,
+        CancellationToken cancellationToken)
+    {
+        var errors = new Dictionary<string, string[]>();
+        var actor = ReadMunicipalityActor(httpContext, errors);
+        var idempotencyKey = ReadIdempotencyKey(httpContext, errors);
+        ValidateTargetUserId(targetUserId, errors);
+        ValidateReason(request.Reason, errors);
+
+        if (errors.Count > 0)
+        {
+            return Results.ValidationProblem(errors);
+        }
+
+        var result = await service.SetKpsLookupPermissionAsync(
+            new SetKpsLookupPermissionCommand(
+                actor!,
+                idempotencyKey!,
                 targetUserId.Trim(),
                 request.Enabled,
                 request.Reason!.Trim()),

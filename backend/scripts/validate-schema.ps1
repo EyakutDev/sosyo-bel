@@ -14,12 +14,18 @@ $scripts = @(
     'database\migrations\002_create_municipality_integrations.sql',
     'database\migrations\003_create_access_control_and_audit.sql',
     'database\migrations\004_harden_identity_tasks_and_idempotency.sql',
+    'database\migrations\005_create_application_number_sequence.sql',
+    'database\migrations\006_add_kps_lookup_permission.sql',
+    'database\migrations\007_create_user_application_info.sql',
     'database\seed\001_confirmed_reference_data.sql',
     'database\checks\000_verify_aspnet_identity.sql',
     'database\checks\001_verify_sosyobel_v2.sql',
     'database\checks\002_verify_municipality_integrations.sql',
     'database\checks\003_verify_access_control_and_audit.sql',
-    'database\checks\004_verify_identity_tasks_and_idempotency.sql'
+    'database\checks\004_verify_identity_tasks_and_idempotency.sql',
+    'database\checks\005_verify_application_lifecycle.sql',
+    'database\checks\006_verify_kps_lookup_permission.sql',
+    'database\checks\007_verify_user_application_info.sql'
 )
 
 function Invoke-CommandText([string]$commandText) {

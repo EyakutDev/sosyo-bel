@@ -1,3 +1,4 @@
+using Microsoft.AspNetCore.Identity;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Metadata;
 using SosyoBel.Infrastructure.Identity;
@@ -25,9 +26,16 @@ public sealed class AuthenticationDbContextModelTests
         AssertColumn(
             context,
             typeof(ApplicationUser),
-            nameof(ApplicationUser.DeactivationReason),
+            nameof(ApplicationUser.FirstName),
             "AspNetUsers",
             null,
+            "Ad");
+        AssertColumn(
+            context,
+            typeof(UserApplicationInfo),
+            nameof(UserApplicationInfo.DeactivationReason),
+            "KullaniciUygulamaBilgileri",
+            "sosyobel",
             "DevreDisiGerekce");
         AssertColumn(
             context,
@@ -45,11 +53,64 @@ public sealed class AuthenticationDbContextModelTests
             "IstekHash");
         AssertColumn(
             context,
+            typeof(IdempotencyRecord),
+            nameof(IdempotencyRecord.ActorUserIdHash),
+            "IdempotencyKayitlari",
+            "sosyobel",
+            "ActorUserIdHash");
+        AssertColumn(
+            context,
             typeof(AdministrationAuditRecord),
             nameof(AdministrationAuditRecord.TargetUserId),
             "IslemGecmisleri",
             "sosyobel",
             "HedefUserId");
+    }
+
+    [Fact]
+    public void IdempotencyUniqueIndexUsesFixedLengthActorHash()
+    {
+        var options = new DbContextOptionsBuilder<AuthenticationDbContext>()
+            .UseSqlServer(
+                "Server=unused;Database=unused;User Id=unused;Password=unused;TrustServerCertificate=True")
+            .Options;
+        using var context = new AuthenticationDbContext(options);
+
+        var entity = context.Model.FindEntityType(typeof(IdempotencyRecord));
+        Assert.NotNull(entity);
+        var uniqueIndex = entity.GetIndexes().Single(index =>
+            index.IsUnique &&
+            index.Properties.Select(property => property.Name).SequenceEqual(
+                [
+                    nameof(IdempotencyRecord.ActorUserIdHash),
+                    nameof(IdempotencyRecord.EndpointCode),
+                    nameof(IdempotencyRecord.IdempotencyKey),
+                ]));
+
+        Assert.Equal("binary(32)", uniqueIndex.Properties[0].GetColumnType());
+    }
+
+    [Fact]
+    public void IdentityKeysMatchCompanySchemaLength()
+    {
+        var options = new DbContextOptionsBuilder<AuthenticationDbContext>()
+            .UseSqlServer(
+                "Server=unused;Database=unused;User Id=unused;Password=unused;TrustServerCertificate=True")
+            .Options;
+        using var context = new AuthenticationDbContext(options);
+
+        AssertMaxLength(context, typeof(ApplicationUser), nameof(ApplicationUser.Id), 450);
+        AssertMaxLength(context, typeof(IdentityRole), nameof(IdentityRole.Id), 450);
+        AssertMaxLength(
+            context,
+            typeof(IdentityUserLogin<string>),
+            nameof(IdentityUserLogin<string>.LoginProvider),
+            450);
+        AssertMaxLength(
+            context,
+            typeof(IdentityUserToken<string>),
+            nameof(IdentityUserToken<string>.Name),
+            450);
     }
 
     [Fact]
@@ -88,5 +149,18 @@ public sealed class AuthenticationDbContextModelTests
         var table = StoreObjectIdentifier.Table(tableName, schema);
 
         Assert.Equal(expectedColumnName, property.GetColumnName(table));
+    }
+
+    private static void AssertMaxLength(
+        DbContext context,
+        Type entityType,
+        string propertyName,
+        int expectedMaxLength)
+    {
+        var metadata = context.Model.FindEntityType(entityType);
+        Assert.NotNull(metadata);
+        var property = metadata.FindProperty(propertyName);
+        Assert.NotNull(property);
+        Assert.Equal(expectedMaxLength, property.GetMaxLength());
     }
 }

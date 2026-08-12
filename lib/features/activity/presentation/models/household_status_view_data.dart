@@ -3,12 +3,25 @@ class HouseholdQuestionViewData {
   const HouseholdQuestionViewData({
     required this.id,
     required this.label,
+    required this.isRequired,
     required this.options,
   });
 
   final String id;
   final String label;
-  final List<String> options;
+  final bool isRequired;
+  final List<HouseholdQuestionOptionViewData> options;
+}
+
+/// Hane cevabının API'ye gönderilecek kodunu ve kullanıcı etiketini ayırır.
+final class HouseholdQuestionOptionViewData {
+  const HouseholdQuestionOptionViewData({
+    required this.code,
+    required this.label,
+  });
+
+  final String code;
+  final String label;
 }
 
 /// Fotoğrafın uygulama varlığından mı, cihaz kamerasından mı geldiğini belirtir.
@@ -31,11 +44,17 @@ class HouseholdStatusDraft {
     required this.answers,
     required this.photos,
     required this.saveToBeneficiaryDirectory,
+    this.replaceRemotePhotosOnSave = false,
   });
 
+  /// Soru kodunu seçilen seçenek koduna bağlar.
   final Map<String, String> answers;
   final List<HouseholdPhotoViewData> photos;
   final bool saveToBeneficiaryDirectory;
+
+  /// Taslak sunucudan açıldıysa boş fotoğraf listesi de anlamlı bir değişikliktir:
+  /// kullanıcı bütün mevcut fotoğrafları silmiş olabilir.
+  final bool replaceRemotePhotosOnSave;
 }
 
 /// Fotoğraf sınırını ekran ve ileride eklenecek API katmanı için merkezileştirir.

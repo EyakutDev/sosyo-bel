@@ -5,109 +5,26 @@ import 'package:sosyo_bel/features/application/presentation/models/application_d
 /// Esleme tek yerde tutuldugu icin ekrandaki Turkce etiketler degisse bile sunucunun
 /// kalici kodlari ekran widget'larina yayilmaz.
 abstract final class ApplicationDraftApiMapper {
-  static const _helpTypeCodes = <String, String>{
-    'Gıda Yardımı': 'GIDA',
-    'Nakdi Yardım': 'NAKDI',
-    'Yakacak Yardımı': 'YAKACAK',
-    'Barınma Yardımı': 'BARINMA',
-    'Eğitim Yardımı': 'EGITIM',
-    'Sağlık Yardımı': 'SAGLIK',
-    'Diğer': 'DIGER',
-  };
-
-  static const _disabilityTypeCodes = <String, String>{
-    'Ortopedik': 'ORTOPEDIK',
-    'Görme': 'GORME',
-    'İşitme': 'ISITME',
-    'Zihinsel': 'ZIHINSEL',
-    'Süreğen Hastalık': 'SUREGEN_HASTALIK',
-    'Diğer': 'DIGER',
-  };
-
-  static const _relationshipCodes = <String, String>{
-    'Eş': 'ES',
-    'Anne': 'ANNE',
-    'Baba': 'BABA',
-    'Çocuk': 'COCUK',
-    'Kardeş': 'KARDES',
-    'Büyükanne': 'BUYUKANNE',
-    'Büyükbaba': 'BUYUKBABA',
-    'Torun': 'TORUN',
-    'Gelin': 'GELIN',
-    'Damat': 'DAMAT',
-    'Kayınvalide': 'KAYINVALIDE',
-    'Kayınpeder': 'KAYINPEDER',
-  };
-
-  static const _employmentCodes = <String, String>{
-    'Çalışıyor': 'CALISIYOR',
-    'Çalışmıyor': 'CALISMIYOR',
-    'Emekli': 'EMEKLI',
-  };
-
-  static const _educationCodes = <String, String>{
-    'Okuryazar Değil': 'OKURYAZAR_DEGIL',
-    'Okuryazar': 'OKURYAZAR',
-    'İlkokul': 'ILKOKUL',
-    'İlk Öğretim Terk': 'ILKOGRETIM_TERK',
-    'Ortaokul': 'ORTAOKUL',
-    'Lise': 'LISE',
-    'Ön Lisans': 'ON_LISANS',
-    'Lisans': 'LISANS',
-    'Yüksek Lisans': 'YUKSEK_LISANS',
-    'Doktora': 'DOKTORA',
-  };
-
-  static const _vitalStatusCodes = <String, String>{'Sağ': 'SAG', 'Ölü': 'OLU'};
-
-  static const _householdQuestionCodes = <String, String>{
-    'ownership-status': 'MULKIYET_DURUMU',
-    'property-type': 'MULK_TIPI',
-    'is-home-clean': 'EV_TEMIZLIGI',
-    'shelter-condition': 'BARINMA_DURUMU',
-    'household-goods': 'EV_ESYALARI',
-  };
-
-  static const _householdOptionCodes = <String, Map<String, String>>{
-    'ownership-status': {
-      'Ev Sahibi': 'EV_SAHIBI',
-      'Kiracı': 'KIRACI',
-      'Lojman': 'LOJMAN',
-      'Diğer': 'DIGER',
-    },
-    'property-type': {
-      'Apartman Dairesi': 'APARTMAN_DAIRESI',
-      'Müstakil Ev': 'MUSTAKIL_EV',
-      'Gecekondu': 'GECEKONDU',
-      'Diğer': 'DIGER',
-    },
-    'is-home-clean': {'Evet': 'EVET', 'Hayır': 'HAYIR'},
-    'shelter-condition': {'İyi': 'IYI', 'Orta': 'ORTA', 'Kötü': 'KOTU'},
-    'household-goods': {
-      'Yeterli': 'YETERLI',
-      'Kısmen Yeterli': 'KISMEN_YETERLI',
-      'Yetersiz': 'YETERSIZ',
-    },
-  };
-
   static Map<String, dynamic> toCreateRequest(ApplicationDraft draft) {
     final form = draft.applicationForm;
     if (form == null) {
       throw const FormatException('Başvuru formu tamamlanmamış.');
     }
 
-    final helpTypeCode = _helpTypeCodes[form.helpType];
-    if (helpTypeCode == null) {
-      throw const FormatException(
-        'Yardım türü sunucu koduyla eşleştirilemedi.',
-      );
+    final helpTypeCode = form.helpTypeCode.trim();
+    final disabilityStatusCode = form.disabilityStatusCode.trim();
+    if (helpTypeCode.isEmpty || disabilityStatusCode.isEmpty) {
+      throw const FormatException('Başvuru referans kodları eksik.');
     }
-    final hasDisability = form.disabilityStatus != 'Yok';
-    final disabilityTypeCode = hasDisability
-        ? _disabilityTypeCodes[form.disabilityStatus]
-        : null;
-    if (hasDisability && disabilityTypeCode == null) {
-      throw const FormatException('Engel türü sunucu koduyla eşleştirilemedi.');
+    final hasDisability = disabilityStatusCode != 'YOK';
+    final disabilityTypeCode = hasDisability ? disabilityStatusCode : null;
+    final kpsProfile = draft.kpsProfile;
+    if (kpsProfile == null ||
+        kpsProfile.identityNumber != _digitsOnly(form.identityNumber) ||
+        _toIsoDate(kpsProfile.birthDate) != _toIsoDate(form.birthDate)) {
+      throw const FormatException(
+        'KPS profil bilgileri eksik veya form ile uyuşmuyor.',
+      );
     }
 
     return {
@@ -120,10 +37,10 @@ abstract final class ApplicationDraftApiMapper {
         'disabilityTypeCode': disabilityTypeCode,
         'disabilityRate': null,
         'description': _optionalText(form.description),
-        // Profil ad ve adresi henuz gercek MERNIS/KPS cevabi degildir.
-        'applicantFirstName': null,
-        'applicantLastName': null,
-        'address': null,
+        // Yalnız backend üzerinden doğrulanıp taslağa eklenen KPS alanları yazılır.
+        'applicantFirstName': kpsProfile.firstName,
+        'applicantLastName': kpsProfile.lastName,
+        'address': kpsProfile.fullAddress,
         'fieldInspectionNote': _optionalText(draft.completionNote),
       },
     };
@@ -148,42 +65,34 @@ abstract final class ApplicationDraftApiMapper {
             );
           }
 
-          final relationshipCode = _relationshipCodes[member.relationship];
-          final employmentCode = _requiredCode(
-            _employmentCodes,
-            details.employmentStatus,
-            'Çalışma durumu',
-          );
-          final educationCode = _requiredCode(
-            _educationCodes,
-            details.educationStatus,
-            'Eğitim durumu',
-          );
-          final vitalStatusCode = _requiredCode(
-            _vitalStatusCodes,
-            details.vitalStatus,
-            'Yaşam durumu',
-          );
-          final disabilityText = details.disabilityStatus.trim();
-          final hasDisability = disabilityText.toLowerCase() != 'yok';
-          final disabilityTypeCode = hasDisability
-              ? (_disabilityTypeCodes[disabilityText] ?? 'DIGER')
-              : null;
+          final relationshipCode = member.relationshipCode.trim();
+          final employmentCode = details.employmentStatusCode.trim();
+          final educationCode = details.educationStatusCode.trim();
+          final vitalStatusCode = details.vitalStatusCode.trim();
+          final disabilityStatusCode = details.disabilityStatusCode.trim();
+          if ([
+            relationshipCode,
+            employmentCode,
+            educationCode,
+            vitalStatusCode,
+            disabilityStatusCode,
+          ].any((code) => code.isEmpty)) {
+            throw FormatException(
+              '${member.fullName} için aile referans kodları eksik.',
+            );
+          }
+          final hasDisability = disabilityStatusCode != 'YOK';
 
           return <String, dynamic>{
             'fullName': member.fullName.trim(),
             'age': age,
-            'relationshipCode': relationshipCode ?? 'DIGER',
-            'otherRelationshipDescription': relationshipCode == null
+            'relationshipCode': relationshipCode,
+            'otherRelationshipDescription': relationshipCode == 'DIGER'
                 ? member.relationship.trim()
                 : null,
             'hasDisability': hasDisability,
-            'disabilityTypeCode': disabilityTypeCode,
-            'disabilityDescription':
-                hasDisability &&
-                    !_disabilityTypeCodes.containsKey(disabilityText)
-                ? disabilityText
-                : null,
+            'disabilityTypeCode': hasDisability ? disabilityStatusCode : null,
+            'disabilityDescription': null,
             'employmentStatusCode': employmentCode,
             'educationStatusCode': educationCode,
             'vitalStatusCode': vitalStatusCode,
@@ -195,11 +104,11 @@ abstract final class ApplicationDraftApiMapper {
     final household = draft.householdStatus;
     if (household != null) {
       for (final answer in household.answers.entries) {
-        final questionCode = _householdQuestionCodes[answer.key];
-        final optionCode = _householdOptionCodes[answer.key]?[answer.value];
-        if (questionCode == null || optionCode == null) {
+        final questionCode = answer.key.trim();
+        final optionCode = answer.value.trim();
+        if (questionCode.isEmpty || optionCode.isEmpty) {
           throw FormatException(
-            'Hane cevabı sunucu koduyla eşleştirilemedi: ${answer.key}',
+            'Hane cevabı referans kodları eksik: ${answer.key}',
           );
         }
         householdAnswers.add({
@@ -216,18 +125,6 @@ abstract final class ApplicationDraftApiMapper {
       'saveToBeneficiaryDirectory':
           household?.saveToBeneficiaryDirectory ?? false,
     };
-  }
-
-  static String _requiredCode(
-    Map<String, String> codes,
-    String value,
-    String fieldName,
-  ) {
-    final code = codes[value.trim()];
-    if (code == null) {
-      throw FormatException('$fieldName sunucu koduyla eşleştirilemedi.');
-    }
-    return code;
   }
 
   static String _toIsoDate(String value) {

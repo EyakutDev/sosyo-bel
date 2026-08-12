@@ -11,7 +11,7 @@ import 'package:sosyo_bel/features/application/presentation/models/application_d
 
 void main() {
   const householdDraft = HouseholdStatusDraft(
-    answers: {'ownership-status': 'Ev Sahibi'},
+    answers: {'MULKIYET_DURUMU': 'EV_SAHIBI'},
     photos: [],
     saveToBeneficiaryDirectory: false,
   );
@@ -19,8 +19,10 @@ void main() {
     applicationForm: NewApplicationFormData(
       identityNumber: '12345678901',
       birthDate: '03/11/2002',
+      disabilityStatusCode: 'YOK',
       disabilityStatus: 'Yok',
       phoneNumber: '(534)-551-2872',
+      helpTypeCode: 'GIDA',
       helpType: 'Gıda Yardımı',
       description: 'Başvuru açıklaması',
     ),

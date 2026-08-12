@@ -2,44 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:sosyo_bel/core/theme/app_colors.dart';
 import 'package:sosyo_bel/features/activity/presentation/models/family_information_view_data.dart';
-
-/// Personelin aynı kavramlar için farklı ifadeler yazmasını engelleyen ortak
-/// seçeneklerdir. Engel durumu seçenekleri şirket API'si geldiğinde ayrıca
-/// sunucu kaynağına bağlanacaktır.
-abstract final class FamilyMemberFormOptions {
-  static const otherRelationship = 'Diğer';
-
-  static const relationships = [
-    'Eş',
-    'Anne',
-    'Baba',
-    'Çocuk',
-    'Kardeş',
-    'Büyükanne',
-    'Büyükbaba',
-    'Torun',
-    'Gelin',
-    'Damat',
-    'Kayınvalide',
-    'Kayınpeder',
-    otherRelationship,
-  ];
-
-  static const employmentStatuses = ['Çalışıyor', 'Çalışmıyor', 'Emekli'];
-  static const educationStatuses = [
-    'Okuryazar Değil',
-    'Okuryazar',
-    'İlkokul',
-    'İlk Öğretim Terk',
-    'Ortaokul',
-    'Lise',
-    'Ön Lisans',
-    'Lisans',
-    'Yüksek Lisans',
-    'Doktora',
-  ];
-  static const vitalStatuses = ['Sağ', 'Ölü'];
-}
+import 'package:sosyo_bel/features/application/domain/application_reference_catalog.dart';
 
 /// Yeni yakın ekleme ve mevcut yakını düzenleme işlemlerinde aynı formu açar.
 ///
@@ -47,6 +10,7 @@ abstract final class FamilyMemberFormOptions {
 /// çağrısı bu sonucu alan akış/repository katmanında yapılacaktır.
 Future<FamilyMemberViewData?> showFamilyMemberFormSheet(
   BuildContext context, {
+  required ApplicationReferenceCatalog referenceCatalog,
   FamilyMemberViewData? initialMember,
 }) {
   return showModalBottomSheet<FamilyMemberViewData>(
@@ -54,14 +18,20 @@ Future<FamilyMemberViewData?> showFamilyMemberFormSheet(
     isScrollControlled: true,
     useSafeArea: true,
     backgroundColor: Colors.transparent,
-    builder: (sheetContext) =>
-        _FamilyMemberFormSheet(initialMember: initialMember),
+    builder: (sheetContext) => _FamilyMemberFormSheet(
+      referenceCatalog: referenceCatalog,
+      initialMember: initialMember,
+    ),
   );
 }
 
 class _FamilyMemberFormSheet extends StatefulWidget {
-  const _FamilyMemberFormSheet({this.initialMember});
+  const _FamilyMemberFormSheet({
+    required this.referenceCatalog,
+    this.initialMember,
+  });
 
+  final ApplicationReferenceCatalog referenceCatalog;
   final FamilyMemberViewData? initialMember;
 
   @override
@@ -69,18 +39,19 @@ class _FamilyMemberFormSheet extends StatefulWidget {
 }
 
 class _FamilyMemberFormSheetState extends State<_FamilyMemberFormSheet> {
+  static const _otherRelationshipCode = 'DIGER';
   final _formKey = GlobalKey<FormState>();
 
   late final TextEditingController _fullNameController;
   late final TextEditingController _otherRelationshipController;
   late final TextEditingController _ageController;
-  late final TextEditingController _disabilityController;
   late final FocusNode _otherRelationshipFocusNode;
 
-  String? _selectedRelationship;
-  String? _selectedEmploymentStatus;
-  String? _selectedEducationStatus;
-  String? _selectedVitalStatus;
+  String? _selectedRelationshipCode;
+  String? _selectedDisabilityStatusCode;
+  String? _selectedEmploymentStatusCode;
+  String? _selectedEducationStatusCode;
+  String? _selectedVitalStatusCode;
   String? _openOptionsId;
 
   bool get _isEditing => widget.initialMember != null;
@@ -91,38 +62,22 @@ class _FamilyMemberFormSheetState extends State<_FamilyMemberFormSheet> {
     final member = widget.initialMember;
     final details = member?.details;
     _fullNameController = TextEditingController(text: member?.fullName ?? '');
-    final relationship = member?.relationship;
-    final hasStandardRelationship =
-        relationship != null &&
-        FamilyMemberFormOptions.relationships.contains(relationship);
-    _selectedRelationship = relationship == null
-        ? null
-        : hasStandardRelationship
-        ? relationship
-        : FamilyMemberFormOptions.otherRelationship;
+    final relationshipCode = member?.relationshipCode;
+    final hasKnownRelationship = widget.referenceCatalog.relationships.any(
+      (option) => option.code == relationshipCode,
+    );
+    _selectedRelationshipCode = hasKnownRelationship ? relationshipCode : null;
     _otherRelationshipController = TextEditingController(
-      text: hasStandardRelationship ? '' : relationship ?? '',
+      text: relationshipCode == _otherRelationshipCode
+          ? member?.relationship ?? ''
+          : '',
     );
     _otherRelationshipFocusNode = FocusNode();
     _ageController = TextEditingController(text: member?.age ?? '');
-    _disabilityController = TextEditingController(
-      text: details?.disabilityStatus ?? '',
-    );
-    final employmentStatus = details?.employmentStatus;
-    _selectedEmploymentStatus =
-        FamilyMemberFormOptions.employmentStatuses.contains(employmentStatus)
-        ? employmentStatus
-        : null;
-    final educationStatus = details?.educationStatus;
-    _selectedEducationStatus =
-        FamilyMemberFormOptions.educationStatuses.contains(educationStatus)
-        ? educationStatus
-        : null;
-    final vitalStatus = details?.vitalStatus;
-    _selectedVitalStatus =
-        FamilyMemberFormOptions.vitalStatuses.contains(vitalStatus)
-        ? vitalStatus
-        : null;
+    _selectedDisabilityStatusCode = details?.disabilityStatusCode;
+    _selectedEmploymentStatusCode = details?.employmentStatusCode;
+    _selectedEducationStatusCode = details?.educationStatusCode;
+    _selectedVitalStatusCode = details?.vitalStatusCode;
   }
 
   @override
@@ -131,7 +86,6 @@ class _FamilyMemberFormSheetState extends State<_FamilyMemberFormSheet> {
     _otherRelationshipController.dispose();
     _otherRelationshipFocusNode.dispose();
     _ageController.dispose();
-    _disabilityController.dispose();
     super.dispose();
   }
 
@@ -153,22 +107,58 @@ class _FamilyMemberFormSheetState extends State<_FamilyMemberFormSheet> {
     FocusScope.of(context).unfocus();
     if (!(_formKey.currentState?.validate() ?? false)) return;
 
-    final relationship =
-        _selectedRelationship == FamilyMemberFormOptions.otherRelationship
+    final relationshipOption = _requiredOption(
+      widget.referenceCatalog.relationships,
+      _selectedRelationshipCode,
+    );
+    final disabilityOption = _requiredOption(
+      widget.referenceCatalog.disabilityStatuses,
+      _selectedDisabilityStatusCode,
+    );
+    final employmentOption = _requiredOption(
+      widget.referenceCatalog.employmentStatuses,
+      _selectedEmploymentStatusCode,
+    );
+    final educationOption = _requiredOption(
+      widget.referenceCatalog.educationStatuses,
+      _selectedEducationStatusCode,
+    );
+    final vitalOption = _requiredOption(
+      widget.referenceCatalog.vitalStatuses,
+      _selectedVitalStatusCode,
+    );
+    final relationship = relationshipOption.code == _otherRelationshipCode
         ? _otherRelationshipController.text.trim()
-        : _selectedRelationship!;
+        : relationshipOption.label;
 
     Navigator.of(context).pop(
       FamilyMemberViewData(
         fullName: _fullNameController.text.trim(),
+        relationshipCode: relationshipOption.code,
         relationship: relationship,
         age: _ageController.text.trim(),
         details: FamilyMemberDetailsViewData(
-          disabilityStatus: _disabilityController.text.trim(),
-          employmentStatus: _selectedEmploymentStatus!,
-          educationStatus: _selectedEducationStatus!,
-          vitalStatus: _selectedVitalStatus!,
+          disabilityStatusCode: disabilityOption.code,
+          disabilityStatus: disabilityOption.label,
+          employmentStatusCode: employmentOption.code,
+          employmentStatus: employmentOption.label,
+          educationStatusCode: educationOption.code,
+          educationStatus: educationOption.label,
+          vitalStatusCode: vitalOption.code,
+          vitalStatus: vitalOption.label,
         ),
+      ),
+    );
+  }
+
+  ApplicationReferenceOption _requiredOption(
+    List<ApplicationReferenceOption> options,
+    String? code,
+  ) {
+    return options.firstWhere(
+      (option) => option.code == code,
+      orElse: () => throw const FormatException(
+        'Seçilen aile bilgisi seçeneği artık kullanılamıyor.',
       ),
     );
   }
@@ -255,8 +245,7 @@ class _FamilyMemberFormSheetState extends State<_FamilyMemberFormSheet> {
                         validator: _requiredValidator,
                         textCapitalization: TextCapitalization.words,
                       ),
-                      if (_selectedRelationship ==
-                          FamilyMemberFormOptions.otherRelationship)
+                      if (_selectedRelationshipCode == _otherRelationshipCode)
                         _EditableRelationshipField(
                           fieldKey: const Key(
                             'family-member-relationship-field',
@@ -267,13 +256,14 @@ class _FamilyMemberFormSheetState extends State<_FamilyMemberFormSheet> {
                           focusNode: _otherRelationshipFocusNode,
                           validator: _requiredValidator,
                           isOptionsOpen: _openOptionsId == 'relationship',
+                          items: widget.referenceCatalog.relationships,
+                          otherRelationshipCode: _otherRelationshipCode,
                           onToggleOptions: () => _toggleOptions('relationship'),
                           onRelationshipSelected: (value) {
                             setState(() {
                               _openOptionsId = null;
-                              _selectedRelationship = value;
-                              if (value !=
-                                  FamilyMemberFormOptions.otherRelationship) {
+                              _selectedRelationshipCode = value;
+                              if (value != _otherRelationshipCode) {
                                 _otherRelationshipController.clear();
                               }
                             });
@@ -286,8 +276,8 @@ class _FamilyMemberFormSheetState extends State<_FamilyMemberFormSheet> {
                           ),
                           label: 'Yakınlık',
                           hint: 'Yakınlık durumunu seçin',
-                          value: _selectedRelationship,
-                          items: FamilyMemberFormOptions.relationships,
+                          value: _selectedRelationshipCode,
+                          items: widget.referenceCatalog.relationships,
                           isOpen: _openOptionsId == 'relationship',
                           onToggle: () => _toggleOptions('relationship'),
                           optionsKey: const Key(
@@ -296,14 +286,12 @@ class _FamilyMemberFormSheetState extends State<_FamilyMemberFormSheet> {
                           onChanged: (value) {
                             setState(() {
                               _openOptionsId = null;
-                              _selectedRelationship = value;
-                              if (value !=
-                                  FamilyMemberFormOptions.otherRelationship) {
+                              _selectedRelationshipCode = value;
+                              if (value != _otherRelationshipCode) {
                                 _otherRelationshipController.clear();
                               }
                             });
-                            if (value ==
-                                FamilyMemberFormOptions.otherRelationship) {
+                            if (value == _otherRelationshipCode) {
                               // Alan metin girişine dönüştükten sonra personel
                               // ek bir dokunuşa gerek kalmadan yazabilsin.
                               WidgetsBinding.instance.addPostFrameCallback((_) {
@@ -326,19 +314,30 @@ class _FamilyMemberFormSheetState extends State<_FamilyMemberFormSheet> {
                           LengthLimitingTextInputFormatter(3),
                         ],
                       ),
-                      _FamilyFormField(
+                      _FamilyDropdownField(
                         fieldKey: const Key('family-member-disability-field'),
                         label: 'Engel Durumu',
-                        hint: 'Engel durumunu yazın',
-                        controller: _disabilityController,
-                        validator: _requiredValidator,
+                        hint: 'Engel durumunu seçin',
+                        value: _selectedDisabilityStatusCode,
+                        items: widget.referenceCatalog.disabilityStatuses,
+                        isOpen: _openOptionsId == 'disability',
+                        onToggle: () => _toggleOptions('disability'),
+                        optionsKey: const Key(
+                          'family-member-disability-options',
+                        ),
+                        onChanged: (value) {
+                          setState(() {
+                            _openOptionsId = null;
+                            _selectedDisabilityStatusCode = value;
+                          });
+                        },
                       ),
                       _FamilyDropdownField(
                         fieldKey: const Key('family-member-employment-field'),
                         label: 'Çalışma Durumu',
                         hint: 'Çalışma durumunu seçin',
-                        value: _selectedEmploymentStatus,
-                        items: FamilyMemberFormOptions.employmentStatuses,
+                        value: _selectedEmploymentStatusCode,
+                        items: widget.referenceCatalog.employmentStatuses,
                         isOpen: _openOptionsId == 'employment',
                         onToggle: () => _toggleOptions('employment'),
                         optionsKey: const Key(
@@ -347,7 +346,7 @@ class _FamilyMemberFormSheetState extends State<_FamilyMemberFormSheet> {
                         onChanged: (value) {
                           setState(() {
                             _openOptionsId = null;
-                            _selectedEmploymentStatus = value;
+                            _selectedEmploymentStatusCode = value;
                           });
                         },
                       ),
@@ -355,8 +354,8 @@ class _FamilyMemberFormSheetState extends State<_FamilyMemberFormSheet> {
                         fieldKey: const Key('family-member-education-field'),
                         label: 'Eğitim Durumu',
                         hint: 'Eğitim durumunu seçin',
-                        value: _selectedEducationStatus,
-                        items: FamilyMemberFormOptions.educationStatuses,
+                        value: _selectedEducationStatusCode,
+                        items: widget.referenceCatalog.educationStatuses,
                         isOpen: _openOptionsId == 'education',
                         onToggle: () => _toggleOptions('education'),
                         optionsKey: const Key(
@@ -365,7 +364,7 @@ class _FamilyMemberFormSheetState extends State<_FamilyMemberFormSheet> {
                         onChanged: (value) {
                           setState(() {
                             _openOptionsId = null;
-                            _selectedEducationStatus = value;
+                            _selectedEducationStatusCode = value;
                           });
                         },
                       ),
@@ -373,15 +372,15 @@ class _FamilyMemberFormSheetState extends State<_FamilyMemberFormSheet> {
                         fieldKey: const Key('family-member-vital-field'),
                         label: 'Ölü / Sağ',
                         hint: 'Yaşam durumunu seçin',
-                        value: _selectedVitalStatus,
-                        items: FamilyMemberFormOptions.vitalStatuses,
+                        value: _selectedVitalStatusCode,
+                        items: widget.referenceCatalog.vitalStatuses,
                         isOpen: _openOptionsId == 'vital',
                         onToggle: () => _toggleOptions('vital'),
                         optionsKey: const Key('family-member-vital-options'),
                         onChanged: (value) {
                           setState(() {
                             _openOptionsId = null;
-                            _selectedVitalStatus = value;
+                            _selectedVitalStatusCode = value;
                           });
                         },
                       ),
@@ -453,7 +452,7 @@ class _FamilyDropdownField extends StatelessWidget {
   final String label;
   final String hint;
   final String? value;
-  final List<String> items;
+  final List<ApplicationReferenceOption> items;
   final bool isOpen;
   final VoidCallback onToggle;
   final ValueChanged<String?> onChanged;
@@ -471,6 +470,10 @@ class _FamilyDropdownField extends StatelessWidget {
           return null;
         },
         builder: (field) {
+          final selectedLabel = items
+              .where((item) => item.code == field.value)
+              .map((item) => item.label)
+              .firstOrNull;
           return Column(
             children: [
               Material(
@@ -494,14 +497,14 @@ class _FamilyDropdownField extends StatelessWidget {
                       children: [
                         Expanded(
                           child: Text(
-                            field.value ?? hint,
+                            selectedLabel ?? hint,
                             overflow: TextOverflow.ellipsis,
                             style: TextStyle(
-                              color: field.value == null
+                              color: selectedLabel == null
                                   ? AppColors.neutralPlaceholder
                                   : AppColors.neutralDark,
-                              fontSize: field.value == null ? 13 : 14,
-                              fontWeight: field.value == null
+                              fontSize: selectedLabel == null ? 13 : 14,
+                              fontWeight: selectedLabel == null
                                   ? FontWeight.w400
                                   : FontWeight.w500,
                             ),
@@ -561,7 +564,7 @@ class _FamilyInlineOptionsMenu extends StatelessWidget {
   });
 
   final Key menuKey;
-  final List<String> items;
+  final List<ApplicationReferenceOption> items;
   final String? selectedValue;
   final ValueChanged<String> onSelected;
 
@@ -595,9 +598,9 @@ class _FamilyInlineOptionsMenu extends StatelessWidget {
           itemExtent: 46,
           itemBuilder: (context, index) {
             final item = items[index];
-            final isSelected = item == selectedValue;
+            final isSelected = item.code == selectedValue;
             return InkWell(
-              onTap: () => onSelected(item),
+              onTap: () => onSelected(item.code),
               child: ColoredBox(
                 color: isSelected ? const Color(0x123629B7) : AppColors.white,
                 child: Padding(
@@ -606,7 +609,7 @@ class _FamilyInlineOptionsMenu extends StatelessWidget {
                     children: [
                       Expanded(
                         child: Text(
-                          item,
+                          item.label,
                           overflow: TextOverflow.ellipsis,
                           style: TextStyle(
                             color: isSelected
@@ -690,6 +693,8 @@ class _EditableRelationshipField extends StatelessWidget {
     required this.focusNode,
     required this.validator,
     required this.isOptionsOpen,
+    required this.items,
+    required this.otherRelationshipCode,
     required this.onToggleOptions,
     required this.onRelationshipSelected,
   });
@@ -701,6 +706,8 @@ class _EditableRelationshipField extends StatelessWidget {
   final FocusNode focusNode;
   final FormFieldValidator<String> validator;
   final bool isOptionsOpen;
+  final List<ApplicationReferenceOption> items;
+  final String otherRelationshipCode;
   final VoidCallback onToggleOptions;
   final ValueChanged<String> onRelationshipSelected;
 
@@ -740,8 +747,8 @@ class _EditableRelationshipField extends StatelessWidget {
                   padding: const EdgeInsets.only(top: 6, bottom: 14),
                   child: _FamilyInlineOptionsMenu(
                     menuKey: const Key('family-member-relationship-options'),
-                    items: FamilyMemberFormOptions.relationships,
-                    selectedValue: FamilyMemberFormOptions.otherRelationship,
+                    items: items,
+                    selectedValue: otherRelationshipCode,
                     onSelected: onRelationshipSelected,
                   ),
                 )

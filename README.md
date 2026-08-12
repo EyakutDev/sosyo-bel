@@ -80,9 +80,11 @@ Farklı bir yerel veritabanı adı kullanılabilir:
 powershell -ExecutionPolicy Bypass -File backend\scripts\initialize-local-development.ps1 -SqlServer ".\SQLEXPRESS" -DatabaseName "SosyoBelDev"
 ```
 
-Script yalnızca yerel SQL Server instance'larında çalışır. Yeni veritabanında
-migration ve geliştirme seed dosyalarını uygular, ardından şemayı doğrular.
-Mevcut veritabanını silmez.
+Script yalnızca yerel SQL Server instance'larında çalışır. Varsayılan
+`SosyoBelCompanyLocal` veritabanına önce şirketin veri içermeyen `dbo` şema
+snapshot'ını, ardından yalnız `sosyobel` teknik uyumluluk migration'larını ve
+yerel geliştirme seed'ini uygular. Şirket test veya canlı veritabanında bu
+initializer çalıştırılmaz; mevcut veritabanını da silmez.
 
 ### 3. API ortam değişkenlerini tanımlama
 
@@ -91,7 +93,7 @@ kapatıldığında yeniden tanımlanmalıdır.
 
 ```powershell
 $env:ASPNETCORE_ENVIRONMENT="Development"
-$env:ConnectionStrings__SosyoBel="Server=localhost;Database=SosyoBel;Integrated Security=True;Encrypt=True;TrustServerCertificate=True"
+$env:ConnectionStrings__SosyoBel="Server=localhost;Database=SosyoBelCompanyLocal;Integrated Security=True;Encrypt=True;TrustServerCertificate=True"
 
 # PowerShell 5.1 ve PowerShell 7 ile uyumlu 32 byte rastgele JWT anahtarı.
 $keyBytes = New-Object byte[] 32
@@ -108,7 +110,7 @@ $env:Authentication__Jwt__SigningKeyBase64=[Convert]::ToBase64String($keyBytes)
 SQL Server Express kullanılıyorsa bağlantı cümlesi de değiştirilmelidir:
 
 ```powershell
-$env:ConnectionStrings__SosyoBel="Server=.\SQLEXPRESS;Database=SosyoBel;Integrated Security=True;Encrypt=True;TrustServerCertificate=True"
+$env:ConnectionStrings__SosyoBel="Server=.\SQLEXPRESS;Database=SosyoBelCompanyLocal;Integrated Security=True;Encrypt=True;TrustServerCertificate=True"
 ```
 
 ### 4. API'yi çalıştırma
@@ -261,6 +263,24 @@ dotnet test backend\SosyoBel.Backend.sln --configuration Release
 içindir. Bazıları geçici veritabanı oluşturup test sonunda kaldırır. Şirket test
 veya canlı veritabanına karşı çalıştırılmamalıdır.
 
+## Bekleyen taslağı yeniden açma
+
+`GET /api/v1/work-items/mine` personelin kendi başvurularını şirketin
+`dbo.Basvurular` tablosu ile mobil metadata uzantısından listeler. Yalnız
+`TASLAK` ve `isEditable=true` olan kartlar mobil uygulamada açılabilir.
+
+Kart açıldığında `GET /api/v1/applications/{applicationPublicId}/draft-snapshot`
+çekirdek form, aile üyeleri, hane cevapları ve aktif fotoğraf metadata bilgisini
+tek yanıtta döndürür. Fotoğraf içeriği fiziksel depolama yolu açıklanmadan,
+yetkilendirilmiş
+`GET /api/v1/applications/{applicationPublicId}/photos/{photoId}` endpointinden
+alınır. Kurula gönderilmiş başvurular listede kalır fakat yeniden düzenlenemez.
+
+Şirketin görev atama tablosu ve başvuru bağlantısı henüz doğrulanmadığı için iş
+listesi şu aşamada yalnız personelin kendi oluşturduğu başvuruları içerir. Görev
+kaynağı, tablo eşlemesi yetkili tarafından netleştirildikten sonra aynı yanıt
+sözleşmesine eklenecektir.
+
 
 
 
@@ -270,10 +290,13 @@ veya canlı veritabanına karşı çalıştırılmamalıdır.
 Development ortamında fotoğraflar Git tarafından izlenmeyen
 `.application-photos/` klasörüne yazılır. Bir başvuruya en fazla 15 JPEG, PNG,
 HEIC veya HEIF fotoğraf eklenebilir; her dosya en fazla 10 MB olabilir.
+Taslakta yeniden yüklenen toplu fotoğraflar aktif anlık kopyayı değiştirir;
+kurula gönderilmiş başvurunun fotoğrafları değiştirilemez.
 
 IIS veya ortak test ortamında `ApplicationPhotos__RootPath`, publish klasörü
 dışındaki kalıcı bir klasöre verilmelidir. API'yi çalıştıran kullanıcıya bu klasör
-için yazma izni gerekir.
+için yazma ve silme izni gerekir. Veritabanı yedeği fotoğraf dosyalarını içermez;
+bu klasör veya kullanılan object storage ayrıca yedeklenmelidir.
 
 ## IIS notu
 

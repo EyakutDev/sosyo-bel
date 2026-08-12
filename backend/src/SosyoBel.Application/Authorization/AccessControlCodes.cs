@@ -18,6 +18,7 @@ public static class RoleCodes
 public static class PermissionCodes
 {
     public const string LockedApplicationEdit = "KILITLI_BASVURU_DUZENLE";
+    public const string KpsLookup = "KPS_SORGULA";
 }
 
 /// <summary>

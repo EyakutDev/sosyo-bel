@@ -11,6 +11,11 @@ public interface IApplicationLifecycleService
         Guid applicationPublicId,
         CancellationToken cancellationToken);
 
+    Task<ApplicationLifecycleResult<ApplicationDraftSnapshot>> GetDraftSnapshotAsync(
+        ApplicationActorContext actor,
+        Guid applicationPublicId,
+        CancellationToken cancellationToken);
+
     Task<ApplicationLifecycleResult<ApplicationDetails>> UpdateDraftAsync(
         UpdateApplicationDraftCommand command,
         CancellationToken cancellationToken);

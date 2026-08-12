@@ -1,7 +1,8 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+import 'package:sosyo_bel/core/network/api_exception.dart';
 import 'package:sosyo_bel/core/theme/app_colors.dart';
-import 'package:sosyo_bel/features/application/presentation/fixtures/new_application_form_fixtures.dart';
+import 'package:sosyo_bel/features/application/domain/application_reference_catalog.dart';
 import 'package:sosyo_bel/features/application/presentation/formatters/day_month_year_input_formatter.dart';
 import 'package:sosyo_bel/features/application/presentation/formatters/phone_number_input_formatter.dart';
 import 'package:sosyo_bel/features/application/presentation/models/application_draft.dart';
@@ -16,12 +17,14 @@ import 'package:sosyo_bel/features/application/presentation/widgets/application_
 class NewApplicationPage extends StatefulWidget {
   const NewApplicationPage({
     required this.onContinue,
+    required this.referenceCatalog,
     this.initialData,
     super.key,
   });
 
   /// Form geçerli olduğunda bütün kişi ve talep alanlarını üst akışa taşır.
-  final ValueChanged<NewApplicationFormData> onContinue;
+  final Future<void> Function(NewApplicationFormData) onContinue;
+  final ApplicationReferenceCatalog referenceCatalog;
 
   /// Aktivite adımlarından forma dönüldüğünde daha önce girilen veriyi yükler.
   final NewApplicationFormData? initialData;
@@ -37,9 +40,10 @@ class _NewApplicationPageState extends State<NewApplicationPage> {
   late final TextEditingController _phoneController;
   late final TextEditingController _descriptionController;
 
-  late String _selectedDisabilityStatus;
-  late String? _selectedHelpType;
+  late String _selectedDisabilityStatusCode;
+  late String? _selectedHelpTypeCode;
   bool _isHelpTypeOptionsOpen = false;
+  bool _isSubmitting = false;
 
   @override
   void initState() {
@@ -60,10 +64,13 @@ class _NewApplicationPageState extends State<NewApplicationPage> {
     _descriptionController = TextEditingController(
       text: initialData?.description ?? '',
     );
-    _selectedDisabilityStatus =
-        initialData?.disabilityStatus ??
-        NewApplicationFormFixtures.disabilityStatuses.first;
-    _selectedHelpType = initialData?.helpType;
+    if (widget.referenceCatalog.disabilityStatuses.isEmpty) {
+      throw const FormatException('Engel durumu seçenekleri bulunamadı.');
+    }
+    _selectedDisabilityStatusCode =
+        initialData?.disabilityStatusCode ??
+        widget.referenceCatalog.disabilityStatuses.first.code;
+    _selectedHelpTypeCode = initialData?.helpTypeCode;
   }
 
   @override
@@ -75,21 +82,90 @@ class _NewApplicationPageState extends State<NewApplicationPage> {
     super.dispose();
   }
 
-  void _submit() {
+  Future<void> _submit() async {
+    if (_isSubmitting) return;
     FocusScope.of(context).unfocus();
 
     if (_formKey.currentState?.validate() ?? false) {
-      widget.onContinue(
-        NewApplicationFormData(
-          identityNumber: _identityNumberController.text,
-          birthDate: _birthDateController.text,
-          disabilityStatus: _selectedDisabilityStatus,
-          phoneNumber: _phoneController.text,
-          helpType: _selectedHelpType!,
-          description: _descriptionController.text,
+      final disabilityStatus = _requiredOption(
+        widget.referenceCatalog.disabilityStatuses,
+        _selectedDisabilityStatusCode,
+      );
+      final helpType = _requiredOption(
+        widget.referenceCatalog.helpTypes,
+        _selectedHelpTypeCode,
+      );
+      setState(() => _isSubmitting = true);
+      try {
+        await widget.onContinue(
+          NewApplicationFormData(
+            identityNumber: _identityNumberController.text,
+            birthDate: _birthDateController.text,
+            disabilityStatusCode: disabilityStatus.code,
+            disabilityStatus: disabilityStatus.label,
+            phoneNumber: _phoneController.text,
+            helpTypeCode: helpType.code,
+            helpType: helpType.label,
+            description: _descriptionController.text,
+          ),
+        );
+      } catch (error) {
+        _showKpsError(error);
+      } finally {
+        if (mounted) setState(() => _isSubmitting = false);
+      }
+    }
+  }
+
+  void _showKpsError(Object error) {
+    if (!mounted) return;
+    final message = error is ApiException
+        ? error.message
+        : 'KPS bilgileri alınamadı. Lütfen tekrar deneyin.';
+
+    // Başarısız sorguda form kapatılmaz ve personelin girdiği alanlar korunur.
+    ScaffoldMessenger.of(context)
+      ..hideCurrentSnackBar()
+      ..showSnackBar(
+        SnackBar(
+          key: const Key('new-application-kps-error-notice'),
+          behavior: SnackBarBehavior.floating,
+          backgroundColor: AppColors.white,
+          elevation: 8,
+          margin: const EdgeInsets.fromLTRB(24, 0, 24, 24),
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(15),
+            side: const BorderSide(color: Color(0x22E85D75)),
+          ),
+          content: Row(
+            children: [
+              const Icon(
+                Icons.error_outline_rounded,
+                color: AppColors.statusRejected,
+              ),
+              const SizedBox(width: 10),
+              Expanded(
+                child: Text(
+                  message,
+                  style: const TextStyle(color: AppColors.neutralDark),
+                ),
+              ),
+            ],
+          ),
         ),
       );
-    }
+  }
+
+  ApplicationReferenceOption _requiredOption(
+    List<ApplicationReferenceOption> options,
+    String? code,
+  ) {
+    return options.firstWhere(
+      (option) => option.code == code,
+      orElse: () => throw const FormatException(
+        'Seçilen form seçeneği artık kullanılamıyor.',
+      ),
+    );
   }
 
   String? _requiredValidator(String? value) {
@@ -106,6 +182,25 @@ class _NewApplicationPageState extends State<NewApplicationPage> {
     }
     if (value!.length != 11) {
       return 'T.C. kimlik numarası 11 rakam olmalıdır.';
+    }
+    return null;
+  }
+
+  String? _birthDateValidator(String? value) {
+    final requiredError = _requiredValidator(value);
+    if (requiredError != null) return requiredError;
+
+    final match = RegExp(
+      r'^(\d{2})[./](\d{2})[./](\d{4})$',
+    ).firstMatch(value!.trim());
+    if (match == null) return 'Geçerli bir doğum tarihi girilmelidir.';
+
+    final day = int.parse(match.group(1)!);
+    final month = int.parse(match.group(2)!);
+    final year = int.parse(match.group(3)!);
+    final date = DateTime.utc(year, month, day);
+    if (date.year != year || date.month != month || date.day != day) {
+      return 'Geçerli bir doğum tarihi girilmelidir.';
     }
     return null;
   }
@@ -207,7 +302,7 @@ class _NewApplicationPageState extends State<NewApplicationPage> {
                             inputFormatters: const [
                               DayMonthYearInputFormatter(),
                             ],
-                            validator: _requiredValidator,
+                            validator: _birthDateValidator,
                           ),
                           const SizedBox(height: 20),
                           _buildDropdown(
@@ -217,13 +312,12 @@ class _NewApplicationPageState extends State<NewApplicationPage> {
                             label: 'Engel Durumu',
                             hintText: 'Seçiniz',
                             prefixIcon: Icons.accessible_rounded,
-                            value: _selectedDisabilityStatus,
-                            items:
-                                NewApplicationFormFixtures.disabilityStatuses,
+                            value: _selectedDisabilityStatusCode,
+                            items: widget.referenceCatalog.disabilityStatuses,
                             onChanged: (value) {
                               if (value != null) {
                                 setState(
-                                  () => _selectedDisabilityStatus = value,
+                                  () => _selectedDisabilityStatusCode = value,
                                 );
                               }
                             },
@@ -260,8 +354,8 @@ class _NewApplicationPageState extends State<NewApplicationPage> {
                             label: 'Talep Edilen Yardım Türü',
                             hintText: 'Seçiniz',
                             prefixIcon: Icons.volunteer_activism_outlined,
-                            value: _selectedHelpType,
-                            items: NewApplicationFormFixtures.helpTypes,
+                            value: _selectedHelpTypeCode,
+                            items: widget.referenceCatalog.helpTypes,
                             isOpen: _isHelpTypeOptionsOpen,
                             onToggle: () {
                               FocusScope.of(context).unfocus();
@@ -272,7 +366,7 @@ class _NewApplicationPageState extends State<NewApplicationPage> {
                             },
                             onChanged: (value) {
                               setState(() {
-                                _selectedHelpType = value;
+                                _selectedHelpTypeCode = value;
                                 _isHelpTypeOptionsOpen = false;
                               });
                             },
@@ -295,22 +389,35 @@ class _NewApplicationPageState extends State<NewApplicationPage> {
                             height: 46,
                             child: ElevatedButton(
                               key: const Key('new-application-continue-button'),
-                              onPressed: _submit,
+                              onPressed: _isSubmitting ? null : _submit,
                               style: ElevatedButton.styleFrom(
                                 elevation: 0,
                                 backgroundColor: AppColors.primary,
+                                disabledBackgroundColor: AppColors.primary,
                                 foregroundColor: AppColors.white,
+                                disabledForegroundColor: AppColors.white,
                                 shape: RoundedRectangleBorder(
                                   borderRadius: BorderRadius.circular(15),
                                 ),
                               ),
-                              child: const Text(
-                                'Devam Et',
-                                style: TextStyle(
-                                  fontSize: 15,
-                                  fontWeight: FontWeight.w500,
-                                ),
-                              ),
+                              child: _isSubmitting
+                                  ? const SizedBox.square(
+                                      key: Key(
+                                        'new-application-kps-loading-indicator',
+                                      ),
+                                      dimension: 20,
+                                      child: CircularProgressIndicator(
+                                        strokeWidth: 2,
+                                        color: AppColors.white,
+                                      ),
+                                    )
+                                  : const Text(
+                                      'Devam Et',
+                                      style: TextStyle(
+                                        fontSize: 15,
+                                        fontWeight: FontWeight.w500,
+                                      ),
+                                    ),
                             ),
                           ),
                         ],
@@ -332,7 +439,7 @@ class _NewApplicationPageState extends State<NewApplicationPage> {
     required String hintText,
     required IconData prefixIcon,
     required String? value,
-    required List<String> items,
+    required List<ApplicationReferenceOption> items,
     required ValueChanged<String?> onChanged,
   }) {
     return Column(
@@ -397,11 +504,11 @@ class _NewApplicationPageState extends State<NewApplicationPage> {
                       items: items
                           .map(
                             (item) => DropdownMenuItem<String>(
-                              value: item,
+                              value: item.code,
                               child: SizedBox(
                                 width: double.infinity,
                                 child: Text(
-                                  item,
+                                  item.label,
                                   overflow: TextOverflow.ellipsis,
                                 ),
                               ),
@@ -436,7 +543,7 @@ class _NewApplicationPageState extends State<NewApplicationPage> {
     required String hintText,
     required IconData prefixIcon,
     required String? value,
-    required List<String> items,
+    required List<ApplicationReferenceOption> items,
     required bool isOpen,
     required VoidCallback onToggle,
     required ValueChanged<String?> onChanged,
@@ -456,6 +563,10 @@ class _NewApplicationPageState extends State<NewApplicationPage> {
             return null;
           },
           builder: (field) {
+            final selectedLabel = items
+                .where((item) => item.code == field.value)
+                .map((item) => item.label)
+                .firstOrNull;
             return Column(
               crossAxisAlignment: CrossAxisAlignment.stretch,
               children: [
@@ -475,10 +586,10 @@ class _NewApplicationPageState extends State<NewApplicationPage> {
                         children: [
                           Expanded(
                             child: Text(
-                              field.value ?? hintText,
+                              selectedLabel ?? hintText,
                               overflow: TextOverflow.ellipsis,
                               style: TextStyle(
-                                color: field.value == null
+                                color: selectedLabel == null
                                     ? AppColors.neutralSecondary
                                     : AppColors.neutralDark,
                                 fontSize: 14,
@@ -537,7 +648,7 @@ class _ApplicationInlineOptionsMenu extends StatelessWidget {
   });
 
   final Key menuKey;
-  final List<String> items;
+  final List<ApplicationReferenceOption> items;
   final String? selectedValue;
   final ValueChanged<String> onSelected;
 
@@ -571,9 +682,9 @@ class _ApplicationInlineOptionsMenu extends StatelessWidget {
           itemExtent: 46,
           itemBuilder: (context, index) {
             final item = items[index];
-            final isSelected = item == selectedValue;
+            final isSelected = item.code == selectedValue;
             return InkWell(
-              onTap: () => onSelected(item),
+              onTap: () => onSelected(item.code),
               child: ColoredBox(
                 color: isSelected ? const Color(0x123629B7) : AppColors.white,
                 child: Padding(
@@ -582,7 +693,7 @@ class _ApplicationInlineOptionsMenu extends StatelessWidget {
                     children: [
                       Expanded(
                         child: Text(
-                          item,
+                          item.label,
                           overflow: TextOverflow.ellipsis,
                           style: TextStyle(
                             color: isSelected

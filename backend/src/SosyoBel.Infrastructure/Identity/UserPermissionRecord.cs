@@ -78,6 +78,10 @@ internal sealed class UserPermissionRecord
         if (!string.Equals(
                 permissionCode,
                 PermissionCodes.LockedApplicationEdit,
+                StringComparison.Ordinal) &&
+            !string.Equals(
+                permissionCode,
+                PermissionCodes.KpsLookup,
                 StringComparison.Ordinal))
         {
             throw new ArgumentOutOfRangeException(nameof(permissionCode));
@@ -90,7 +94,7 @@ internal sealed class UserPermissionRecord
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(value, parameterName);
         var normalized = value.Trim();
-        if (normalized.Length > 128)
+        if (normalized.Length > 450)
         {
             throw new ArgumentOutOfRangeException(parameterName);
         }

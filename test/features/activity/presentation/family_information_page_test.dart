@@ -3,6 +3,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:sosyo_bel/core/theme/app_theme.dart';
 import 'package:sosyo_bel/features/activity/presentation/family_information_page.dart';
 import 'package:sosyo_bel/features/activity/presentation/models/family_information_view_data.dart';
+import '../../../support/application_reference_test_catalog.dart';
 
 void main() {
   Future<void> pumpPage(
@@ -23,6 +24,7 @@ void main() {
       MaterialApp(
         theme: AppTheme.light,
         home: FamilyInformationPage(
+          referenceCatalog: applicationReferenceTestCatalog,
           onBack: onBack,
           onHeaderBack: onHeaderBack,
           onContinue: onContinue,

@@ -1,3 +1,4 @@
+using System.Globalization;
 using SosyoBel.Application.Applications;
 
 namespace SosyoBel.Infrastructure.Persistence;
@@ -10,16 +11,19 @@ internal sealed class ApplicationRecord
 
     public int Id { get; private set; }
     public Guid PublicId { get; private set; }
-    public int MunicipalityId { get; private set; }
-    public string ApplicationNumber { get; private set; } = string.Empty;
+    public string? ApplicationNumber { get; private set; }
     public string IdentityNumber { get; private set; } = string.Empty;
-    public string? ApplicantFirstName { get; private set; }
-    public string? ApplicantLastName { get; private set; }
-    public DateOnly BirthDate { get; private set; }
+    public string ApplicantFirstName { get; private set; } = string.Empty;
+    public string ApplicantLastName { get; private set; } = string.Empty;
+    public string BirthDateStorage { get; private set; } = string.Empty;
+    public DateOnly BirthDate => DateOnly.ParseExact(
+        BirthDateStorage,
+        "yyyy-MM-dd",
+        CultureInfo.InvariantCulture);
     public string PhoneNumber { get; private set; } = string.Empty;
     public string? Address { get; private set; }
     public bool HasDisability { get; private set; }
-    public byte? DisabilityRate { get; private set; }
+    public int? DisabilityRate { get; private set; }
     public int? DisabilityTypeId { get; private set; }
     public int HelpTypeId { get; private set; }
     public int RequestChannelId { get; private set; }
@@ -35,8 +39,6 @@ internal sealed class ApplicationRecord
     public byte[] RowVersion { get; private set; } = [];
 
     public static ApplicationRecord Create(
-        int municipalityId,
-        string applicationNumber,
         int statusId,
         int helpTypeId,
         int? disabilityTypeId,
@@ -48,22 +50,24 @@ internal sealed class ApplicationRecord
         return new ApplicationRecord
         {
             PublicId = Guid.NewGuid(),
-            MunicipalityId = municipalityId,
-            ApplicationNumber = applicationNumber,
             StatusId = statusId,
             RequestChannelId = requestChannelId,
             CreatedByUserId = actorUserId,
             CreatedAtUtc = nowUtc,
             IdentityNumber = draft.IdentityNumber,
-            BirthDate = draft.BirthDate,
+            // Şirket tablosu doğum tarihini metin olarak tutuyor. Yeni mobil
+            // kayıtlar kültürden bağımsız ve geri okunabilir ISO biçiminde yazılır.
+            BirthDateStorage = draft.BirthDate.ToString(
+                "yyyy-MM-dd",
+                CultureInfo.InvariantCulture),
             PhoneNumber = draft.PhoneNumber,
             HelpTypeId = helpTypeId,
             HasDisability = draft.HasDisability,
             DisabilityTypeId = disabilityTypeId,
             DisabilityRate = draft.DisabilityRate,
             Description = draft.Description,
-            ApplicantFirstName = draft.ApplicantFirstName,
-            ApplicantLastName = draft.ApplicantLastName,
+            ApplicantFirstName = draft.ApplicantFirstName ?? string.Empty,
+            ApplicantLastName = draft.ApplicantLastName ?? string.Empty,
             Address = draft.Address,
             FieldInspectionNote = draft.FieldInspectionNote,
         };
@@ -77,15 +81,17 @@ internal sealed class ApplicationRecord
         DateTime nowUtc)
     {
         IdentityNumber = draft.IdentityNumber;
-        BirthDate = draft.BirthDate;
+        BirthDateStorage = draft.BirthDate.ToString(
+            "yyyy-MM-dd",
+            CultureInfo.InvariantCulture);
         PhoneNumber = draft.PhoneNumber;
         HelpTypeId = helpTypeId;
         HasDisability = draft.HasDisability;
         DisabilityTypeId = disabilityTypeId;
         DisabilityRate = draft.DisabilityRate;
         Description = draft.Description;
-        ApplicantFirstName = draft.ApplicantFirstName;
-        ApplicantLastName = draft.ApplicantLastName;
+        ApplicantFirstName = draft.ApplicantFirstName ?? string.Empty;
+        ApplicantLastName = draft.ApplicantLastName ?? string.Empty;
         Address = draft.Address;
         FieldInspectionNote = draft.FieldInspectionNote;
         UpdatedByUserId = actorUserId;
@@ -115,11 +121,9 @@ internal sealed class ApplicationFamilyMemberRecord
     }
 
     public int Id { get; private set; }
-    public int MunicipalityId { get; private set; }
     public int ApplicationId { get; private set; }
-    public int? SourceFamilyMemberId { get; private set; }
     public string FullName { get; private set; } = string.Empty;
-    public short Age { get; private set; }
+    public int Age { get; private set; }
     public int RelationshipId { get; private set; }
     public string? OtherRelationshipDescription { get; private set; }
     public bool HasDisability { get; private set; }
@@ -133,7 +137,6 @@ internal sealed class ApplicationFamilyMemberRecord
     public byte[] RowVersion { get; private set; } = [];
 
     public static ApplicationFamilyMemberRecord Create(
-        int municipalityId,
         int applicationId,
         int relationshipId,
         int? disabilityTypeId,
@@ -145,7 +148,6 @@ internal sealed class ApplicationFamilyMemberRecord
         ApplicationFamilyMemberData member) =>
         new()
         {
-            MunicipalityId = municipalityId,
             ApplicationId = applicationId,
             FullName = member.FullName,
             Age = member.Age,
@@ -241,63 +243,90 @@ internal sealed class ApplicationPhotoRecord
             CreatedByUserId = actorUserId,
             CreatedAtUtc = nowUtc,
         };
+
+    public void MarkDeleted(string actorUserId, DateTime nowUtc)
+    {
+        if (IsDeleted) return;
+        IsDeleted = true;
+        DeletedByUserId = actorUserId;
+        DeletedAtUtc = nowUtc;
+    }
 }
 
-internal sealed class ApplicationStatusReference
+internal interface ICompanyReferenceSource
 {
-    public int Id { get; init; }
-    public string Code { get; init; } = string.Empty;
-    public bool IsActive { get; init; }
+    int Id { get; }
+    string Name { get; }
+    bool IsDeleted { get; }
 }
 
-internal sealed class HelpTypeReference
+internal sealed class ApplicationStatusReference : ICompanyReferenceSource
 {
     public int Id { get; init; }
-    public int? MunicipalityId { get; init; }
-    public string Code { get; init; } = string.Empty;
-    public bool IsActive { get; init; }
+    public string Name { get; init; } = string.Empty;
+    public bool IsDeleted { get; init; }
 }
 
-internal sealed class DisabilityTypeReference
+internal sealed class HelpTypeReference : ICompanyReferenceSource
 {
     public int Id { get; init; }
-    public int? MunicipalityId { get; init; }
-    public string Code { get; init; } = string.Empty;
-    public bool IsActive { get; init; }
+    public string Name { get; init; } = string.Empty;
+    public bool IsDeleted { get; init; }
 }
 
-internal sealed class RequestChannelReference
+internal sealed class DisabilityTypeReference : ICompanyReferenceSource
 {
     public int Id { get; init; }
-    public string Code { get; init; } = string.Empty;
-    public bool IsActive { get; init; }
+    public string Name { get; init; } = string.Empty;
+    public bool IsDeleted { get; init; }
 }
 
-internal sealed class RelationshipReference
+internal sealed class RequestChannelReference : ICompanyReferenceSource
 {
     public int Id { get; init; }
-    public string Code { get; init; } = string.Empty;
-    public bool IsActive { get; init; }
+    public string Name { get; init; } = string.Empty;
+    public bool IsDeleted { get; init; }
 }
 
-internal sealed class EmploymentStatusReference
+internal sealed class RelationshipReference : ICompanyReferenceSource
 {
     public int Id { get; init; }
-    public string Code { get; init; } = string.Empty;
-    public bool IsActive { get; init; }
+    public string Name { get; init; } = string.Empty;
+    public bool IsDeleted { get; init; }
 }
 
-internal sealed class EducationStatusReference
+internal sealed class EmploymentStatusReference : ICompanyReferenceSource
 {
     public int Id { get; init; }
+    public string Name { get; init; } = string.Empty;
+    public bool IsDeleted { get; init; }
+}
+
+internal sealed class EducationStatusReference : ICompanyReferenceSource
+{
+    public int Id { get; init; }
+    public string Name { get; init; } = string.Empty;
+    public bool IsDeleted { get; init; }
+}
+
+/// <summary>
+/// Şirketin değişebilen Türkçe lookup adını mobil API'nin kararlı koduna bağlar.
+/// Kaynak satırın silinme durumu ilgili dbo lookup tablosundan ayrıca denetlenir.
+/// </summary>
+internal sealed class ReferenceCodeRecord
+{
+    public int Id { get; init; }
+    public string ReferenceTypeCode { get; init; } = string.Empty;
+    public int SourceId { get; init; }
     public string Code { get; init; } = string.Empty;
-    public bool IsActive { get; init; }
 }
 
 internal sealed class VitalStatusReference
 {
     public int Id { get; init; }
     public string Code { get; init; } = string.Empty;
+    public string Name { get; init; } = string.Empty;
+    public short Order { get; init; }
     public bool IsActive { get; init; }
 }
 
@@ -306,7 +335,10 @@ internal sealed class HouseholdQuestionReference
     public int Id { get; init; }
     public int? MunicipalityId { get; init; }
     public string Code { get; init; } = string.Empty;
+    public string Label { get; init; } = string.Empty;
     public string AnswerTypeCode { get; init; } = string.Empty;
+    public bool IsRequired { get; init; }
+    public short Order { get; init; }
     public bool IsActive { get; init; }
 }
 
@@ -315,6 +347,8 @@ internal sealed class HouseholdQuestionOptionReference
     public int Id { get; init; }
     public int QuestionId { get; init; }
     public string Code { get; init; } = string.Empty;
+    public string Label { get; init; } = string.Empty;
+    public short Order { get; init; }
     public bool IsActive { get; init; }
 }
 
@@ -325,7 +359,6 @@ internal sealed class ApplicationStatusHistoryRecord
     }
 
     public long Id { get; private set; }
-    public int MunicipalityId { get; private set; }
     public int ApplicationId { get; private set; }
     public int? PreviousStatusId { get; private set; }
     public int NewStatusId { get; private set; }
@@ -334,7 +367,6 @@ internal sealed class ApplicationStatusHistoryRecord
     public DateTime CreatedAtUtc { get; private set; }
 
     public static ApplicationStatusHistoryRecord Create(
-        int municipalityId,
         int applicationId,
         int? previousStatusId,
         int newStatusId,
@@ -342,7 +374,6 @@ internal sealed class ApplicationStatusHistoryRecord
         DateTime nowUtc) =>
         new()
         {
-            MunicipalityId = municipalityId,
             ApplicationId = applicationId,
             PreviousStatusId = previousStatusId,
             NewStatusId = newStatusId,

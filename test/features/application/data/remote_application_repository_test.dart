@@ -14,7 +14,9 @@ import 'package:sosyo_bel/features/activity/presentation/fixtures/family_informa
 import 'package:sosyo_bel/features/activity/presentation/models/family_information_view_data.dart';
 import 'package:sosyo_bel/features/activity/presentation/models/household_status_view_data.dart';
 import 'package:sosyo_bel/features/application/data/remote_application_repository.dart';
+import 'package:sosyo_bel/features/application/domain/kps_profile.dart';
 import 'package:sosyo_bel/features/application/presentation/models/application_draft.dart';
+import '../../../support/application_reference_test_catalog.dart';
 
 void main() {
   group('RemoteApplicationRepository', () {
@@ -51,14 +53,47 @@ void main() {
             'disabilityTypeCode': 'ORTOPEDIK',
             'disabilityRate': null,
             'description': 'Başvuru açıklaması',
-            'applicantFirstName': null,
-            'applicantLastName': null,
-            'address': null,
+            'applicantFirstName': 'ÖRNEK',
+            'applicantLastName': 'KİŞİ',
+            'address': 'ÖRNEK MAH. TEST SK. NO: 1',
             'fieldInspectionNote': 'Saha notu',
           },
         });
       },
     );
+
+    test('kaydedilmiş snapshotı ekran taslağına geri dönüştürür', () async {
+      final adapter = _RecordingAdapter(
+        (_) => _jsonResponse(200, _draftSnapshotResponse()),
+      );
+      final repository = _repository(adapter);
+
+      final result = await repository.getDraft(
+        applicationPublicId: '22222222-2222-2222-2222-222222222222',
+        referenceCatalog: applicationReferenceTestCatalog,
+      );
+
+      expect(result.entry.statusCode, 'TASLAK');
+      expect(result.draft.applicationForm?.birthDate, '03.11.2002');
+      expect(result.draft.applicationForm?.helpType, 'Gıda Yardımı');
+      expect(
+        result.draft.familyInformation.members.single.fullName,
+        'Ayşe Yılmaz',
+      );
+      expect(result.draft.familyInformation.members.single.age, '0');
+      expect(result.draft.citizenProfile.fullName, 'Bilgi bulunmuyor');
+      expect(result.draft.citizenProfile.address, 'Bilgi bulunmuyor');
+      expect(
+        result.draft.householdStatus?.answers['MULKIYET_DURUMU'],
+        'KIRACI',
+      );
+      expect(result.draft.householdStatus?.replaceRemotePhotosOnSave, isTrue);
+      expect(
+        adapter.lastRequest?.uri.path,
+        '/sosyo-bel/api/v1/applications/'
+        '22222222-2222-2222-2222-222222222222/draft-snapshot',
+      );
+    });
 
     test('manuel aile ve hane cevaplarını kodlarıyla kaydeder', () async {
       final adapter = _RecordingAdapter(
@@ -194,8 +229,10 @@ void main() {
         applicationForm: const NewApplicationFormData(
           identityNumber: '12345678901',
           birthDate: '31/02/2002',
+          disabilityStatusCode: 'YOK',
           disabilityStatus: 'Yok',
           phoneNumber: '05551234567',
+          helpTypeCode: 'GIDA',
           helpType: 'Gıda Yardımı',
           description: '',
         ),
@@ -225,10 +262,19 @@ const _draft = ApplicationDraft(
   applicationForm: NewApplicationFormData(
     identityNumber: '12345678901',
     birthDate: '03/11/2002',
+    disabilityStatusCode: 'ORTOPEDIK',
     disabilityStatus: 'Ortopedik',
     phoneNumber: '(534)-551-2872',
+    helpTypeCode: 'GIDA',
     helpType: 'Gıda Yardımı',
     description: 'Başvuru açıklaması',
+  ),
+  kpsProfile: KpsProfile(
+    identityNumber: '12345678901',
+    firstName: 'ÖRNEK',
+    lastName: 'KİŞİ',
+    birthDate: '03/11/2002',
+    fullAddress: 'ÖRNEK MAH. TEST SK. NO: 1',
   ),
   citizenProfile: CitizenProfileDesignFixture.profile,
   familyInformation: FamilyInformationDesignFixture.family,
@@ -239,8 +285,10 @@ const _fieldDraft = ApplicationDraft(
   applicationForm: NewApplicationFormData(
     identityNumber: '12345678901',
     birthDate: '03/11/2002',
+    disabilityStatusCode: 'ORTOPEDIK',
     disabilityStatus: 'Ortopedik',
     phoneNumber: '(534)-551-2872',
+    helpTypeCode: 'GIDA',
     helpType: 'Gıda Yardımı',
     description: 'Başvuru açıklaması',
   ),
@@ -249,19 +297,24 @@ const _fieldDraft = ApplicationDraft(
     members: [
       FamilyMemberViewData(
         fullName: 'Ayşe Yılmaz',
+        relationshipCode: 'DIGER',
         relationship: 'Teyze',
         age: '42',
         details: FamilyMemberDetailsViewData(
+          disabilityStatusCode: 'SUREGEN_HASTALIK',
           disabilityStatus: 'Süreğen Hastalık',
+          employmentStatusCode: 'CALISIYOR',
           employmentStatus: 'Çalışıyor',
+          educationStatusCode: 'LISE',
           educationStatus: 'Lise',
+          vitalStatusCode: 'SAG',
           vitalStatus: 'Sağ',
         ),
       ),
     ],
   ),
   householdStatus: HouseholdStatusDraft(
-    answers: {'ownership-status': 'Kiracı', 'is-home-clean': 'Evet'},
+    answers: {'MULKIYET_DURUMU': 'KIRACI', 'EV_TEMIZLIGI': 'EVET'},
     photos: [],
     saveToBeneficiaryDirectory: false,
   ),
@@ -291,6 +344,42 @@ Map<String, dynamic> _applicationResponse({
   'statusCode': statusCode,
   'isEditable': isEditable,
   'rowVersion': rowVersion,
+};
+
+Map<String, dynamic> _draftSnapshotResponse() => {
+  'application': {
+    ..._applicationResponse(),
+    'identityNumber': '12345678901',
+    'birthDate': '2002-11-03',
+    'phoneNumber': '5345512872',
+    'helpTypeCode': 'GIDA',
+    'hasDisability': false,
+    'disabilityTypeCode': null,
+    'description': 'Başvuru açıklaması',
+    'applicantFirstName': null,
+    'applicantLastName': null,
+    'address': null,
+    'fieldInspectionNote': 'Saha notu',
+  },
+  'familyMembers': [
+    {
+      'fullName': 'Ayşe Yılmaz',
+      'age': 0,
+      'relationshipCode': 'DIGER',
+      'otherRelationshipDescription': 'Teyze',
+      'hasDisability': false,
+      'disabilityTypeCode': null,
+      'disabilityDescription': null,
+      'employmentStatusCode': 'CALISIYOR',
+      'educationStatusCode': 'LISE',
+      'vitalStatusCode': 'SAG',
+    },
+  ],
+  'householdAnswers': [
+    {'questionCode': 'MULKIYET_DURUMU', 'optionCode': 'KIRACI'},
+  ],
+  'saveToBeneficiaryDirectory': false,
+  'photos': <Object>[],
 };
 
 ResponseBody _jsonResponse(int statusCode, Object body) =>

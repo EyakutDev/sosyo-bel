@@ -4,23 +4,25 @@ import 'package:sosyo_bel/core/theme/app_theme.dart';
 import 'package:sosyo_bel/features/activity/presentation/family_information_editor_page.dart';
 import 'package:sosyo_bel/features/activity/presentation/fixtures/family_information_design_fixture.dart';
 import 'package:sosyo_bel/features/activity/presentation/models/family_information_view_data.dart';
-import 'package:sosyo_bel/features/activity/presentation/widgets/family_member_form_sheet.dart';
+import '../../../support/application_reference_test_catalog.dart';
 
 void main() {
-  test('ortak yakınlık, çalışma, eğitim ve yaşam seçeneklerini sınırlar', () {
-    expect(FamilyMemberFormOptions.employmentStatuses, [
-      'Çalışıyor',
-      'Çalışmıyor',
-      'Emekli',
-    ]);
-    expect(FamilyMemberFormOptions.vitalStatuses, ['Sağ', 'Ölü']);
+  test('aile seçeneklerini API kataloğundan alır', () {
     expect(
-      FamilyMemberFormOptions.educationStatuses,
-      containsAll(['Okuryazar Değil', 'Lise', 'Lisans', 'Doktora']),
+      applicationReferenceTestCatalog.employmentStatuses.map((e) => e.label),
+      ['Çalışıyor', 'Çalışmıyor', 'Emekli'],
+    );
+    expect(applicationReferenceTestCatalog.vitalStatuses.map((e) => e.label), [
+      'Sağ',
+      'Ölü',
+    ]);
+    expect(
+      applicationReferenceTestCatalog.educationStatuses.map((e) => e.label),
+      containsAll(['Lise', 'Lisans']),
     );
     expect(
-      FamilyMemberFormOptions.relationships,
-      contains(FamilyMemberFormOptions.otherRelationship),
+      applicationReferenceTestCatalog.relationships.map((e) => e.code),
+      contains('DIGER'),
     );
   });
 
@@ -38,6 +40,7 @@ void main() {
         theme: AppTheme.light,
         home: FamilyInformationEditorPage(
           data: FamilyInformationDesignFixture.family,
+          referenceCatalog: applicationReferenceTestCatalog,
           onChanged: onChanged,
         ),
       ),
@@ -87,9 +90,10 @@ void main() {
       find.byKey(const Key('family-member-age-field')),
       '42',
     );
-    await tester.enterText(
-      find.byKey(const Key('family-member-disability-field')),
-      'Yok',
+    await selectDropdownOption(
+      tester,
+      fieldKey: const Key('family-member-disability-field'),
+      option: 'Yok',
     );
     await selectDropdownOption(
       tester,
@@ -131,6 +135,8 @@ void main() {
     expect(changedData?.members, hasLength(6));
     expect(changedData?.members.last.fullName, 'Ayşe YILMAZ');
     expect(changedData?.members.last.relationship, 'Kuzen');
+    expect(changedData?.members.last.relationshipCode, 'DIGER');
+    expect(changedData?.members.last.details?.disabilityStatusCode, 'YOK');
     expect(changedData?.members.last.details?.employmentStatus, 'Çalışıyor');
     expect(changedData?.members.last.details?.educationStatus, 'Lise');
     expect(changedData?.members.last.details?.vitalStatus, 'Sağ');
