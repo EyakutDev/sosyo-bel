@@ -139,6 +139,7 @@ class _FamilyInformationPageState extends State<FamilyInformationPage> {
   @override
   Widget build(BuildContext context) {
     final screenSize = MediaQuery.sizeOf(context);
+    final topSafeArea = MediaQuery.paddingOf(context).top;
     final scale = screenSize.width / _referenceWidth;
     // Figma beş satır gösteriyor. Manuel eklenen her yakın için ekran uzatılır;
     // böylece yeni satırlar kalem ve alt eylem düğmeleriyle çakışmaz.
@@ -276,7 +277,9 @@ class _FamilyInformationPageState extends State<FamilyInformationPage> {
                 Positioned(
                   left: 0,
                   right: 0,
-                  top: 0,
+                  // Üst geri düğmesi durum çubuğu ve kamera çentiğinin
+                  // dokunma alanıyla çakışmamalıdır.
+                  top: topSafeArea,
                   height: 65 * scale,
                   child: ColoredBox(
                     color: AppColors.white,

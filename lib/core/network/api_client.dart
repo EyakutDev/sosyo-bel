@@ -1,8 +1,11 @@
 import 'package:dio/dio.dart';
+import 'package:sosyo_bel/core/auth/auth_tokens.dart';
 import 'package:sosyo_bel/core/auth/token_store.dart';
 import 'package:sosyo_bel/core/config/api_configuration.dart';
 import 'package:sosyo_bel/core/network/api_error_mapper.dart';
 import 'package:sosyo_bel/core/network/api_exception.dart';
+
+typedef TokenRefreshCallback = Future<AuthTokens?> Function();
 
 /// HTTP cevabının gövdesini, durum kodunu ve başlıklarını birlikte taşır.
 class ApiResponse<T> {
@@ -26,7 +29,9 @@ class ApiClient {
     required ApiConfiguration configuration,
     required TokenStore tokenStore,
     Dio? dio,
+    DateTime Function()? nowUtc,
   }) : _tokenStore = tokenStore,
+       _nowUtc = nowUtc ?? _currentUtc,
        _dio = dio ?? Dio() {
     _dio.options = BaseOptions(
       baseUrl: configuration.baseUrl,
@@ -47,6 +52,20 @@ class ApiClient {
   static const authorizationHeader = 'Authorization';
 
   final TokenStore _tokenStore;
+  final DateTime Function() _nowUtc;
+  TokenRefreshCallback? _tokenRefresher;
+  Future<AuthTokens?>? _refreshInFlight;
+
+  static DateTime _currentUtc() => DateTime.now().toUtc();
+
+  /// Auth repository kurulduktan sonra yenileme bağımlılığını bağlar.
+  ///
+  /// Devam eden bütün istekler aynı future'ı beklediği için döndürülen refresh
+  /// token eşzamanlı olarak ikinci kez kullanılıp sunucuda iptal edilmez.
+  void configureTokenRefresher(TokenRefreshCallback refresher) {
+    _tokenRefresher = refresher;
+  }
+
   final Dio _dio;
 
   Future<ApiResponse<T>> get<T>(
@@ -156,6 +175,7 @@ class ApiClient {
     bool skipAuthorization = false,
     CancelToken? cancelToken,
     ResponseType? responseType,
+    bool retryAfterAuthenticationRefresh = true,
   }) async {
     try {
       final response = await _dio.request<T>(
@@ -184,6 +204,28 @@ class ApiClient {
         headers: response.headers,
       );
     } on DioException catch (error) {
+      final shouldRefresh =
+          !skipAuthorization &&
+          retryAfterAuthenticationRefresh &&
+          error.response?.statusCode == 401 &&
+          _tokenRefresher != null;
+      if (shouldRefresh) {
+        final refreshedTokens = await _refreshAccessToken();
+        // GET istekleri yan etkisizdir ve gövdeleri yeniden tüketilmez; yeni
+        // access tokenla yalnız bir kez güvenle tekrarlanabilir.
+        if (refreshedTokens != null && method.toUpperCase() == 'GET') {
+          return request<T>(
+            method,
+            path,
+            queryParameters: queryParameters,
+            headers: headers,
+            skipAuthorization: skipAuthorization,
+            cancelToken: cancelToken,
+            responseType: responseType,
+            retryAfterAuthenticationRefresh: false,
+          );
+        }
+      }
       throw ApiErrorMapper.fromDio(error);
     }
   }
@@ -198,7 +240,10 @@ class ApiClient {
     }
 
     try {
-      final tokens = await _tokenStore.read();
+      var tokens = await _tokenStore.read();
+      if (tokens != null && tokens.isAccessTokenExpired(_nowUtc())) {
+        tokens = await _refreshAccessToken();
+      }
       if (tokens != null) {
         options.headers[authorizationHeader] = 'Bearer ${tokens.accessToken}';
       }
@@ -213,6 +258,27 @@ class ApiClient {
           type: DioExceptionType.unknown,
         ),
       );
+    }
+  }
+
+  Future<AuthTokens?> _refreshAccessToken() async {
+    final activeRefresh = _refreshInFlight;
+    if (activeRefresh != null) return activeRefresh;
+
+    final refresher = _tokenRefresher;
+    if (refresher == null) {
+      // Bazı birim testleri ve anonim istemciler auth repository bağlamaz.
+      return _tokenStore.read();
+    }
+
+    final refresh = refresher();
+    _refreshInFlight = refresh;
+    try {
+      return await refresh;
+    } finally {
+      if (identical(_refreshInFlight, refresh)) {
+        _refreshInFlight = null;
+      }
     }
   }
 

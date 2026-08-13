@@ -8,6 +8,7 @@ void main() {
     WidgetTester tester, {
     VoidCallback? onBack,
     required VoidCallback onContinue,
+    double topSafeArea = 0,
   }) async {
     tester.view.physicalSize = const Size(375, 812);
     tester.view.devicePixelRatio = 1;
@@ -17,9 +18,15 @@ void main() {
     await tester.pumpWidget(
       MaterialApp(
         theme: AppTheme.light,
-        home: CitizenProfilePage(
-          onBack: onBack ?? () {},
-          onContinue: onContinue,
+        home: MediaQuery(
+          data: MediaQueryData(
+            size: const Size(375, 812),
+            padding: EdgeInsets.only(top: topSafeArea),
+          ),
+          child: CitizenProfilePage(
+            onBack: onBack ?? () {},
+            onContinue: onContinue,
+          ),
         ),
       ),
     );
@@ -40,12 +47,18 @@ void main() {
 
   testWidgets('Geri butonu callback fonksiyonunu çalıştırır', (tester) async {
     var backCount = 0;
-    await pumpPage(tester, onBack: () => backCount++, onContinue: () {});
+    await pumpPage(
+      tester,
+      onBack: () => backCount++,
+      onContinue: () {},
+      topSafeArea: 44,
+    );
 
     final backButton = find.byKey(const Key('citizen-profile-back-button'));
     final hitArea = tester.getRect(backButton);
 
     expect(hitArea.size, const Size(48, 48));
+    expect(hitArea.top, greaterThanOrEqualTo(44));
 
     // Görsel okun dışında kalan şeffaf kenar da gerçek cihazda dokunmayı
     // yakalamalıdır; yalnızca SVG'nin küçük yüzeyine bağımlı kalmıyoruz.

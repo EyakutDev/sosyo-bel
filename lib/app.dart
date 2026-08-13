@@ -91,11 +91,13 @@ class _SosyoBelAppState extends State<SosyoBelApp> {
       configuration: ApiConfiguration.fromEnvironment(),
       tokenStore: sessionStore,
     );
+    final authRepository = RemoteAuthRepository(
+      apiClient: apiClient,
+      sessionStore: sessionStore,
+    );
+    apiClient.configureTokenRefresher(authRepository.refreshAccessTokens);
     return _AppRepositories(
-      authRepository: RemoteAuthRepository(
-        apiClient: apiClient,
-        sessionStore: sessionStore,
-      ),
+      authRepository: authRepository,
       applicationRepository: RemoteApplicationRepository(apiClient),
       applicationReferenceRepository: RemoteApplicationReferenceRepository(
         apiClient,

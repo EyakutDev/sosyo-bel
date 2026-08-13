@@ -22,7 +22,6 @@ android/                 Android platform dosyaları
 assets/                  Görsel, ikon ve fontlar
 backend/                 API, bootstrap aracı ve backend testleri
 database/                Migration, seed ve SQL doğrulama dosyaları
-docs/                    Proje kararları ve teknik notlar
 ios/                     iOS platform dosyaları
 lib/                     Flutter uygulama kodu
 test/                    Flutter testleri
@@ -248,6 +247,95 @@ flutter run --dart-define=SOSYOBEL_API_BASE_URL=https://test.example.com/sosyobe
 
 Release derlemelerinde API adresi HTTPS olmak zorundadır.
 
+## KPS entegrasyonunu test etme
+
+Mobil uygulama KPS servisine doğrudan bağlanmaz. İstek önce Sosyo-Bel API'ye
+gider; personelin oturumu ve `KPS_SORGULA` yetkisi doğrulandıktan sonra API,
+kurumun kimlik ve adres servislerine yalnız GET isteği gönderir.
+
+### 1. KPS bağlantısını tanımlama
+
+API başlatılmadan önce:
+
+```powershell
+$env:Kps__BaseUrl="http://localhost:8090"
+$env:Kps__TimeoutSeconds="30"
+```
+
+`localhost`, Sosyo-Bel API'nin çalıştığı sunucudur. KPS farklı bir sunucudaysa
+kurum içi IP veya DNS adresi verilmelidir. Mobil cihazın KPS sunucusuna doğrudan
+erişmesi gerekmez.
+
+Mevcut adaptör aşağıdaki iki KPS adresine GET isteği gönderir:
+
+```text
+GET /api/kps/sorgula?tcKimlikNo=...&dogumYil=...&dogumAy=...&dogumGun=...
+GET /api/kpsadres/sorgula?tcKimlikNo=...&dogumYil=...&dogumAy=...&dogumGun=...
+```
+
+KPS servisine şu anda ek bir token veya API anahtarı gönderilmez. Kurum servisi
+ileride kimlik doğrulama isterse adaptör buna göre güncellenmelidir.
+
+### 2. Personelin KPS yetkisini açma
+
+Belediye yöneticisi Swagger'da oturum açıp tokenını **Authorize** alanına tanıtır
+ve aşağıdaki endpointi çalıştırır:
+
+```text
+PUT /api/v1/municipality/personnel/{targetUserId}/permissions/kps-lookup
+Idempotency-Key: kps-test-permission-001
+```
+
+```json
+{
+  "enabled": true,
+  "reason": "KPS entegrasyon testi"
+}
+```
+
+`targetUserId`, sorguyu yapacak aktif saha personelinin kullanıcı kimliğidir.
+Yetki yoksa istek `403 Forbidden` ile durdurulur ve KPS'ye istek gönderilmez.
+
+### 3. Swagger üzerinden test
+
+KPS yetkili saha personeliyle `POST /api/v1/auth/login` üzerinden giriş yapılır.
+Cevaptaki `accessToken`, Swagger'ın **Authorize** alanına yalnız token olarak
+yapıştırılır. Ardından kurum tarafından test için onaylanmış bilgilerle şu uç
+çalıştırılır:
+
+```text
+GET /api/v1/kps/profile?tcKimlikNo=...&dogumYil=...&dogumAy=...&dogumGun=...
+```
+
+Başarılı cevap kimlik ve adres servislerinin birleştirilmiş sonucunu döndürür.
+Ham KPS cevabı mobil uygulamaya açılmaz.
+
+| HTTP durumu | Anlamı |
+| --- | --- |
+| `400` | T.C. kimlik numarası veya doğum tarihi geçersiz |
+| `401` | Oturum açılmamış veya token geçersiz |
+| `403` | Personelde KPS sorgulama yetkisi yok |
+| `502` | KPS cevabı beklenen başarılı sözleşmeyle uyuşmuyor |
+| `503` | KPS servisine ulaşılamıyor veya istek zaman aşımına uğradı |
+
+Kurumun kayıt bulunamadı ve diğer başarısız cevap sözleşmeleri kesinleşene kadar
+bilinmeyen cevaplar güvenli biçimde genel `502` sonucu olarak ele alınır; ham
+cevap ve kişisel veri hata mesajına eklenmez.
+
+### 4. Mobil uygulama üzerinden test
+
+Swagger testi başarılı olduktan sonra uygulama test API adresiyle çalıştırılır:
+
+```powershell
+flutter run --dart-define=SOSYOBEL_API_BASE_URL=https://test-api.example.com/
+```
+
+KPS yetkili saha personeliyle giriş yapılıp **Başvuru Yap** ekranına aynı onaylı
+test bilgileri girilir. **Devam Et** sonrasında kimlik ve adres bilgilerinin profil
+ekranına aktarıldığı doğrulanır. Gerçek parola, token, T.C. kimlik numarası veya
+ham KPS cevabı kaynak koda, README'ye ve ekran görüntülerine eklenmemelidir.
+
+
 ## Testler
 
 Commit veya Pull Request öncesinde:
@@ -350,11 +438,6 @@ Production ortamında beklenen davranıştır. Yalnız güvenilir test ortamınd
 
 ## Ek belgeler
 
-- `docs/PROJECT_BRIEF.md`: Ürün kapsamı
-- `docs/DECISIONS.md`: Onaylanmış kararlar
-- `docs/OPEN_QUESTIONS.md`: Cevap bekleyen konular
-- `docs/MERNIS_KPS_NOTES.md`: MERNİS/KPS sınırları
-- `docs/DATABASE_V2.md`: Veritabanı ve migration sırası
 - `backend/ACCESS_CONTROL.md`: Rol ve yetki modeli
 - `backend/BOOTSTRAP.md`: İlk sistem yöneticisi kurulumu
 - `backend/AUTH_VALIDATION.md`: Kimlik doğrulama notları

@@ -1,3 +1,4 @@
+import 'package:sosyo_bel/core/auth/auth_tokens.dart';
 import 'package:sosyo_bel/core/network/api_client.dart';
 import 'package:sosyo_bel/core/network/api_exception.dart';
 import 'package:sosyo_bel/features/auth/data/authentication_session_store.dart';
@@ -53,6 +54,21 @@ class RemoteAuthRepository implements AuthRepository {
     }
 
     return _refreshSession(session);
+  }
+
+  /// Uygulama açıkken dolan access tokenı korumalı istekten hemen önce yeniler.
+  Future<AuthTokens?> refreshAccessTokens() async {
+    final session = await _sessionStore.readSession();
+    if (session == null) return null;
+
+    final nowUtc = _nowUtc().toUtc();
+    if (session.tokens.isRefreshTokenExpired(nowUtc)) {
+      await _sessionStore.clear();
+      return null;
+    }
+
+    final refreshed = await _refreshSession(session);
+    return refreshed?.tokens;
   }
 
   @override

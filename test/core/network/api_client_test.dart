@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:convert';
 
 import 'package:dio/dio.dart';
@@ -92,6 +93,124 @@ void main() {
                 'Oturum süresi doldu.',
               ),
         ),
+      );
+    });
+    test('süresi dolan access tokenı istekten önce tek kez yeniler', () async {
+      final adapter = _RecordingAdapter(
+        (_) => _jsonResponse(200, {'ok': true}),
+      );
+      final dio = Dio()..httpClientAdapter = adapter;
+      final tokenStore = _FixedTokenStore(
+        AuthTokens(
+          accessToken: 'expired-access-token',
+          accessTokenExpiresAtUtc: DateTime.utc(2026, 8, 13, 11),
+          refreshToken: 'refresh-token',
+          refreshTokenExpiresAtUtc: DateTime.utc(2026, 9, 13, 12),
+        ),
+      );
+      final client = ApiClient(
+        configuration: _configuration(),
+        tokenStore: tokenStore,
+        dio: dio,
+        nowUtc: () => DateTime.utc(2026, 8, 13, 12),
+      );
+      var refreshCount = 0;
+      client.configureTokenRefresher(() async {
+        refreshCount += 1;
+        return AuthTokens(
+          accessToken: 'refreshed-access-token',
+          accessTokenExpiresAtUtc: DateTime.utc(2026, 8, 13, 13),
+          refreshToken: 'rotated-refresh-token',
+          refreshTokenExpiresAtUtc: DateTime.utc(2026, 9, 13, 12),
+        );
+      });
+
+      await client.get<Map<String, dynamic>>('api/v1/work-items');
+
+      expect(refreshCount, 1);
+      expect(
+        adapter.lastRequest?.headers[ApiClient.authorizationHeader],
+        'Bearer refreshed-access-token',
+      );
+    });
+
+    test('eşzamanlı istekler aynı token yenilemesini bekler', () async {
+      final adapter = _RecordingAdapter(
+        (_) => _jsonResponse(200, {'ok': true}),
+      );
+      final dio = Dio()..httpClientAdapter = adapter;
+      final client = ApiClient(
+        configuration: _configuration(),
+        tokenStore: _FixedTokenStore(
+          AuthTokens(
+            accessToken: 'expired-access-token',
+            accessTokenExpiresAtUtc: DateTime.utc(2026, 8, 13, 11),
+            refreshToken: 'refresh-token',
+            refreshTokenExpiresAtUtc: DateTime.utc(2026, 9, 13, 12),
+          ),
+        ),
+        dio: dio,
+        nowUtc: () => DateTime.utc(2026, 8, 13, 12),
+      );
+      final refreshed = Completer<AuthTokens?>();
+      final refreshStarted = Completer<void>();
+      var refreshCount = 0;
+      client.configureTokenRefresher(() {
+        refreshCount += 1;
+        refreshStarted.complete();
+        return refreshed.future;
+      });
+
+      final first = client.get<Map<String, dynamic>>('api/v1/work-items');
+      final second = client.get<Map<String, dynamic>>('api/v1/references');
+      await refreshStarted.future;
+      await Future<void>.delayed(Duration.zero);
+      expect(refreshCount, 1);
+
+      refreshed.complete(_tokens());
+      await Future.wait([first, second]);
+      expect(refreshCount, 1);
+    });
+
+    test('401 alan GET isteğini yenilenen tokenla bir kez tekrarlar', () async {
+      var requestCount = 0;
+      final adapter = _RecordingAdapter((_) {
+        requestCount += 1;
+        return requestCount == 1
+            ? _jsonResponse(401, {'title': 'Oturum süresi doldu.'})
+            : _jsonResponse(200, {'ok': true});
+      });
+      final dio = Dio()..httpClientAdapter = adapter;
+      final tokenStore = _FixedTokenStore(_tokens());
+      final client = ApiClient(
+        configuration: _configuration(),
+        tokenStore: tokenStore,
+        dio: dio,
+        nowUtc: () => DateTime.utc(2026, 8, 9, 12),
+      );
+      var refreshCount = 0;
+      client.configureTokenRefresher(() async {
+        refreshCount += 1;
+        final tokens = AuthTokens(
+          accessToken: 'refreshed-access-token',
+          accessTokenExpiresAtUtc: DateTime.utc(2026, 8, 14, 13),
+          refreshToken: 'rotated-refresh-token',
+          refreshTokenExpiresAtUtc: DateTime.utc(2026, 9, 14, 12),
+        );
+        await tokenStore.save(tokens);
+        return tokens;
+      });
+
+      final response = await client.get<Map<String, dynamic>>(
+        'api/v1/work-items',
+      );
+
+      expect(response.data, {'ok': true});
+      expect(requestCount, 2);
+      expect(refreshCount, 1);
+      expect(
+        adapter.lastRequest?.headers[ApiClient.authorizationHeader],
+        'Bearer refreshed-access-token',
       );
     });
 

@@ -393,6 +393,17 @@ void main() {
     await tester.pumpAndSettle();
     expect(find.text('Tamamla'), findsOneWidget);
 
+    // Tamamla üst oku başvuru formuna atlamadan önceki Hane Durumu
+    // adımına dönmeli ve tamamlanmamış başvuru uyarısı göstermemelidir.
+    await tester.tap(find.byKey(const Key('completion-header-back-button')));
+    await tester.pumpAndSettle();
+    expect(find.byKey(const Key('household-camera-button')), findsOneWidget);
+    expect(find.byKey(const Key('activity-return-dialog')), findsNothing);
+
+    await tester.tap(find.byKey(const Key('household-continue-button')));
+    await tester.pumpAndSettle();
+    expect(find.text('Tamamla'), findsOneWidget);
+
     await tester.enterText(
       find.byKey(const Key('completion-note-field')),
       'Taslak saha notu',

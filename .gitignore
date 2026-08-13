@@ -37,6 +37,7 @@ Desktop.ini
 .pub/
 /build/
 /coverage/
+/docs/
 .application-photos/
 
 # Local runtime, QA and scratch outputs

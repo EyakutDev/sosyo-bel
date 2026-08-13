@@ -38,6 +38,7 @@ void main() {
     ApplicationCompletionAction? onSubmitToBoard,
     ValueChanged<String>? onNoteChanged,
     bool initiallySubmitted = false,
+    double topSafeArea = 0,
   }) async {
     tester.view.physicalSize = const Size(375, 812);
     tester.view.devicePixelRatio = 1;
@@ -47,13 +48,19 @@ void main() {
     await tester.pumpWidget(
       MaterialApp(
         theme: AppTheme.light,
-        home: ApplicationCompletionPage(
-          applicationDraft: applicationDraft,
-          onBack: onBack ?? () {},
-          onSaveDraft: onSaveDraft ?? (_) async {},
-          onSubmitToBoard: onSubmitToBoard ?? (_) async {},
-          onNoteChanged: onNoteChanged,
-          initiallySubmitted: initiallySubmitted,
+        home: MediaQuery(
+          data: MediaQueryData(
+            size: const Size(375, 812),
+            padding: EdgeInsets.only(top: topSafeArea),
+          ),
+          child: ApplicationCompletionPage(
+            applicationDraft: applicationDraft,
+            onBack: onBack ?? () {},
+            onSaveDraft: onSaveDraft ?? (_) async {},
+            onSubmitToBoard: onSubmitToBoard ?? (_) async {},
+            onNoteChanged: onNoteChanged,
+            initiallySubmitted: initiallySubmitted,
+          ),
         ),
       ),
     );
@@ -76,6 +83,18 @@ void main() {
     expect(find.text('Kurula Gönder'), findsOneWidget);
 
     await tester.tap(find.byKey(const Key('completion-header-back-button')));
+    expect(backCount, 1);
+  });
+
+  testWidgets('geri düğmesini cihazın üst güvenli alanının altında tutar', (
+    tester,
+  ) async {
+    var backCount = 0;
+    await pumpPage(tester, onBack: () => backCount++, topSafeArea: 44);
+
+    final backButton = find.byKey(const Key('completion-header-back-button'));
+    expect(tester.getTopLeft(backButton).dy, greaterThanOrEqualTo(44));
+    await tester.tap(backButton);
     expect(backCount, 1);
   });
 

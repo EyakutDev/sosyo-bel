@@ -345,7 +345,9 @@ class _AppFlowState extends State<AppFlow> {
               completionNote: note,
             );
           },
-          onBack: () => _confirmAndReturnToApplicationForm(completionContext),
+          // Tamamla, Aktivite akışının son adımıdır; üst ok taslağı
+          // kapatmadan yalnızca bir önceki Hane Durumu adımına döner.
+          onBack: () => Navigator.of(completionContext).pop(),
           onSaveDraft: (payload) =>
               _saveDraftAndOpenPendingList(completionContext, payload),
           onSubmitToBoard: (payload) =>

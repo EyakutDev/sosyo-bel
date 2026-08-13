@@ -20,6 +20,7 @@ void main() {
     HouseholdStatusStage initialStage = HouseholdStatusStage.questions,
     List<HouseholdPhotoViewData> initialPhotos = const [],
     List<HouseholdQuestionViewData> questions = householdQuestionTestViewData,
+    double topSafeArea = 0,
   }) async {
     tester.view.physicalSize = const Size(375, 812);
     tester.view.devicePixelRatio = 1;
@@ -29,14 +30,20 @@ void main() {
     await tester.pumpWidget(
       MaterialApp(
         theme: AppTheme.light,
-        home: HouseholdStatusPage(
-          questions: questions,
-          initialStage: initialStage,
-          initialPhotos: initialPhotos,
-          onBack: onBack ?? () {},
-          onHeaderBack: onHeaderBack,
-          onContinue: onContinue ?? (_) {},
-          onCapturePhoto: onCapturePhoto ?? () async => null,
+        home: MediaQuery(
+          data: MediaQueryData(
+            size: const Size(375, 812),
+            padding: EdgeInsets.only(top: topSafeArea),
+          ),
+          child: HouseholdStatusPage(
+            questions: questions,
+            initialStage: initialStage,
+            initialPhotos: initialPhotos,
+            onBack: onBack ?? () {},
+            onHeaderBack: onHeaderBack,
+            onContinue: onContinue ?? (_) {},
+            onCapturePhoto: onCapturePhoto ?? () async => null,
+          ),
         ),
       ),
     );
@@ -69,6 +76,7 @@ void main() {
       tester,
       onBack: () => externalBackCount++,
       onHeaderBack: () => headerBackCount++,
+      topSafeArea: 44,
     );
 
     await tester.tap(find.byKey(const Key('household-continue-button')));
@@ -83,7 +91,11 @@ void main() {
     await tester.tap(find.byKey(const Key('household-back-button')));
     expect(externalBackCount, 1);
 
-    await tester.tap(find.byKey(const Key('household-header-back-button')));
+    final headerBackButton = find.byKey(
+      const Key('household-header-back-button'),
+    );
+    expect(tester.getTopLeft(headerBackButton).dy, greaterThanOrEqualTo(44));
+    await tester.tap(headerBackButton);
     expect(headerBackCount, 1);
     expect(externalBackCount, 1);
   });

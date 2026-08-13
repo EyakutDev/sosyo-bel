@@ -14,6 +14,7 @@ void main() {
     required VoidCallback onUpdateInformation,
     required ValueChanged<FamilyMemberViewData> onEditMember,
     ValueChanged<FamilyInformationViewData>? onFamilyChanged,
+    double topSafeArea = 0,
   }) async {
     tester.view.physicalSize = const Size(375, 812);
     tester.view.devicePixelRatio = 1;
@@ -23,14 +24,20 @@ void main() {
     await tester.pumpWidget(
       MaterialApp(
         theme: AppTheme.light,
-        home: FamilyInformationPage(
-          referenceCatalog: applicationReferenceTestCatalog,
-          onBack: onBack,
-          onHeaderBack: onHeaderBack,
-          onContinue: onContinue,
-          onUpdateInformation: onUpdateInformation,
-          onEditMember: onEditMember,
-          onFamilyChanged: onFamilyChanged,
+        home: MediaQuery(
+          data: MediaQueryData(
+            size: const Size(375, 812),
+            padding: EdgeInsets.only(top: topSafeArea),
+          ),
+          child: FamilyInformationPage(
+            referenceCatalog: applicationReferenceTestCatalog,
+            onBack: onBack,
+            onHeaderBack: onHeaderBack,
+            onContinue: onContinue,
+            onUpdateInformation: onUpdateInformation,
+            onEditMember: onEditMember,
+            onFamilyChanged: onFamilyChanged,
+          ),
         ),
       ),
     );
@@ -114,6 +121,7 @@ void main() {
       onUpdateInformation: () => updateCount++,
       onEditMember: (member) => editedMember = member,
       onFamilyChanged: (data) => changedFamily = data,
+      topSafeArea: 44,
     );
 
     await tester.tap(find.byKey(const Key('family-information-update-button')));
@@ -123,6 +131,11 @@ void main() {
     await tester.pumpAndSettle();
 
     await tester.tap(find.byKey(const Key('family-information-back-button')));
+    final headerBackButton = find.byKey(
+      const Key('family-information-header-back-button'),
+    );
+    expect(tester.getTopLeft(headerBackButton).dy, greaterThanOrEqualTo(44));
+
     await tester.tap(
       find.byKey(const Key('family-information-header-back-button')),
     );

@@ -32,6 +32,7 @@ class CitizenProfilePage extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final screenSize = MediaQuery.sizeOf(context);
+    final topSafeArea = MediaQuery.paddingOf(context).top;
     final scale = screenSize.width / _referenceWidth;
     final contentHeight = math.max(screenSize.height, _referenceHeight * scale);
 
@@ -124,7 +125,9 @@ class CitizenProfilePage extends StatelessWidget {
                 Positioned(
                   left: 0,
                   right: 0,
-                  top: 0,
+                  // Üst geri düğmesi durum çubuğu ve kamera çentiğinin
+                  // dokunma alanıyla çakışmamalıdır.
+                  top: topSafeArea,
                   height: 65 * scale,
                   child: ColoredBox(
                     color: AppColors.white,

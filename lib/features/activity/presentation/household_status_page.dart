@@ -204,6 +204,7 @@ class _HouseholdStatusPageState extends State<HouseholdStatusPage> {
   @override
   Widget build(BuildContext context) {
     final screenSize = MediaQuery.sizeOf(context);
+    final topSafeArea = MediaQuery.paddingOf(context).top;
     final scale = screenSize.width / _referenceWidth;
     final contentHeight = math.max(screenSize.height, _referenceHeight * scale);
     final isQuestions = _stage == HouseholdStatusStage.questions;
@@ -355,7 +356,9 @@ class _HouseholdStatusPageState extends State<HouseholdStatusPage> {
                 Positioned(
                   left: 0,
                   right: 0,
-                  top: 0,
+                  // Üst geri düğmesi durum çubuğu ve kamera çentiğinin
+                  // dokunma alanıyla çakışmamalıdır.
+                  top: topSafeArea,
                   height: 65 * scale,
                   child: ColoredBox(
                     color: AppColors.white,
@@ -673,7 +676,7 @@ class _PhotosCard extends StatelessWidget {
             height: 24 * scale,
             child: Semantics(
               checked: saveToBeneficiaryDirectory,
-              label: 'Save to directory of beneficiary',
+              label: 'Hak sahibinin klasörüne kaydet',
               child: GestureDetector(
                 key: const Key('household-save-directory-checkbox'),
                 behavior: HitTestBehavior.opaque,
@@ -701,7 +704,7 @@ class _PhotosCard extends StatelessWidget {
                     SizedBox(width: 12 * scale),
                     Expanded(
                       child: Text(
-                        'Save to directory of beneficiary',
+                        'Hak sahibinin klasörüne kaydet',
                         maxLines: 1,
                         overflow: TextOverflow.ellipsis,
                         style: TextStyle(

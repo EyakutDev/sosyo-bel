@@ -175,6 +175,7 @@ class _ApplicationCompletionPageState extends State<ApplicationCompletionPage> {
   @override
   Widget build(BuildContext context) {
     final screenSize = MediaQuery.sizeOf(context);
+    final topSafeArea = MediaQuery.paddingOf(context).top;
     final scale = screenSize.width / _referenceWidth;
     final contentHeight = math.max(screenSize.height, _referenceHeight * scale);
 
@@ -320,7 +321,9 @@ class _ApplicationCompletionPageState extends State<ApplicationCompletionPage> {
                 Positioned(
                   left: 0,
                   right: 0,
-                  top: 0,
+                  // Üst başlığı kamera çentiğinin ve durum çubuğunun dokunma
+                  // alanının altında tutar.
+                  top: topSafeArea,
                   height: 65 * scale,
                   child: ColoredBox(
                     color: AppColors.white,
