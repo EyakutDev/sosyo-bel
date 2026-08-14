@@ -4,6 +4,10 @@ using SosyoBel.Application.WorkItems;
 
 namespace SosyoBel.Infrastructure.Persistence;
 
+/// <summary>
+/// Personelin kendi oluşturduğu başvuruları şirketin dbo iş kaydı ile Sosyo-Bel
+/// metadata kaydını birleştirerek mobil iş listesi modeline dönüştürür.
+/// </summary>
 internal sealed class UserWorkItemQuery(
     SosyoBelDbContext dbContext) : IUserWorkItemQuery
 {

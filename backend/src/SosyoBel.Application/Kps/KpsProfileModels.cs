@@ -46,6 +46,10 @@ public enum KpsProfileQueryStatus
     Succeeded,
     InvalidInput,
     AccessDenied,
+    InvalidIdentityNumber,
+    BirthDateMismatch,
+    AddressOutsideServiceArea,
+    UpstreamInvalidRequest,
     UpstreamUnavailable,
     InvalidUpstreamResponse,
 }

@@ -18,6 +18,8 @@ using SosyoBel.Infrastructure.Identity;
 
 var builder = WebApplication.CreateBuilder(args);
 
+// Program.cs composition root olarak kalır: katmanların gerçek uygulamaları burada
+// bağlanır; başvuru, kimlik veya KPS iş kuralları bu dosyada uygulanmaz.
 builder.Services.AddProblemDetails();
 builder.Services.AddHttpContextAccessor();
 builder.Services.AddScoped<ICurrentMunicipality, HttpCurrentMunicipality>();
@@ -35,6 +37,8 @@ builder.Services
 
 var app = builder.Build();
 
+// Sıra güvenlik davranışının parçasıdır: authentication kullanıcıyı oluşturur,
+// authorization ise endpoint çalışmadan önce rol ve üyelik politikalarını uygular.
 app.UseExceptionHandler();
 app.UseRateLimiter();
 app.UseAuthentication();
@@ -76,6 +80,8 @@ app.MapHealthChecks("/health/ready", new HealthCheckOptions
         "Sosyo-Bel veritabanı bağlantısını da sınar.")
     .AllowAnonymous();
 
+// Endpoint dosyaları yalnız HTTP sınırını tanımlar; kalıcı veri ve dış servis
+// işlemleri Application sözleşmeleri üzerinden Infrastructure katmanına geçer.
 app.MapAuthenticationEndpoints();
 app.MapAdministrationEndpoints();
 app.MapApplicationEndpoints();

@@ -1,3 +1,4 @@
+using System.Net;
 using SosyoBel.Application.Authorization;
 using SosyoBel.Application.Kps;
 
@@ -63,6 +64,43 @@ internal sealed class KpsProfileQuery(
                     identity.Status,
                     address.FullAddress));
         }
+        catch (KpsQueryRejectedException error)
+        {
+            // KPS'nin ham hata metni kullanıcıya taşınmaz. Kurumun doğruladığı
+            // sayısal kodlar sabit, uygulamaya ait mesajlara burada dönüştürülür.
+            return error.Reason switch
+            {
+                KpsQueryRejectionReason.InvalidIdentityNumber =>
+                    new KpsProfileQueryResult(
+                        KpsProfileQueryStatus.InvalidIdentityNumber,
+                        Code: "kps_invalid_identity_number",
+                        Detail: "Geçerli bir T.C. kimlik numarası giriniz."),
+                KpsQueryRejectionReason.BirthDateMismatch =>
+                    new KpsProfileQueryResult(
+                        KpsProfileQueryStatus.BirthDateMismatch,
+                        Code: "kps_identity_birth_date_mismatch",
+                        Detail: "T.C. kimlik numarası ile doğum tarihi eşleşmiyor."),
+                KpsQueryRejectionReason.AddressOutsideServiceArea =>
+                    new KpsProfileQueryResult(
+                        KpsProfileQueryStatus.AddressOutsideServiceArea,
+                        Code: "kps_address_outside_service_area",
+                        Detail: "Adres kurumun hizmet alanı dışında."),
+                _ => new KpsProfileQueryResult(
+                    KpsProfileQueryStatus.InvalidUpstreamResponse,
+                    Code: "kps_invalid_response",
+                    Detail: "KPS servisinden beklenen biçimde cevap alınamadı."),
+            };
+        }
+        catch (KpsClientException error)
+            when (error.StatusCode == HttpStatusCode.BadRequest)
+        {
+            // Paylaşılan sözleşmede upstream 400 yalnızca dört zorunlu sorgu
+            // alanından biri eksik olduğunda dönüyor.
+            return new KpsProfileQueryResult(
+                KpsProfileQueryStatus.UpstreamInvalidRequest,
+                Code: "kps_invalid_request",
+                Detail: "KPS sorgu bilgileri eksik veya geçersiz.");
+        }
         catch (KpsClientException)
         {
             return new KpsProfileQueryResult(
@@ -72,8 +110,8 @@ internal sealed class KpsProfileQuery(
         }
         catch (KpsResponseContractException)
         {
-            // Başarısız KPS response örnekleri henüz verilmedi. Bilinmeyen cevapları
-            // kayıt bulunamadı diye varsaymak yerine güvenli ve genel bir hata döndürürüz.
+            // Sözleşmede tanımlanmayan cevapları bilinen bir iş hatası gibi
+            // göstermeyiz; güvenli ve genel bir entegrasyon hatası döndürürüz.
             return new KpsProfileQueryResult(
                 KpsProfileQueryStatus.InvalidUpstreamResponse,
                 Code: "kps_invalid_response",

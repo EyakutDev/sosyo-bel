@@ -6,6 +6,10 @@ using SosyoBel.Application.Authorization;
 
 namespace SosyoBel.Api.Applications;
 
+/// <summary>
+/// Başvuru kullanım senaryolarının HTTP sınırıdır. Claim, header ve request
+/// doğrulamasını yapar; transaction ve kalıcı iş kurallarını lifecycle servislerine bırakır.
+/// </summary>
 internal static class ApplicationEndpoints
 {
     private const string IdempotencyHeader = "Idempotency-Key";

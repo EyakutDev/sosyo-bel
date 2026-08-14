@@ -37,6 +37,22 @@ void main() {
       expect(mapped.requiresLogin, isTrue);
     });
 
+    test('422 KPS iş kuralı mesajını ve kodunu korur', () {
+      final mapped = ApiErrorMapper.fromDio(
+        _badResponse(
+          422,
+          data: {
+            'title': 'Adres kurumun hizmet alanı dışında.',
+            'code': 'kps_address_outside_service_area',
+          },
+        ),
+      );
+
+      expect(mapped.kind, ApiErrorKind.validation);
+      expect(mapped.message, 'Adres kurumun hizmet alanı dışında.');
+      expect(mapped.code, 'kps_address_outside_service_area');
+    });
+
     test('timeout hatasını standart kullanıcı mesajına çevirir', () {
       final mapped = ApiErrorMapper.fromDio(
         DioException(

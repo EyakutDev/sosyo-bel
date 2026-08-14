@@ -74,6 +74,109 @@ public sealed class KpsResponseReaderTests
         Assert.Equal("ÖRNEK MAH. TEST SK. NO: 1", result.FullAddress);
     }
 
+    [Theory]
+    [InlineData(5)]
+    [InlineData(31)]
+    public void IdentityFailureUsesKnownBusinessCode(int kpsCode)
+    {
+        var expectedReason = kpsCode switch
+        {
+            5 => KpsQueryRejectionReason.InvalidIdentityNumber,
+            31 => KpsQueryRejectionReason.BirthDateMismatch,
+            _ => throw new ArgumentOutOfRangeException(nameof(kpsCode)),
+        };
+        var json = $$"""
+        {
+          "Success": false,
+          "Message": "Ham kurum mesajı",
+          "RawData": {
+            "SorguSonucu": [
+              {
+                "HataBilgisi": {
+                  "Aciklama": "Ham kurum açıklaması",
+                  "Kod": {{kpsCode}}
+                },
+                "KimlikNo": 12345678901,
+                "YerlesimYeriAdresi": null
+              }
+            ]
+          }
+        }
+        """;
+
+        var error = Assert.Throws<KpsQueryRejectedException>(
+            () => KpsResponseReader.ReadIdentity(json, SyntheticIdentityNumber));
+
+        Assert.Equal(expectedReason, error.Reason);
+        Assert.DoesNotContain(SyntheticIdentityNumber, error.Message, StringComparison.Ordinal);
+        Assert.DoesNotContain("Ham kurum", error.Message, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void AddressFailurePrefersServiceAreaCodeAndIgnoresOtherAddressCode()
+    {
+        const string json = """
+        {
+          "Success": false,
+          "Message": "AdreseErisimYetkiHatasi",
+          "RawData": {
+            "SorguSonucu": [
+              {
+                "DigerAdresBilgileri": [
+                  {
+                    "HataBilgisi": {
+                      "Aciklama": "KayitBulunamadi",
+                      "Kod": 2
+                    }
+                  }
+                ],
+                "HataBilgisi": null,
+                "KimlikNo": 12345678901,
+                "YerlesimYeriAdresi": {
+                  "HataBilgisi": {
+                    "Kod": 16
+                  }
+                }
+              }
+            ]
+          }
+        }
+        """;
+
+        var error = Assert.Throws<KpsQueryRejectedException>(
+            () => KpsResponseReader.ReadAddress(json, SyntheticIdentityNumber));
+
+        Assert.Equal(KpsQueryRejectionReason.AddressOutsideServiceArea, error.Reason);
+    }
+
+    [Fact]
+    public void UnknownFailureCodeRemainsAContractError()
+    {
+        const string json = """
+        {
+          "Success": false,
+          "Message": "Bilinmeyen ham KPS mesajı",
+          "RawData": {
+            "SorguSonucu": [
+              {
+                "HataBilgisi": {
+                  "Kod": 999
+                },
+                "KimlikNo": 12345678901
+              }
+            ]
+          }
+        }
+        """;
+
+        var error = Assert.Throws<KpsResponseContractException>(
+            () => KpsResponseReader.ReadIdentity(json, SyntheticIdentityNumber));
+
+        Assert.Equal("KPS_KIMLIK_CEVABI_GECERSIZ", error.Code);
+        Assert.DoesNotContain(SyntheticIdentityNumber, error.Message, StringComparison.Ordinal);
+        Assert.DoesNotContain("Bilinmeyen ham", error.Message, StringComparison.Ordinal);
+    }
+
     [Fact]
     public void IdentityResponseRejectsMismatchedIdentityWithoutLeakingIt()
     {

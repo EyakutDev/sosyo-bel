@@ -7,6 +7,10 @@ using SosyoBel.Application.Authorization;
 
 namespace SosyoBel.Api.Authentication;
 
+/// <summary>
+/// Kimlik doğrulamanın HTTP sınırıdır. İstek biçimini ve başlıkları doğrular,
+/// oturum yaşam döngüsünü IAuthenticationService'e devreder ve sonucu HTTP'ye çevirir.
+/// </summary>
 internal static class AuthenticationEndpoints
 {
     public static IEndpointRouteBuilder MapAuthenticationEndpoints(

@@ -1,3 +1,4 @@
+using System.Net;
 using SosyoBel.Application.Authorization;
 using SosyoBel.Application.Kps;
 using SosyoBel.Infrastructure.Kps;
@@ -77,6 +78,95 @@ public sealed class KpsProfileQueryTests
         Assert.Equal(0, kpsClient.AddressCallCount);
     }
 
+    [Theory]
+    [InlineData(
+        5,
+        KpsProfileQueryStatus.InvalidIdentityNumber,
+        "kps_invalid_identity_number",
+        "Geçerli bir T.C. kimlik numarası giriniz.")]
+    [InlineData(
+        31,
+        KpsProfileQueryStatus.BirthDateMismatch,
+        "kps_identity_birth_date_mismatch",
+        "T.C. kimlik numarası ile doğum tarihi eşleşmiyor.")]
+    public async Task IdentityBusinessFailureMapsToSafeApplicationResult(
+        int kpsCode,
+        KpsProfileQueryStatus expectedStatus,
+        string expectedCode,
+        string expectedDetail)
+    {
+        var reason = kpsCode switch
+        {
+            5 => KpsQueryRejectionReason.InvalidIdentityNumber,
+            31 => KpsQueryRejectionReason.BirthDateMismatch,
+            _ => throw new ArgumentOutOfRangeException(nameof(kpsCode)),
+        };
+        var kpsClient = new StubKpsClient(
+            identityException: new KpsQueryRejectedException(reason));
+        var query = new KpsProfileQuery(
+            new StubPermissionChecker(true),
+            kpsClient,
+            TimeProvider.System);
+
+        var result = await query.GetProfileAsync(
+            Actor,
+            Criteria,
+            CancellationToken.None);
+
+        Assert.Equal(expectedStatus, result.Status);
+        Assert.Equal(expectedCode, result.Code);
+        Assert.Equal(expectedDetail, result.Detail);
+        Assert.Equal(1, kpsClient.IdentityCallCount);
+        Assert.Equal(0, kpsClient.AddressCallCount);
+    }
+
+    [Fact]
+    public async Task AddressOutsideServiceAreaBlocksProfileWithApprovedMessage()
+    {
+        var kpsClient = new StubKpsClient(
+            addressException: new KpsQueryRejectedException(
+                KpsQueryRejectionReason.AddressOutsideServiceArea));
+        var query = new KpsProfileQuery(
+            new StubPermissionChecker(true),
+            kpsClient,
+            TimeProvider.System);
+
+        var result = await query.GetProfileAsync(
+            Actor,
+            Criteria,
+            CancellationToken.None);
+
+        Assert.Equal(KpsProfileQueryStatus.AddressOutsideServiceArea, result.Status);
+        Assert.Equal("kps_address_outside_service_area", result.Code);
+        Assert.Equal("Adres kurumun hizmet alanı dışında.", result.Detail);
+        Assert.Equal(1, kpsClient.IdentityCallCount);
+        Assert.Equal(1, kpsClient.AddressCallCount);
+    }
+
+    [Fact]
+    public async Task UpstreamBadRequestMapsToInvalidKpsRequest()
+    {
+        var kpsClient = new StubKpsClient(
+            identityException: new KpsClientException(
+                "KPS_HTTP_HATASI",
+                "Ham upstream mesajı",
+                HttpStatusCode.BadRequest));
+        var query = new KpsProfileQuery(
+            new StubPermissionChecker(true),
+            kpsClient,
+            TimeProvider.System);
+
+        var result = await query.GetProfileAsync(
+            Actor,
+            Criteria,
+            CancellationToken.None);
+
+        Assert.Equal(KpsProfileQueryStatus.UpstreamInvalidRequest, result.Status);
+        Assert.Equal("kps_invalid_request", result.Code);
+        Assert.Equal("KPS sorgu bilgileri eksik veya geçersiz.", result.Detail);
+        Assert.DoesNotContain("upstream", result.Detail, StringComparison.OrdinalIgnoreCase);
+    }
+
     private sealed class StubPermissionChecker(bool allowed) : IAccessPermissionChecker
     {
         public int CallCount { get; private set; }
@@ -97,7 +187,9 @@ public sealed class KpsProfileQueryTests
         }
     }
 
-    private sealed class StubKpsClient : IKpsClient
+    private sealed class StubKpsClient(
+        Exception? identityException = null,
+        Exception? addressException = null) : IKpsClient
     {
         public int IdentityCallCount { get; private set; }
 
@@ -109,6 +201,10 @@ public sealed class KpsProfileQueryTests
         {
             cancellationToken.ThrowIfCancellationRequested();
             IdentityCallCount++;
+            if (identityException is not null)
+            {
+                return Task.FromException<KpsIdentityInformation>(identityException);
+            }
             return Task.FromResult(new KpsIdentityInformation(
                 criteria.IdentityNumber,
                 "ÖRNEK",
@@ -128,6 +224,10 @@ public sealed class KpsProfileQueryTests
         {
             cancellationToken.ThrowIfCancellationRequested();
             AddressCallCount++;
+            if (addressException is not null)
+            {
+                return Task.FromException<KpsAddressInformation>(addressException);
+            }
             return Task.FromResult(new KpsAddressInformation(
                 criteria.IdentityNumber,
                 "ÖRNEK MAH. TEST SK. NO: 1"));

@@ -27,8 +27,8 @@ internal static class KpsResponseReader
             InvalidIdentityResponseCode,
             "KPS kimlik cevabı okunamadı.");
 
-        if (!response.Success ||
-            !MatchesIdentityNumber(response.TcKimlikNo, expectedIdentityNumber) ||
+        ThrowIfKnownRejection(json, response.Success, InvalidIdentityResponseCode);
+        if (!MatchesIdentityNumber(response.TcKimlikNo, expectedIdentityNumber) ||
             string.IsNullOrWhiteSpace(response.Ad) ||
             string.IsNullOrWhiteSpace(response.Soyad) ||
             response.DogumGunu is null ||
@@ -78,7 +78,8 @@ internal static class KpsResponseReader
             InvalidAddressResponseCode,
             "KPS adres cevabı okunamadı.");
 
-        if (!response.Success || response.RawData?.SorguSonucu is null)
+        ThrowIfKnownRejection(json, response.Success, InvalidAddressResponseCode);
+        if (response.RawData?.SorguSonucu is null)
         {
             throw InvalidContract(
                 InvalidAddressResponseCode,
@@ -100,6 +101,65 @@ internal static class KpsResponseReader
         }
 
         return new KpsAddressInformation(expectedIdentityNumber, address.Trim());
+    }
+
+    private static void ThrowIfKnownRejection(
+        string json,
+        bool success,
+        string invalidResponseCode)
+    {
+        if (success) return;
+
+        // Kurum KPS servisi iş kuralı hatalarını HTTP 200 ve Success:false ile
+        // bildiriyor. Yalnızca doğrulanmış hata kodlarını uygulama sonucuna çeviririz.
+        var failure = Deserialize<FailureResponse>(
+            json,
+            invalidResponseCode,
+            "KPS başarısız cevap bilgisi okunamadı.");
+        var knownReason = ReadKnownRejectionReason(failure);
+        if (knownReason is not null)
+        {
+            throw new KpsQueryRejectedException(knownReason.Value);
+        }
+
+        throw InvalidContract(
+            invalidResponseCode,
+            "KPS cevabı bilinmeyen bir başarısızlık durumu içeriyor.");
+    }
+
+    private static KpsQueryRejectionReason? ReadKnownRejectionReason(
+        FailureResponse failure)
+    {
+        var codes = new List<int?>
+        {
+            failure.HataBilgisi?.Kod,
+            failure.RawData?.HataBilgisi?.Kod,
+        };
+
+        if (failure.RawData?.SorguSonucu is not null)
+        {
+            foreach (var result in failure.RawData.SorguSonucu)
+            {
+                codes.Add(result.HataBilgisi?.Kod);
+                codes.Add(result.YerlesimYeriAdresi?.HataBilgisi?.Kod);
+            }
+        }
+
+        // DigerAdresBilgileri içindeki Kod=2, paylaşılan başarılı ve başarısız
+        // örneklerde de bulunuyor. Asıl sorgu sonucunu ezmemesi için kasıtlı okunmaz.
+        foreach (var code in codes)
+        {
+            var reason = code switch
+            {
+                5 => KpsQueryRejectionReason.InvalidIdentityNumber,
+                16 => KpsQueryRejectionReason.AddressOutsideServiceArea,
+                31 => KpsQueryRejectionReason.BirthDateMismatch,
+                _ => (KpsQueryRejectionReason?)null,
+            };
+            if (reason is not null) return reason;
+        }
+
+        return null;
     }
 
     private static T Deserialize<T>(string json, string code, string message)
@@ -175,5 +235,33 @@ internal static class KpsResponseReader
     private sealed record ResidenceAddress
     {
         public string? AcikAdres { get; init; }
+    }
+
+    private sealed record FailureResponse
+    {
+        public FailureInformation? HataBilgisi { get; init; }
+        public FailureRawData? RawData { get; init; }
+    }
+
+    private sealed record FailureRawData
+    {
+        public FailureInformation? HataBilgisi { get; init; }
+        public IReadOnlyCollection<FailureResult>? SorguSonucu { get; init; }
+    }
+
+    private sealed record FailureResult
+    {
+        public FailureInformation? HataBilgisi { get; init; }
+        public FailureResidenceAddress? YerlesimYeriAdresi { get; init; }
+    }
+
+    private sealed record FailureResidenceAddress
+    {
+        public FailureInformation? HataBilgisi { get; init; }
+    }
+
+    private sealed record FailureInformation
+    {
+        public int? Kod { get; init; }
     }
 }

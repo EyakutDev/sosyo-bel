@@ -4,6 +4,10 @@ using SosyoBel.Application.FieldTasks;
 
 namespace SosyoBel.Infrastructure.Persistence;
 
+/// <summary>
+/// Atanmış saha görevlerini yalnız tokenla eşleşen aktif belediye ve personel
+/// üyeliği kapsamında okur; kullanıcı kimliğini tek başına yeterli kabul etmez.
+/// </summary>
 internal sealed class AssignedFieldTaskQuery(
     SosyoBelDbContext dbContext) : IAssignedFieldTaskQuery
 {

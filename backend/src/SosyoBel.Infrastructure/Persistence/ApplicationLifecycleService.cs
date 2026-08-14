@@ -9,6 +9,11 @@ using SosyoBel.Infrastructure.Identity;
 
 namespace SosyoBel.Infrastructure.Persistence;
 
+/// <summary>
+/// Başvurunun taslaktan kurula gönderilmesine kadar olan kalıcı yaşam döngüsünü
+/// yönetir. Belediye kapsamı, idempotency, RowVersion ve transaction kuralları bu
+/// katmanda uygulanır; şirketin dbo verisi sosyobel teknik uzantılarıyla birlikte kullanılır.
+/// </summary>
 internal sealed class ApplicationLifecycleService(
     SosyoBelDbContext dbContext,
     TimeProvider timeProvider,

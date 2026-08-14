@@ -25,6 +25,7 @@ internal static class KpsEndpoints
             .Produces<KpsProfile>(StatusCodes.Status200OK)
             .ProducesValidationProblem()
             .ProducesProblem(StatusCodes.Status403Forbidden)
+            .ProducesProblem(StatusCodes.Status422UnprocessableEntity)
             .ProducesProblem(StatusCodes.Status502BadGateway)
             .ProducesProblem(StatusCodes.Status503ServiceUnavailable);
 
@@ -72,6 +73,22 @@ internal static class KpsEndpoints
                 StatusCodes.Status403Forbidden,
                 result.Code ?? "kps_permission_required",
                 result.Detail ?? "KPS sorgulama yetkisi bulunmuyor."),
+            KpsProfileQueryStatus.InvalidIdentityNumber => Problem(
+                StatusCodes.Status400BadRequest,
+                result.Code ?? "kps_invalid_identity_number",
+                result.Detail ?? "Geçerli bir T.C. kimlik numarası giriniz."),
+            KpsProfileQueryStatus.BirthDateMismatch => Problem(
+                StatusCodes.Status422UnprocessableEntity,
+                result.Code ?? "kps_identity_birth_date_mismatch",
+                result.Detail ?? "T.C. kimlik numarası ile doğum tarihi eşleşmiyor."),
+            KpsProfileQueryStatus.AddressOutsideServiceArea => Problem(
+                StatusCodes.Status422UnprocessableEntity,
+                result.Code ?? "kps_address_outside_service_area",
+                result.Detail ?? "Adres kurumun hizmet alanı dışında."),
+            KpsProfileQueryStatus.UpstreamInvalidRequest => Problem(
+                StatusCodes.Status400BadRequest,
+                result.Code ?? "kps_invalid_request",
+                result.Detail ?? "KPS sorgu bilgileri eksik veya geçersiz."),
             KpsProfileQueryStatus.UpstreamUnavailable => Problem(
                 StatusCodes.Status503ServiceUnavailable,
                 result.Code ?? "kps_unavailable",

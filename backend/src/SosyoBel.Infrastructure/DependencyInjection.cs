@@ -15,6 +15,10 @@ using SosyoBel.Infrastructure.Storage;
 
 namespace SosyoBel.Infrastructure;
 
+/// <summary>
+/// Application katmanındaki portları SQL, KPS ve dosya depolamasının gerçek
+/// uygulamalarına bağlayan Infrastructure composition modülüdür.
+/// </summary>
 public static class DependencyInjection
 {
     public static IServiceCollection AddSosyoBelInfrastructure(

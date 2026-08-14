@@ -10,7 +10,8 @@ Sosyo-Bel mobil API ihtiyaçlarını ek tablolarla tamamlar. Buradaki dosyalar,
 
 1. Veritabanı yedeği ve yetkili DBA onayı alınır.
 2. `000_inspect_company_schema.sql` salt-okunur çalıştırılır.
-3. Sonuçlar `docs/DATABASE_COMPATIBILITY.md` ile karşılaştırılır.
+3. Sonuçlarda zorunlu `dbo` tabloları, kolonlar, PK/FK tipleri ve lookup yapıları
+   doğrulanır; belirsizlik varsa hiçbir migration çalıştırılmaz.
 4. Aynı şemanın veri içeren anonim test kopyası hazırlanır.
 5. `migrations/001_create_foundation_extensions.sql` test kopyasında uygulanır.
 6. `checks/001_verify_foundation_extensions.sql` çalıştırılır.
@@ -24,7 +25,9 @@ Sosyo-Bel mobil API ihtiyaçlarını ek tablolarla tamamlar. Buradaki dosyalar,
 14. `checks/005_verify_application_household_support.sql` çalıştırılır.
 15. `migrations/006_create_application_photo_support.sql` test kopyasında uygulanır.
 16. `checks/006_verify_application_photo_support.sql` çalıştırılır.
-17. API uyumluluk testleri tamamlanmadan canlı veritabanına geçilmez.
+17. `migrations/007_add_kps_lookup_permission.sql` test kopyasında uygulanır.
+18. `checks/007_verify_kps_lookup_permission.sql` çalıştırılır.
+19. API uyumluluk testleri tamamlanmadan canlı veritabanına geçilmez.
 
 ## 001 foundation kapsamı
 
@@ -95,6 +98,14 @@ Taslakta yeni toplu yükleme aktif fotoğraf anlık kopyasını değiştirir. Es
 metadata audit için silinmiş olarak kalır; artık kullanılmayan fiziksel dosya
 kontrollü biçimde temizlenir. Kurula gönderilmiş başvuruda yükleme reddedilir.
 
+## 007 KPS yetkisi kapsamı
+
+Migration yeni tablo veya kullanıcı yetki kaydı oluşturmaz.
+`sosyobel.KullaniciYetkileri` tablosundaki uygulamaya ait kontrol kısıtını,
+`KILITLI_BASVURU_DUZENLE` yanında `KPS_SORGULA` koduna da izin verecek şekilde genişletir.
+Beklenen kontrol kısıtının sahipliği doğrulanamazsa işlem durur; yeniden
+çalıştırıldığında mevcut kurulum korunur ve hiçbir `dbo` nesnesine dokunulmaz.
+
 ## Yerel doğrulama
 
 Geçici veritabanında apply/check/smoke/rollback döngüsü:
@@ -136,6 +147,9 @@ sahiplik etiketiyle oluşturulan aile teknik tablolarını hedefler.
 etiketli hane tablolarını, önce cevap sonra seçenek ve soru sırasıyla hedefler.
 `rollbacks/006_drop_application_photo_support.sql` yalnız 006 sahiplik etiketli
 fotoğraf metadata tablosunu hedefler.
+`rollbacks/007_remove_kps_lookup_permission.sql`, yalnız hiç `KPS_SORGULA`
+yetki kaydı yoksa kontrol kısıtını önceki kapsama döndürür; herhangi bir kullanıcı
+yetki kaydını silmez.
 İlgili tablolardan herhangi biri veri içeriyorsa veri kaybını önlemek için işlem
 reddedilir. Betikler `sosyobel` şemasını ve hiçbir `dbo` nesnesini silmez.
 

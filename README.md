@@ -7,6 +7,15 @@ eklemesini ve başvuruyu kurula göndermesini sağlayan mobil uygulamadır.
 Repository; Flutter mobil uygulamasını, ASP.NET Core API'yi, SQL Server
 dosyalarını ve otomatik testleri birlikte içerir.
 
+## Teknik belgeler
+
+Projeyi ve özellikle backend kodunu ilk kez inceleyecek kişiler öncelikle
+[API mimarisi ve kod okuma rehberine](backend/API_ARCHITECTURE.md) bakmalıdır.
+
+- [Rol ve yetki modeli](backend/ACCESS_CONTROL.md)
+- [İlk sistem yöneticisi kurulumu](backend/BOOTSTRAP.md)
+- [Kimlik doğrulama notları](backend/AUTH_VALIDATION.md)
+
 ## Teknolojiler
 
 - Flutter ve Dart
@@ -312,15 +321,17 @@ Ham KPS cevabı mobil uygulamaya açılmaz.
 
 | HTTP durumu | Anlamı |
 | --- | --- |
-| `400` | T.C. kimlik numarası veya doğum tarihi geçersiz |
+| `400` | Sorgu alanları eksik/geçersiz veya KPS Kod=5 ile T.C. kimlik numarasını reddetti |
 | `401` | Oturum açılmamış veya token geçersiz |
 | `403` | Personelde KPS sorgulama yetkisi yok |
+| `422` | KPS Kod=31 ile kimlik/doğum tarihi uyuşmazlığı veya Kod=16 ile hizmet alanı dışı adres bildirdi |
 | `502` | KPS cevabı beklenen başarılı sözleşmeyle uyuşmuyor |
 | `503` | KPS servisine ulaşılamıyor veya istek zaman aşımına uğradı |
 
-Kurumun kayıt bulunamadı ve diğer başarısız cevap sözleşmeleri kesinleşene kadar
-bilinmeyen cevaplar güvenli biçimde genel `502` sonucu olarak ele alınır; ham
-cevap ve kişisel veri hata mesajına eklenmez.
+Kurum KPS servisi iş kuralı hatalarını HTTP 200 ve `Success:false` ile döndürür.
+Bilinen Kod=5, Kod=16 ve Kod=31 cevapları yukarıdaki güvenli HTTP sonuçlarına
+çevrilir. Bilinmeyen kodlar genel `502` olarak ele alınır; ham kurum cevabı ve
+kişisel veri hata mesajına eklenmez.
 
 ### 4. Mobil uygulama üzerinden test
 
@@ -435,9 +446,3 @@ yeterli değildir.
 
 Production ortamında beklenen davranıştır. Yalnız güvenilir test ortamında
 `OpenApi__Enabled=true` tanımlanıp uygulama yeniden başlatılır.
-
-## Ek belgeler
-
-- `backend/ACCESS_CONTROL.md`: Rol ve yetki modeli
-- `backend/BOOTSTRAP.md`: İlk sistem yöneticisi kurulumu
-- `backend/AUTH_VALIDATION.md`: Kimlik doğrulama notları
