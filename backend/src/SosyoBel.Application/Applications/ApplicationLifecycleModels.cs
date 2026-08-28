@@ -13,10 +13,11 @@ public enum ApplicationLifecycleStatus
 /// Belediye ve kullanıcı bilgileri istek gövdesinden değil, doğrulanmış JWT
 /// claim'lerinden üretilir. Böylece personel başka belediye adına kayıt açamaz.
 /// </summary>
-public sealed record ApplicationActorContext(
-    string ActorUserId,
-    int MunicipalityId,
-    long MunicipalityMembershipId);
+/// <summary>
+/// Uygulama tek belediyeye ait olduğu için başvuru sahibi yalnız doğrulanmış
+/// kullanıcı kimliğiyle belirlenir; yapay belediye veya üyelik kimliği üretilmez.
+/// </summary>
+public sealed record ApplicationActorContext(string ActorUserId);
 
 /// <summary>
 /// Başvurunun kişi ve talep adımında toplanan çekirdek verisidir. Yardım ve engel

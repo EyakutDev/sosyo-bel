@@ -9,9 +9,11 @@ import 'package:sosyo_bel/features/auth/domain/auth_repository.dart';
 import 'package:sosyo_bel/features/application/data/remote_application_repository.dart';
 import 'package:sosyo_bel/features/application/data/remote_application_reference_repository.dart';
 import 'package:sosyo_bel/features/application/data/remote_kps_profile_repository.dart';
+import 'package:sosyo_bel/features/application/data/platform_local_application_draft_repository.dart';
 import 'package:sosyo_bel/features/application/domain/application_reference_catalog.dart';
 import 'package:sosyo_bel/features/application/domain/application_repository.dart';
 import 'package:sosyo_bel/features/application/domain/kps_profile.dart';
+import 'package:sosyo_bel/features/application/domain/local_application_draft_repository.dart';
 import 'package:sosyo_bel/features/home/data/remote_work_items_repository.dart';
 import 'package:sosyo_bel/features/home/domain/work_items_repository.dart';
 
@@ -22,6 +24,7 @@ class SosyoBelApp extends StatefulWidget {
     this.applicationRepository,
     this.applicationReferenceRepository,
     this.kpsProfileRepository,
+    this.localApplicationDraftRepository,
     this.workItemsRepository,
     super.key,
   });
@@ -31,6 +34,7 @@ class SosyoBelApp extends StatefulWidget {
   final ApplicationRepository? applicationRepository;
   final ApplicationReferenceRepository? applicationReferenceRepository;
   final KpsProfileRepository? kpsProfileRepository;
+  final LocalApplicationDraftRepository? localApplicationDraftRepository;
   final WorkItemsRepository? workItemsRepository;
 
   @override
@@ -42,6 +46,7 @@ class _SosyoBelAppState extends State<SosyoBelApp> {
   late final ApplicationRepository _applicationRepository;
   late final ApplicationReferenceRepository _applicationReferenceRepository;
   late final KpsProfileRepository _kpsProfileRepository;
+  late final LocalApplicationDraftRepository _localApplicationDraftRepository;
   late final WorkItemsRepository _workItemsRepository;
 
   @override
@@ -65,6 +70,9 @@ class _SosyoBelAppState extends State<SosyoBelApp> {
         remoteRepositories!.applicationReferenceRepository;
     _kpsProfileRepository =
         widget.kpsProfileRepository ?? remoteRepositories!.kpsProfileRepository;
+    _localApplicationDraftRepository =
+        widget.localApplicationDraftRepository ??
+        PlatformLocalApplicationDraftRepository();
     _workItemsRepository =
         widget.workItemsRepository ?? remoteRepositories!.workItemsRepository;
   }
@@ -80,6 +88,7 @@ class _SosyoBelAppState extends State<SosyoBelApp> {
         applicationRepository: _applicationRepository,
         applicationReferenceRepository: _applicationReferenceRepository,
         kpsProfileRepository: _kpsProfileRepository,
+        localApplicationDraftRepository: _localApplicationDraftRepository,
         workItemsRepository: _workItemsRepository,
       ),
     );

@@ -12,10 +12,9 @@ SET ANSI_NULLS ON;
 SET QUOTED_IDENTIFIER ON;
 
 IF OBJECT_ID(N'dbo.AspNetUsers', N'U') IS NULL OR
-   OBJECT_ID(N'dbo.Basvurular', N'U') IS NULL OR
-   OBJECT_ID(N'sosyobel.Belediyeler', N'U') IS NULL
+   OBJECT_ID(N'dbo.Basvurular', N'U') IS NULL
 BEGIN
-    THROW 51320, N'Uyumluluk 005 icin dbo kullanici/basvuru ve sosyobel belediye tablolari gereklidir.', 1;
+    THROW 51320, N'Uyumluluk 005 icin dbo kullanici ve basvuru tablolari gereklidir.', 1;
 END;
 
 DECLARE @ExistingTableCount int =
@@ -69,11 +68,10 @@ BEGIN TRY
 
     IF @ExistingTableCount = 0
     BEGIN
-        /* Sorular global veya ileride belediyeye ozel tanimlanabilir. */
+        /* Uygulama tek belediyeye ait oldugu icin soru kodu kurum icinde tektir. */
         CREATE TABLE sosyobel.HaneSorulari
         (
             Id          int IDENTITY(1,1) NOT NULL,
-            BelediyeId  int NULL,
             Kod         nvarchar(80) NOT NULL,
             SoruMetni   nvarchar(300) NOT NULL,
             CevapTipi   nvarchar(30) NOT NULL,
@@ -83,22 +81,12 @@ BEGIN TRY
             AktifMi     bit NOT NULL
                 CONSTRAINT DF_HaneSorulari_AktifMi DEFAULT (1),
             CONSTRAINT PK_HaneSorulari PRIMARY KEY CLUSTERED (Id),
-            CONSTRAINT FK_HaneSorulari_Belediyeler
-                FOREIGN KEY (BelediyeId)
-                REFERENCES sosyobel.Belediyeler (Id),
+            CONSTRAINT UQ_HaneSorulari_Kod UNIQUE (Kod),
             CONSTRAINT CK_HaneSorulari_CevapTipi CHECK
                 (CevapTipi IN
                     (N'TEK_SECIM', N'COKLU_SECIM', N'METIN', N'SAYI', N'EVET_HAYIR')),
             CONSTRAINT CK_HaneSorulari_Sira CHECK (Sira BETWEEN 1 AND 32767)
         );
-
-        CREATE UNIQUE INDEX UX_HaneSorulari_GlobalKod
-            ON sosyobel.HaneSorulari (Kod)
-            WHERE BelediyeId IS NULL;
-
-        CREATE UNIQUE INDEX UX_HaneSorulari_BelediyeKod
-            ON sosyobel.HaneSorulari (BelediyeId, Kod)
-            WHERE BelediyeId IS NOT NULL;
 
         CREATE TABLE sosyobel.HaneSoruSecenekleri
         (
@@ -123,7 +111,6 @@ BEGIN TRY
         CREATE TABLE sosyobel.BasvuruHaneCevaplari
         (
             Id                    int IDENTITY(1,1) NOT NULL,
-            BelediyeId            int NOT NULL,
             BasvuruId             int NOT NULL,
             SoruId                int NOT NULL,
             SecenekId             int NULL,
@@ -138,9 +125,6 @@ BEGIN TRY
             CONSTRAINT PK_BasvuruHaneCevaplari PRIMARY KEY CLUSTERED (Id),
             CONSTRAINT UQ_BasvuruHaneCevaplari_Basvuru_Soru
                 UNIQUE (BasvuruId, SoruId),
-            CONSTRAINT FK_BasvuruHaneCevaplari_Belediyeler
-                FOREIGN KEY (BelediyeId)
-                REFERENCES sosyobel.Belediyeler (Id),
             CONSTRAINT FK_BasvuruHaneCevaplari_Basvurular
                 FOREIGN KEY (BasvuruId)
                 REFERENCES dbo.Basvurular (Id)
@@ -164,9 +148,6 @@ BEGIN TRY
 
         CREATE INDEX IX_BasvuruHaneCevaplari_SoruId
             ON sosyobel.BasvuruHaneCevaplari (SoruId);
-
-        CREATE INDEX IX_BasvuruHaneCevaplari_BelediyeBasvuru
-            ON sosyobel.BasvuruHaneCevaplari (BelediyeId, BasvuruId);
 
         EXEC sys.sp_addextendedproperty
             @name = N'SosyoBelOwnerMigration',
@@ -210,9 +191,8 @@ BEGIN TRY
         (N'EV_ESYALARI', N'Evdeki Eşyalar', 5);
 
     INSERT INTO sosyobel.HaneSorulari
-        (BelediyeId, Kod, SoruMetni, CevapTipi, ZorunluMu, Sira)
+        (Kod, SoruMetni, CevapTipi, ZorunluMu, Sira)
     SELECT
-        NULL,
         sourceQuestion.Kod,
         sourceQuestion.SoruMetni,
         N'TEK_SECIM',
@@ -223,8 +203,7 @@ BEGIN TRY
     (
         SELECT 1
         FROM sosyobel.HaneSorulari AS targetQuestion
-        WHERE targetQuestion.BelediyeId IS NULL
-          AND targetQuestion.Kod = sourceQuestion.Kod
+        WHERE targetQuestion.Kod = sourceQuestion.Kod
     );
 
     DECLARE @Options TABLE
@@ -264,8 +243,7 @@ BEGIN TRY
         sourceOption.Sira
     FROM @Options AS sourceOption
     INNER JOIN sosyobel.HaneSorulari AS targetQuestion
-        ON targetQuestion.BelediyeId IS NULL
-       AND targetQuestion.Kod = sourceOption.SoruKodu
+        ON targetQuestion.Kod = sourceOption.SoruKodu
     WHERE NOT EXISTS
     (
         SELECT 1

@@ -26,7 +26,9 @@ void main() {
         expect(items, hasLength(2));
         expect(items.first.applicationNumber, 'B-2026-150');
         expect(items.first.isAssignedTask, isTrue);
-        expect(items.last.taskPublicId, isNull);
+        expect(items.first.taskId, 42);
+        expect(items.first.applicationPublicId, isNull);
+        expect(items.last.taskId, isNull);
         expect(items.last.isEditable, isTrue);
         expect(
           adapter.lastRequest?.uri.path,
@@ -93,8 +95,8 @@ RemoteWorkItemsRepository _repository(HttpClientAdapter adapter) {
 }
 
 final _assignedWorkItemJson = <String, dynamic>{
-  'applicationPublicId': '22222222-2222-2222-2222-222222222222',
-  'taskPublicId': '11111111-1111-1111-1111-111111111111',
+  'applicationPublicId': null,
+  'taskId': 42,
   'applicationNumber': 'B-2026-150',
   'applicantFullName': 'Ahmet Yılmaz',
   'address': 'Bahçelievler Mahallesi No: 4',
@@ -108,7 +110,7 @@ final _assignedWorkItemJson = <String, dynamic>{
 
 final _ownApplicationJson = <String, dynamic>{
   'applicationPublicId': '33333333-3333-3333-3333-333333333333',
-  'taskPublicId': null,
+  'taskId': null,
   'applicationNumber': 'B-2026-151',
   'applicantFullName': null,
   'address': null,

@@ -1,6 +1,6 @@
-using System.Globalization;
 using System.IdentityModel.Tokens.Jwt;
 using System.Security.Claims;
+using System.Text.Json;
 using SosyoBel.Application.Applications;
 using SosyoBel.Application.Authorization;
 
@@ -13,6 +13,8 @@ namespace SosyoBel.Api.Applications;
 internal static class ApplicationEndpoints
 {
     private const string IdempotencyHeader = "Idempotency-Key";
+    private static readonly JsonSerializerOptions JsonOptions =
+        new(JsonSerializerDefaults.Web);
 
     public static IEndpointRouteBuilder MapApplicationEndpoints(
         this IEndpointRouteBuilder endpoints)
@@ -20,55 +22,117 @@ internal static class ApplicationEndpoints
         var group = endpoints
             .MapGroup("/api/v1/applications")
             .WithTags("Başvurular")
-            .RequireAuthorization(AuthorizationPolicyNames.Personnel);
+            .RequireAuthorization(AuthorizationPolicyNames.MobileFieldOperations);
 
-        group.MapPost("/drafts", CreateDraftAsync)
-            .WithSummary("Yeni başvuru taslağı oluşturur")
+        group.MapPost("/submit", SubmitCompletedAsync)
+            .WithSummary("Tamamlanmış mobil başvuruyu tek işlemde kurula gönderir")
             .WithDescription(
-                "Personelin aktif belediyesi kapsamında yeni taslak oluşturur. Ağ tekrarlarında " +
-                "ikinci kayıt açılmaması için 8-100 karakterlik Idempotency-Key zorunludur.");
-        group.MapGet("/{applicationPublicId:guid}", GetAsync)
-            .WithSummary("Başvuru ayrıntılarını getirir")
-            .WithDescription(
-                "Yalnız başvuruyu oluşturan personel ve aynı belediye kapsamı kaydı okuyabilir.");
-        group.MapGet("/{applicationPublicId:guid}/draft-snapshot", GetDraftSnapshotAsync)
-            .WithSummary("Kaydedilmiş başvuru taslağını yeniden açmak için getirir")
-            .WithDescription(
-                "Çekirdek başvuru, manuel aile üyeleri, hane cevapları ve aktif fotoğraf metadata bilgisini " +
-                "tek yanıtta döndürür. Fotoğraf içerikleri yetkilendirilmiş ayrı endpoint üzerinden alınır.");
-        group.MapPut("/{applicationPublicId:guid}/draft", UpdateDraftAsync)
-            .WithSummary("Başvuru taslağını günceller")
-            .WithDescription(
-                "Yalnız TASLAK durumundaki kayıt güncellenebilir. RowVersion eskiyse 409 döner; " +
-                "kurula gönderilmiş kayıt hiçbir normal personel isteğiyle değiştirilemez.");
-        group.MapPut("/{applicationPublicId:guid}/field-data", SaveFieldDataAsync)
-            .WithSummary("Başvurunun aile ve hane saha verisini kaydeder")
-            .WithDescription(
-                "Manuel aile üyelerini ve yönetilebilir hane soru cevaplarını başvurunun değişmez anlık kopyası olarak kaydeder. " +
-                "Referans kataloğunda zorunlu işaretlenen etkin hane sorularının tamamı cevaplanmalıdır. " +
-                "Yalnız TASLAK kayıt güncellenebilir ve güncel RowVersion zorunludur.");
-        group.MapPost("/{applicationPublicId:guid}/photos", UploadPhotosAsync)
-            .WithSummary("Başvurunun hane fotoğraflarını yükler")
-            .WithDescription(
-                "0-15 JPEG, PNG, HEIC veya HEIF fotoğrafını özel dosya deposuna aktarır; boş liste aktif fotoğrafları temizler. " +
-                "SQL Server yalnız metadata ve SHA-256 özetini saklar. Her dosya en fazla 10 MB olabilir. " +
-                "TASLAK durumunda yeni toplu yükleme aktif fotoğraf anlık kopyasını değiştirir; eski metadata audit için korunur. " +
-                "Idempotency-Key ve güncel RowVersion zorunludur, kurula gönderilen başvuru değiştirilemez.")
+                "multipart/form-data içindeki payload JSON alanından kişi/talep, aile ve hane verilerini; " +
+                "photos alanlarından en fazla 15 fotoğrafı alır. KPS sunucuda yeniden doğrulanır. " +
+                "dbo.Basvurular, dbo.BasvuruAileFertleri ve dbo.HaneFotograflari kayıtları tek SQL transactionında yazılır. " +
+                "Herhangi bir adım başarısız olursa veritabanı kayıtları geri alınır ve yeni dosyalar temizlenir.")
             .WithMetadata(new Microsoft.AspNetCore.Mvc.RequestSizeLimitAttribute(
                 160L * 1024 * 1024))
+            // Handler formu doğrudan HttpRequest üzerinden okuduğu için response
+            // tipleri Swagger sözleşmesine burada açıkça eklenir.
+            .Produces<CompletedApplicationSubmission>(StatusCodes.Status200OK)
+            .ProducesValidationProblem(StatusCodes.Status400BadRequest)
+            .ProducesProblem(StatusCodes.Status401Unauthorized)
+            .ProducesProblem(StatusCodes.Status403Forbidden)
+            .ProducesProblem(StatusCodes.Status404NotFound)
+            .ProducesProblem(StatusCodes.Status409Conflict)
+            .ProducesProblem(StatusCodes.Status500InternalServerError)
             .DisableAntiforgery();
-        group.MapGet("/{applicationPublicId:guid}/photos/{photoId:int}", DownloadPhotoAsync)
-            .WithSummary("Başvuru fotoğrafını güvenli depodan indirir")
-            .WithDescription(
-                "Yalnız başvuruyu oluşturan aynı belediye personeli aktif fotoğrafı okuyabilir; " +
-                "fiziksel depolama yolu istemciye açıklanmaz.");
-        group.MapPost("/{applicationPublicId:guid}/submit", SubmitAsync)
-            .WithSummary("Başvuruyu kurula gönderir ve kilitler")
-            .WithDescription(
-                "TASLAK kaydını atomik olarak KURUL_BEKLIYOR durumuna taşır. İşlemden sonra " +
-                "başvuru düzenlenemez. Idempotency-Key ve güncel RowVersion zorunludur.");
 
         return endpoints;
+    }
+
+    private static async Task<IResult> SubmitCompletedAsync(
+        HttpRequest request,
+        HttpContext httpContext,
+        ICompletedApplicationSubmissionService service,
+        CancellationToken cancellationToken)
+    {
+        var errors = new Dictionary<string, string[]>();
+        var actor = ReadActor(httpContext.User, errors);
+        var idempotencyKey = ReadIdempotencyKey(httpContext, errors);
+        if (!request.HasFormContentType)
+        {
+            errors["request"] = ["multipart/form-data isteği zorunludur."];
+            return Results.ValidationProblem(errors);
+        }
+
+        var form = await request.ReadFormAsync(cancellationToken);
+        var payloadText = form["payload"].Count == 1
+            ? form["payload"][0]
+            : null;
+        CompletedApplicationSubmissionRequest? payload = null;
+        if (string.IsNullOrWhiteSpace(payloadText))
+        {
+            errors["payload"] = ["Tek bir payload JSON alanı zorunludur."];
+        }
+        else
+        {
+            try
+            {
+                payload = JsonSerializer.Deserialize<
+                    CompletedApplicationSubmissionRequest>(
+                    payloadText,
+                    JsonOptions);
+                if (payload is null)
+                    errors["payload"] = ["Payload JSON içeriği boş olamaz."];
+            }
+            catch (JsonException)
+            {
+                errors["payload"] = ["Payload geçerli JSON biçiminde olmalıdır."];
+            }
+        }
+
+        ApplicationDraftData? draft = null;
+        IReadOnlyCollection<ApplicationFamilyMemberData> familyMembers = [];
+        IReadOnlyCollection<ApplicationHouseholdAnswerData> householdAnswers = [];
+        if (payload is not null)
+        {
+            draft = ReadDraft(payload.Draft, errors);
+            familyMembers = ReadFamilyMembers(payload.FamilyMembers, errors);
+            householdAnswers = ReadHouseholdAnswers(
+                payload.HouseholdAnswers,
+                errors);
+        }
+        if (errors.Count > 0) return Results.ValidationProblem(errors);
+
+        var files = form.Files.GetFiles("photos");
+        var streams = new List<Stream>(files.Count);
+        try
+        {
+            var photos = new List<ApplicationPhotoUpload>(files.Count);
+            for (var index = 0; index < files.Count; index++)
+            {
+                var file = files[index];
+                var stream = file.OpenReadStream();
+                streams.Add(stream);
+                photos.Add(new(
+                    file.FileName,
+                    file.ContentType,
+                    file.Length,
+                    checked((byte)(index + 1)),
+                    stream));
+            }
+
+            return ToHttpResult(await service.SubmitAsync(
+                new SubmitCompletedApplicationCommand(
+                    actor!,
+                    idempotencyKey!,
+                    draft!,
+                    familyMembers,
+                    householdAnswers,
+                    photos),
+                cancellationToken));
+        }
+        finally
+        {
+            foreach (var stream in streams) await stream.DisposeAsync();
+        }
     }
 
     private static async Task<IResult> CreateDraftAsync(
@@ -313,20 +377,13 @@ internal static class ApplicationEndpoints
         IDictionary<string, string[]> errors)
     {
         var userId = principal.FindFirstValue(JwtRegisteredClaimNames.Sub);
-        var municipalityValue = principal.FindFirstValue(CustomClaimTypes.MunicipalityId);
-        var membershipValue = principal.FindFirstValue(
-            CustomClaimTypes.MunicipalityMembershipId);
-        if (string.IsNullOrWhiteSpace(userId) ||
-            !int.TryParse(municipalityValue, NumberStyles.None, CultureInfo.InvariantCulture,
-                out var municipalityId) || municipalityId <= 0 ||
-            !long.TryParse(membershipValue, NumberStyles.None, CultureInfo.InvariantCulture,
-                out var membershipId) || membershipId <= 0)
+        if (string.IsNullOrWhiteSpace(userId))
         {
-            errors["actor"] = ["Doğrulanmış belediye personeli bulunamadı."];
+            errors["actor"] = ["Doğrulanmış kullanıcı bulunamadı."];
             return null;
         }
 
-        return new ApplicationActorContext(userId, municipalityId, membershipId);
+        return new ApplicationActorContext(userId);
     }
 
     private static string? ReadIdempotencyKey(
@@ -439,6 +496,11 @@ internal static class ApplicationEndpoints
         ApplicationDraftRequest? Draft);
 
     private sealed record SubmitApplicationRequest(string? ExpectedRowVersion);
+
+    private sealed record CompletedApplicationSubmissionRequest(
+        ApplicationDraftRequest? Draft,
+        IReadOnlyCollection<ApplicationFamilyMemberRequest>? FamilyMembers,
+        IReadOnlyCollection<ApplicationHouseholdAnswerRequest>? HouseholdAnswers);
 
     private sealed record SaveApplicationFieldDataRequest(
         string? ExpectedRowVersion,

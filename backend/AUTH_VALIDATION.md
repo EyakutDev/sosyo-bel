@@ -1,42 +1,39 @@
-# E-posta/şifre kimlik doğrulama kaydı
+# Kimlik doğrulama doğrulama kaydı
 
-## 6 Ağustos 2026
+## 28 Ağustos 2026
 
-Kimlik doğrulama akışı temiz ve geçici bir SQL Server veritabanına karşı gerçek
-HTTP istekleriyle doğrulandı. Test için kullanılan personel hesabı, token'lar ve
-veritabanı test sonunda kaldırıldı.
-
-Doğrulanan sonuçlar:
+Mobil giriş akışı şirketin mevcut ASP.NET Core Identity tablo biçimine karşı,
+gerçek HTTP istekleriyle doğrulandı. Test yalnız geçici SQL Server veritabanında
+çalıştı; sosyobel şeması ve uygulama uyumluluk migration'ları kullanılmadı.
+Geçici kullanıcı, token kayıtları ve veritabanı test sonunda kaldırıldı.
 
 | Senaryo | Sonuç |
-|---|---:|
-| API readiness | `Healthy` |
-| Yanlış şifre | `401` |
-| E-posta/şifreyle giriş | Başarılı |
-| Belediye kapsamı | `DEMO` |
-| Personel rolü | `PERSONEL` |
-| JWT ile `/api/v1/auth/me` | Başarılı |
+| --- | --- |
+| Backend Release derlemesi | 0 hata, 0 uyarı |
+| Backend birim testleri | 68/68 başarılı |
+| Yanlış parola | 401 |
+| Kullanıcı adı ve parolayla giriş | Başarılı |
+| Mevcut Identity rolü | Personel |
+| municipalityCode alanı | Dönmüyor |
+| JWT ile /api/v1/auth/me | Başarılı |
 | Refresh token rotasyonu | Başarılı |
-| Eski refresh token'ı tekrar kullanma | `401` |
-| Çıkış | `204` |
-| Çıkış sonrası refresh token | `401` |
+| Çıkış | 204 |
+| Çıkış sonrasında refresh token | 401 |
 
-Tekrarlanabilir yerel doğrulama betiği:
+Tekrarlanabilir yerel doğrulama:
 
-```powershell
-./backend/scripts/validate-auth-flow.ps1 -SqlServer 'localhost\MSSQLSERVER01'
-```
+    ./backend/scripts/validate-identity-login.ps1
 
-Betik yalnız `SosyoBelAuthValidation_<process-id>` adlı geçici veritabanını oluşturur
-ve `finally` bloğunda kaldırır. Canlı veya kalıcı kullanıcı verisi kullanmaz.
+Betik yalnız SosyoBelIdentityValidation_<guid> adlı geçici veritabanı oluşturur.
+Standart dbo.AspNetUsers, dbo.AspNetRoles ve diğer beş Identity tablosunu temsil
+eden test fixture'ını kullanır. Şirketin test veya canlı veritabanına karşı
+çalıştırılmamalıdır.
 
-## 7 Ağustos 2026 erişim kontrolü notu
+## Doğrulanan veri sınırı
 
-Auth betiği `003` ve `004` migrationları ile üyelik bazlı `PERSONEL` rolüne
-uyarlandı. Yeni yönetim akışı için ayrıca
-`scripts/validate-administration-flow.ps1` eklendi.
-
-Yeni kod temiz derlendi ve birim/EF model testleri geçti. Migration zinciri gerçek
-SQL Server üzerinde doğrulandı. Yerel SQL örneğinin aralıklı login zaman aşımı
-nedeniyle yeni tam HTTP yönetim betiğinin başarılı koşusu henüz kaydedilmedi;
-yukarıdaki 6 Ağustos sonucu yeni yönetim endpointleri için doğrulama iddiası değildir.
+- Kullanıcı ve roller mevcut dbo.AspNet* tablolarından okunur.
+- Mobil API kullanıcı, rol veya belediye kaydı oluşturmaz.
+- Admin, Kurul ve Personel rolleri mobil personel işlemlerine girebilir.
+- Login isteğinde ve cevabında belediye kodu bulunmaz.
+- Refresh tokenın açık değeri tutulmaz; hash ve oturum bilgisi mevcut
+  dbo.AspNetUserTokens tablosunda SosyoBel.Api sağlayıcı adıyla saklanır.

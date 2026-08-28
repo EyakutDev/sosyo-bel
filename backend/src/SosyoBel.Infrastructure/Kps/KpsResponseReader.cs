@@ -91,16 +91,27 @@ internal static class KpsResponseReader
         var address = response.RawData.SorguSonucu
             .FirstOrDefault(value =>
                 MatchesIdentityNumber(value.KimlikNo, expectedIdentityNumber))
-            ?.YerlesimYeriAdresi
-            ?.AcikAdres;
-        if (string.IsNullOrWhiteSpace(address))
+            ?.YerlesimYeriAdresi;
+        if (string.IsNullOrWhiteSpace(address?.AcikAdres))
         {
             throw InvalidContract(
                 InvalidAddressResponseCode,
                 "KPS adres cevabında yerleşim yeri açık adresi bulunamadı.");
         }
 
-        return new KpsAddressInformation(expectedIdentityNumber, address.Trim());
+        var municipalityAddress = address.IlIlceMerkezAdresi;
+        return new KpsAddressInformation(
+            expectedIdentityNumber,
+            address.AcikAdres.Trim(),
+            address.AdresNo,
+            municipalityAddress?.IlKodu,
+            municipalityAddress?.IlceKodu,
+            municipalityAddress?.MahalleKodu,
+            municipalityAddress?.CsbmKodu,
+            NormalizeOptional(municipalityAddress?.Mahalle),
+            NormalizeOptional(municipalityAddress?.Csbm),
+            NormalizeOptional(municipalityAddress?.DisKapiNo),
+            NormalizeOptional(municipalityAddress?.IcKapiNo));
     }
 
     private static void ThrowIfKnownRejection(
@@ -235,6 +246,21 @@ internal static class KpsResponseReader
     private sealed record ResidenceAddress
     {
         public string? AcikAdres { get; init; }
+        public long? AdresNo { get; init; }
+        public MunicipalityAddress? IlIlceMerkezAdresi { get; init; }
+    }
+
+    private sealed record MunicipalityAddress
+    {
+        public int? IlKodu { get; init; }
+        public int? IlceKodu { get; init; }
+        public string? Mahalle { get; init; }
+        public int? MahalleKodu { get; init; }
+        // KPS'nin CSBM alanı şirket web uygulamasında sokak adı/kodu olarak kullanılıyor.
+        public string? Csbm { get; init; }
+        public int? CsbmKodu { get; init; }
+        public string? DisKapiNo { get; init; }
+        public string? IcKapiNo { get; init; }
     }
 
     private sealed record FailureResponse

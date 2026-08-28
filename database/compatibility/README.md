@@ -27,7 +27,9 @@ Sosyo-Bel mobil API ihtiyaçlarını ek tablolarla tamamlar. Buradaki dosyalar,
 16. `checks/006_verify_application_photo_support.sql` çalıştırılır.
 17. `migrations/007_add_kps_lookup_permission.sql` test kopyasında uygulanır.
 18. `checks/007_verify_kps_lookup_permission.sql` çalıştırılır.
-19. API uyumluluk testleri tamamlanmadan canlı veritabanına geçilmez.
+19. `migrations/008_remove_application_municipality_scope.sql` test kopyasında uygulanır.
+20. `checks/008_verify_application_single_municipality.sql` çalıştırılır.
+21. API uyumluluk testleri tamamlanmadan canlı veritabanına geçilmez.
 
 ## 001 foundation kapsamı
 
@@ -106,6 +108,14 @@ Migration yeni tablo veya kullanıcı yetki kaydı oluşturmaz.
 Beklenen kontrol kısıtının sahipliği doğrulanamazsa işlem durur; yeniden
 çalıştırıldığında mevcut kurulum korunur ve hiçbir `dbo` nesnesine dokunulmaz.
 
+## 008 tek belediye başvuru kapsamı
+
+Mobil uygulama tek belediyeye ait olduğu için hane soruları, hane cevapları ve
+fotoğraf metadata kayıtları ayrı bir `BelediyeId` taşımaz. 008, daha önce eski
+005/006 betikleriyle kurulmuş tablolardaki bu teknik kolonu ve ilişkileri kaldırır.
+Aynı soru kodundan birden fazla kayıt varsa hangisinin korunacağına karar vermez;
+veri silmek yerine güvenli biçimde durur. Mevcut `dbo` tablolarını değiştirmez.
+
 ## Yerel doğrulama
 
 Geçici veritabanında apply/check/smoke/rollback döngüsü:
@@ -133,7 +143,8 @@ geçici verileri çalışma sonunda kaldırır.
 `tests/007_expand_company_identity_fixture.sql` ve
 `tests/009_expand_company_application_fixture.sql` ile
 `tests/010_expand_company_family_fixture.sql` ve
-`tests/014_expand_company_photo_fixture.sql` yalnız bu yerel doğrulama
+`tests/014_expand_company_photo_fixture.sql` ve
+`tests/016_expand_company_field_task_fixture.sql` yalnız bu yerel doğrulama
 için şirket tablolarını taklit eder ve şirket ortamında çalıştırılmaz.
 
 ## Rollback

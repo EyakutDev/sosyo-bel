@@ -5,9 +5,8 @@ import 'package:sosyo_bel/core/auth/token_store.dart';
 import 'package:sosyo_bel/core/constants/app_assets.dart';
 import 'package:sosyo_bel/core/network/api_exception.dart';
 import 'package:sosyo_bel/core/theme/app_colors.dart';
-import 'package:sosyo_bel/features/auth/domain/auth_repository.dart';
 
-typedef LoginCallback = Future<void> Function(String email, String password);
+typedef LoginCallback = Future<void> Function(String username, String password);
 
 /// Figma'daki `Sign in` (54:21278) ekranının Flutter karşılığı.
 ///
@@ -36,7 +35,7 @@ class LoginPage extends StatefulWidget {
 }
 
 class _LoginPageState extends State<LoginPage> {
-  final _emailController = TextEditingController();
+  final _usernameController = TextEditingController();
   final _passwordController = TextEditingController();
 
   bool _isLoading = false;
@@ -51,7 +50,7 @@ class _LoginPageState extends State<LoginPage> {
 
   @override
   void dispose() {
-    _emailController.dispose();
+    _usernameController.dispose();
     _passwordController.dispose();
     super.dispose();
   }
@@ -153,13 +152,13 @@ class _LoginPageState extends State<LoginPage> {
                   width: 327 * scaleX,
                   height: 44 * scaleX,
                   child: _LoginTextField(
-                    fieldKey: const Key('login-email-field'),
-                    controller: _emailController,
-                    hintText: 'E-Posta Adresi',
+                    fieldKey: const Key('login-username-field'),
+                    controller: _usernameController,
+                    hintText: 'Kullanıcı Adı',
                     scale: scaleX,
-                    keyboardType: TextInputType.emailAddress,
+                    keyboardType: TextInputType.text,
                     textInputAction: TextInputAction.next,
-                    autofillHints: const [AutofillHints.email],
+                    autofillHints: const [AutofillHints.username],
                     enabled: !_isBusy,
                   ),
                 ),
@@ -290,9 +289,9 @@ class _LoginPageState extends State<LoginPage> {
   Future<void> _submit() async {
     if (_isBusy) return;
 
-    final email = _emailController.text.trim();
+    final username = _usernameController.text.trim();
     final password = _passwordController.text;
-    final validationMessage = _validate(email: email, password: password);
+    final validationMessage = _validate(username: username, password: password);
     if (validationMessage != null) {
       setState(() => _errorMessage = validationMessage);
       return;
@@ -305,10 +304,8 @@ class _LoginPageState extends State<LoginPage> {
     });
 
     try {
-      await widget.onLogin(email, password);
+      await widget.onLogin(username, password);
       TextInput.finishAutofillContext();
-    } on MunicipalitySelectionRequiredException {
-      _showError('Devam etmek için belediye seçimi gerekiyor.');
     } on ApiException catch (error) {
       _showError(error.message);
     } on TokenStorageException {
@@ -322,11 +319,8 @@ class _LoginPageState extends State<LoginPage> {
     }
   }
 
-  String? _validate({required String email, required String password}) {
-    if (email.isEmpty) return 'E-posta adresinizi girin.';
-    if (!RegExp(r'^[^@\s]+@[^@\s]+\.[^@\s]+$').hasMatch(email)) {
-      return 'Geçerli bir e-posta adresi girin.';
-    }
+  String? _validate({required String username, required String password}) {
+    if (username.isEmpty) return 'Kullanıcı adınızı girin.';
     if (password.isEmpty) return 'Parolanızı girin.';
     return null;
   }

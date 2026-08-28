@@ -1,17 +1,12 @@
 using Microsoft.AspNetCore.Diagnostics.HealthChecks;
 using Microsoft.Extensions.Diagnostics.HealthChecks;
 using SosyoBel.Api;
-using SosyoBel.Api.Administration;
 using SosyoBel.Api.Applications;
 using SosyoBel.Api.Authentication;
-using SosyoBel.Api.Auditing;
-using SosyoBel.Api.FieldTasks;
 using SosyoBel.Api.Kps;
 using SosyoBel.Api.OpenApi;
 using SosyoBel.Api.References;
-using SosyoBel.Api.Tenant;
 using SosyoBel.Api.WorkItems;
-using SosyoBel.Application.Abstractions;
 using SosyoBel.Infrastructure;
 using SosyoBel.Infrastructure.Health;
 using SosyoBel.Infrastructure.Identity;
@@ -22,7 +17,6 @@ var builder = WebApplication.CreateBuilder(args);
 // bağlanır; başvuru, kimlik veya KPS iş kuralları bu dosyada uygulanmaz.
 builder.Services.AddProblemDetails();
 builder.Services.AddHttpContextAccessor();
-builder.Services.AddScoped<ICurrentMunicipality, HttpCurrentMunicipality>();
 builder.Services.AddSosyoBelInfrastructure(builder.Configuration);
 builder.Services.AddSosyoBelIdentity(builder.Configuration);
 builder.Services.AddSosyoBelAuthentication(builder.Configuration);
@@ -30,15 +24,15 @@ builder.Services.AddAuthenticationRateLimiting();
 builder.Services.AddSosyoBelOpenApi();
 builder.Services
     .AddHealthChecks()
-    .AddCheck<MunicipalityDatabaseHealthCheck>(
-        "sosyobel-database",
+    .AddCheck<CompanyDatabaseHealthCheck>(
+        "company-database",
         failureStatus: HealthStatus.Unhealthy,
         tags: ["ready"]);
 
 var app = builder.Build();
 
 // Sıra güvenlik davranışının parçasıdır: authentication kullanıcıyı oluşturur,
-// authorization ise endpoint çalışmadan önce rol ve üyelik politikalarını uygular.
+// authorization ise endpoint çalışmadan önce şirketin mevcut Identity rollerini uygular.
 app.UseExceptionHandler();
 app.UseRateLimiter();
 app.UseAuthentication();
@@ -77,20 +71,20 @@ app.MapHealthChecks("/health/ready", new HealthCheckOptions
     .WithSummary("Servisin isteklere hazır olduğunu denetler")
     .WithDescription(
         "API'nin bağımlılıklarıyla birlikte trafik almaya hazır olup olmadığını kontrol eder; " +
-        "Sosyo-Bel veritabanı bağlantısını da sınar.")
+        "Şirket SQL Server veritabanı bağlantısını da sınar.")
     .AllowAnonymous();
 
 // Endpoint dosyaları yalnız HTTP sınırını tanımlar; kalıcı veri ve dış servis
 // işlemleri Application sözleşmeleri üzerinden Infrastructure katmanına geçer.
 app.MapAuthenticationEndpoints();
-app.MapAdministrationEndpoints();
 app.MapApplicationEndpoints();
 app.MapApplicationReferenceEndpoints();
-app.MapAuditEndpoints();
-app.MapFieldTaskEndpoints();
 app.MapKpsEndpoints();
 app.MapWorkItemEndpoints();
 app.MapSosyoBelOpenApi();
+
+// Kullanıcı ve rol yönetimi şirketin mevcut web panelinin sorumluluğundadır.
+// Mobil API yalnız saha uygulamasının kullandığı sözleşmeleri yayımlar.
 
 app.Run();
 

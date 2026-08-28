@@ -5,7 +5,21 @@ import 'package:sosyo_bel/features/application/presentation/models/application_d
 /// Esleme tek yerde tutuldugu icin ekrandaki Turkce etiketler degisse bile sunucunun
 /// kalici kodlari ekran widget'larina yayilmaz.
 abstract final class ApplicationDraftApiMapper {
-  static Map<String, dynamic> toCreateRequest(ApplicationDraft draft) {
+  /// Yerel taslağı yeni atomik kurula gönderme endpointinin tek JSON alanına
+  /// dönüştürür. Fotoğraf içerikleri repository tarafından multipart eklenir.
+  static Map<String, dynamic> toCompletedSubmissionRequest(
+    ApplicationDraft draft,
+  ) {
+    final draftEnvelope = _toDraftEnvelope(draft);
+    final fieldData = _toFieldData(draft);
+    return {
+      'draft': draftEnvelope['draft'],
+      'familyMembers': fieldData['familyMembers'],
+      'householdAnswers': fieldData['householdAnswers'],
+    };
+  }
+
+  static Map<String, dynamic> _toDraftEnvelope(ApplicationDraft draft) {
     final form = draft.applicationForm;
     if (form == null) {
       throw const FormatException('Başvuru formu tamamlanmamış.');
@@ -46,10 +60,7 @@ abstract final class ApplicationDraftApiMapper {
     };
   }
 
-  static Map<String, dynamic> toFieldDataRequest(
-    ApplicationDraft draft, {
-    required String expectedRowVersion,
-  }) {
+  static Map<String, dynamic> _toFieldData(ApplicationDraft draft) {
     final familyMembers = draft.familyInformation.members
         .map((member) {
           final details = member.details;
@@ -119,11 +130,8 @@ abstract final class ApplicationDraftApiMapper {
     }
 
     return {
-      'expectedRowVersion': expectedRowVersion,
       'familyMembers': familyMembers,
       'householdAnswers': householdAnswers,
-      'saveToBeneficiaryDirectory':
-          household?.saveToBeneficiaryDirectory ?? false,
     };
   }
 

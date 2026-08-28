@@ -1,112 +1,140 @@
 using Microsoft.EntityFrameworkCore;
-using SosyoBel.Application.Authorization;
+using SosyoBel.Application.FieldTasks;
 using SosyoBel.Application.WorkItems;
 
 namespace SosyoBel.Infrastructure.Persistence;
 
 /// <summary>
-/// Personelin kendi oluşturduğu başvuruları şirketin dbo iş kaydı ile Sosyo-Bel
-/// metadata kaydını birleştirerek mobil iş listesi modeline dönüştürür.
+/// Personelin kendi dbo başvuruları ile kendisine atanmış dbo saha aktivitelerini
+/// mobil uygulamanın tek bekleyen/tamamlanan iş listesinde birleştirir.
 /// </summary>
 internal sealed class UserWorkItemQuery(
-    SosyoBelDbContext dbContext) : IUserWorkItemQuery
+    CompanyApplicationDbContext dbContext,
+    IAssignedFieldTaskQuery assignedFieldTaskQuery) : IUserWorkItemQuery
 {
     public async Task<IReadOnlyCollection<UserWorkItemSummary>> GetMineAsync(
         string userId,
-        int municipalityId,
-        long municipalityMembershipId,
         int limit,
         CancellationToken cancellationToken)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(userId);
-        if (municipalityId <= 0 || municipalityMembershipId <= 0)
-            throw new ArgumentOutOfRangeException(nameof(municipalityId));
         if (limit is < 1 or > 100)
             throw new ArgumentOutOfRangeException(nameof(limit));
 
-        // Şirketin başvuru iş verisi dbo.Basvurular'da, mobil kimlik ve audit
-        // alanları ise bire bir sosyobel uzantısında tutulur. Eski, bağımsız
-        // sosyobel.Basvurular modeline dönülmez.
-        //
-        // Şirketin görev atama tablosu henüz kesin eşlenmediği için bu sorgu
-        // yalnız personelin kendi oluşturduğu başvuruları listeler. Doğrulanmamış
-        // bir SahaGorevleri tablosu varsaymak yerine görev kaynağı daha sonra
-        // aynı DTO'ya UNION edilecektir.
-        var rows = await dbContext.Database.SqlQuery<UserWorkItemRow>($"""
-            SELECT TOP ({limit})
-                metadata.PublicId AS ApplicationPublicId,
-                CAST(NULL AS uniqueidentifier) AS TaskPublicId,
-                COALESCE(
-                    NULLIF(metadata.BasvuruNo, N''),
-                    CONCAT(N'#', CONVERT(nvarchar(20), application.Id)))
-                    AS ApplicationNumber,
-                NULLIF(LTRIM(RTRIM(CONCAT(
-                    COALESCE(NULLIF(application.BasvuranAd, N''), N''),
-                    N' ',
-                    COALESCE(NULLIF(application.BasvuranSoyad, N''), N'')))), N'')
-                    AS ApplicantFullName,
-                NULLIF(application.BasvuruAcikAdres, N'') AS Address,
-                CAST(N'OWN_APPLICATION' AS nvarchar(30)) AS SourceCode,
-                statusCode.Kod AS StatusCode,
-                CAST(CASE WHEN statusCode.Kod = N'TAMAMLANDI'
-                          THEN 1 ELSE 0 END AS bit) AS IsCompleted,
-                CAST(CASE WHEN statusCode.Kod = N'TASLAK'
-                          THEN 1 ELSE 0 END AS bit) AS IsEditable,
-                NULLIF(application.TalepAciklamasi, N'') AS Description,
-                COALESCE(
-                    metadata.GuncellenmeTarihiUtc,
-                    metadata.KurulaGonderilmeTarihiUtc,
-                    application.BasvuruTarihi,
-                    metadata.OlusturulmaTarihiUtc) AS ActivityAtUtc
-            FROM dbo.Basvurular AS application
-            INNER JOIN sosyobel.BasvuruUygulamaBilgileri AS metadata
-                ON metadata.BasvuruId = application.Id
-            INNER JOIN sosyobel.ReferansKodlari AS statusCode
-                ON statusCode.ReferansTuruKodu = N'BASVURU_DURUMU'
-               AND statusCode.KaynakId = application.BasvuruDurumuId
-            INNER JOIN sosyobel.KullaniciBelediyeleri AS membership
-                ON membership.Id = {municipalityMembershipId}
-               AND membership.BelediyeId = {municipalityId}
-               AND membership.UserId = application.OlusturanUserId
-            INNER JOIN sosyobel.Belediyeler AS municipality
-                ON municipality.Id = membership.BelediyeId
-            INNER JOIN sosyobel.KullaniciUygulamaBilgileri AS userInfo
-                ON userInfo.UserId = membership.UserId
-            WHERE application.OlusturanUserId = {userId}
-              AND membership.UserId = {userId}
-              AND membership.AktifMi = CAST(1 AS bit)
-              AND membership.RolKodu = {RoleCodes.Personnel}
-              AND municipality.AktifMi = CAST(1 AS bit)
-              AND userInfo.AktifMi = CAST(1 AS bit)
-            ORDER BY IsCompleted, ActivityAtUtc DESC
-            """)
+        var assignedTasks = await assignedFieldTaskQuery.GetAssignedAsync(
+            userId,
+            limit,
+            cancellationToken);
+
+        // Mobil başvuru kimliği mevcut dbo.Basvurular.PublicToken kolonunda 32
+        // hexadecimal karakter olarak tutulur. Ek metadata tablosu veya migration
+        // kullanılmadan yalnız şirketin doğrulanmış dbo modeli sorgulanır.
+        var rows = await BuildOwnApplicationsQuery(dbContext, userId, limit)
             .ToArrayAsync(cancellationToken);
 
-        return rows.Select(row => new UserWorkItemSummary(
-            row.ApplicationPublicId,
-            row.TaskPublicId,
-            row.ApplicationNumber,
-            row.ApplicantFullName,
-            row.Address,
-            row.SourceCode,
-            row.StatusCode,
-            row.IsCompleted,
-            row.IsEditable,
-            row.Description,
-            row.ActivityAtUtc)).ToArray();
+        var ownApplications = new List<UserWorkItemSummary>(rows.Length);
+        foreach (var row in rows)
+        {
+            // Şirketin web kayıtlarındaki farklı PublicToken biçimleri mobil
+            // başvuru kimliği sayılmaz ve tüm liste isteğini hataya düşürmez.
+            if (!Guid.TryParseExact(
+                    row.ApplicationPublicToken,
+                    "N",
+                    out var applicationPublicId))
+            {
+                continue;
+            }
+
+            var statusCode =
+                CompanyWorkflowStatusMapper.MapApplication(row.CompanyStatusName);
+            var applicantFullName = string.Join(
+                ' ',
+                new[] { row.ApplicantFirstName, row.ApplicantLastName }
+                    .Where(value => !string.IsNullOrWhiteSpace(value))
+                    .Select(value => value!.Trim()));
+
+            ownApplications.Add(new UserWorkItemSummary(
+                ApplicationPublicId: applicationPublicId,
+                TaskId: null,
+                ApplicationNumber: $"#{row.ApplicationId}",
+                ApplicantFullName: string.IsNullOrEmpty(applicantFullName)
+                    ? null
+                    : applicantFullName,
+                Address: NullIfWhiteSpace(row.Address),
+                SourceCode: WorkItemSourceCodes.OwnApplication,
+                StatusCode: statusCode,
+                IsCompleted:
+                    CompanyWorkflowStatusMapper.IsApplicationCompleted(statusCode),
+                // Sunucuya ulaşan kayıt atomik olarak kurula gönderilmiş ve kilitlidir.
+                IsEditable: false,
+                Description: NullIfWhiteSpace(row.Description),
+                ActivityAtUtc: row.ActivityAtUtc));
+        }
+
+        var assignedWorkItems = assignedTasks.Select(task => new UserWorkItemSummary(
+            ApplicationPublicId: null,
+            task.TaskId,
+            ApplicationNumber: $"#{task.TaskId}",
+            task.ApplicantFullName,
+            task.Address,
+            WorkItemSourceCodes.AssignedTask,
+            task.StatusCode,
+            task.IsCompleted,
+            IsEditable: false,
+            task.Description,
+            task.ActivityAtUtc));
+
+        // İki dbo tablosu arasında başvuru foreign key'i bulunmadığından görev ve
+        // başvuru kayıtları uydurma bir ilişkiyle tekilleştirilmez.
+        return assignedWorkItems
+            .Concat(ownApplications)
+            .OrderBy(item => item.IsCompleted)
+            .ThenByDescending(item => item.ActivityAtUtc)
+            .Take(limit)
+            .ToArray();
     }
 
-    private sealed class UserWorkItemRow
+    /// <summary>
+    /// Kendi başvuruları sorgusunu şirket dbo modelinden kurar. Ayrı metoda
+    /// çıkarılması, üretilen SQL'in canlı veriye ihtiyaç duymadan sınanmasını sağlar.
+    /// </summary>
+    internal static IQueryable<UserWorkItemRow> BuildOwnApplicationsQuery(
+        CompanyApplicationDbContext dbContext,
+        string userId,
+        int limit) =>
+        (
+            from application in dbContext.Set<CompanyApplicationRecord>()
+                .AsNoTracking()
+            join status in dbContext.Set<ApplicationStatusReference>()
+                    .AsNoTracking()
+                on application.StatusId equals status.Id
+            where application.CreatedByUserId == userId
+                && application.PublicToken.Length == 32
+            orderby application.ApplicationDate descending, application.Id descending
+            select new UserWorkItemRow
+            {
+                ApplicationPublicToken = application.PublicToken,
+                ApplicationId = application.Id,
+                ApplicantFirstName = application.ApplicantFirstName,
+                ApplicantLastName = application.ApplicantLastName,
+                Address = application.ApplicationAddress,
+                CompanyStatusName = status.Name,
+                Description = application.Description,
+                ActivityAtUtc = application.ApplicationDate,
+            })
+            .Take(limit);
+
+    private static string? NullIfWhiteSpace(string? value) =>
+        string.IsNullOrWhiteSpace(value) ? null : value.Trim();
+
+    internal sealed class UserWorkItemRow
     {
-        public Guid ApplicationPublicId { get; init; }
-        public Guid? TaskPublicId { get; init; }
-        public string ApplicationNumber { get; init; } = string.Empty;
-        public string? ApplicantFullName { get; init; }
+        public string ApplicationPublicToken { get; init; } = string.Empty;
+        public int ApplicationId { get; init; }
+        public string? ApplicantFirstName { get; init; }
+        public string? ApplicantLastName { get; init; }
         public string? Address { get; init; }
-        public string SourceCode { get; init; } = string.Empty;
-        public string StatusCode { get; init; } = string.Empty;
-        public bool IsCompleted { get; init; }
-        public bool IsEditable { get; init; }
+        public string CompanyStatusName { get; init; } = string.Empty;
         public string? Description { get; init; }
         public DateTime ActivityAtUtc { get; init; }
     }

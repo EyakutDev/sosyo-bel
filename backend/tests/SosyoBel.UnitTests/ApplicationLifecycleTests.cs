@@ -10,6 +10,17 @@ public sealed class ApplicationLifecycleTests
     private static readonly DateOnly Today = new(2026, 8, 10);
 
     [Fact]
+    public void ApplicationActorUsesOnlyAuthenticatedIdentityUserId()
+    {
+        var properties = typeof(ApplicationActorContext)
+            .GetProperties()
+            .Select(value => value.Name)
+            .ToArray();
+
+        Assert.Equal([nameof(ApplicationActorContext.ActorUserId)], properties);
+    }
+
+    [Fact]
     public void DraftValidationNormalizesPhoneCodesAndText()
     {
         var input = Draft() with
@@ -306,6 +317,8 @@ public sealed class ApplicationLifecycleTests
             "SecenekId",
             answer.FindProperty(nameof(ApplicationHouseholdAnswerRecord.OptionId))
                 ?.GetColumnName(answerTable));
+        Assert.Null(answer.FindProperty("MunicipalityId"));
+        Assert.Null(question.FindProperty("MunicipalityId"));
     }
 
     [Fact]
@@ -332,6 +345,7 @@ public sealed class ApplicationLifecycleTests
             "binary(32)",
             metadata.FindProperty(nameof(ApplicationPhotoRecord.Sha256))
                 ?.GetColumnType(table));
+        Assert.Null(metadata.FindProperty("MunicipalityId"));
     }
 
     private static ApplicationDraftData Draft() =>

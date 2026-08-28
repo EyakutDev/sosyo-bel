@@ -1,4 +1,3 @@
-using SosyoBel.Application.Abstractions;
 using SosyoBel.Application.Authorization;
 using SosyoBel.Application.References;
 
@@ -15,21 +14,18 @@ internal static class ApplicationReferenceEndpoints
             .WithDescription(
                 "Yardım, engel, yakınlık, çalışma, eğitim ve yaşam durumu seçeneklerini; ayrıca " +
                 "aktif hane soruları ile seçeneklerini kararlı kod ve kullanıcı etiketi olarak döndürür. " +
-                "Şirket dbo tablolarındaki silinmiş kayıtlar gönderilmez. Hane sorularında belediyeye " +
-                "özel tanım, aynı kodlu global tanımın önüne geçer.")
-            .RequireAuthorization(AuthorizationPolicyNames.Personnel);
+                "Şirket dbo tablolarındaki silinmiş kayıtlar gönderilmez. Hane soruları tek belediyeye " +
+                "ait etkin katalogdan okunur.")
+            .RequireAuthorization(AuthorizationPolicyNames.MobileFieldOperations);
 
         return endpoints;
     }
 
     private static async Task<IResult> GetAsync(
-        ICurrentMunicipality currentMunicipality,
         IApplicationReferenceQuery query,
         CancellationToken cancellationToken)
     {
-        var catalog = await query.GetAsync(
-            currentMunicipality.RequireMunicipalityId(),
-            cancellationToken);
+        var catalog = await query.GetAsync(cancellationToken);
         return Results.Ok(catalog);
     }
 }

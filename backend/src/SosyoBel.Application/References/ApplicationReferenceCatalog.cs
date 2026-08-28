@@ -31,6 +31,5 @@ public sealed record ApplicationReferenceCatalog(
 public interface IApplicationReferenceQuery
 {
     Task<ApplicationReferenceCatalog> GetAsync(
-        int municipalityId,
         CancellationToken cancellationToken = default);
 }

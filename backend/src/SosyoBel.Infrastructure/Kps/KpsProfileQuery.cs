@@ -1,15 +1,13 @@
 using System.Net;
-using SosyoBel.Application.Authorization;
 using SosyoBel.Application.Kps;
 
 namespace SosyoBel.Infrastructure.Kps;
 
 /// <summary>
-/// Yetkiyi her sorguda veritabanından kontrol eder. Yetki yoksa KPS istemcisi
-/// çağrılmadan işlem sonlandırılır; böylece yalnız arayüz kontrolüne güvenilmez.
+/// Doğrulanmış kullanıcı ve sorgu girdilerini kontrol edip iki kurum cevabını
+/// mobil uygulamanın kullandığı tek bir profile dönüştürür.
 /// </summary>
 internal sealed class KpsProfileQuery(
-    IAccessPermissionChecker permissionChecker,
     IKpsClient kpsClient,
     TimeProvider timeProvider) : IKpsProfileQuery
 {
@@ -26,20 +24,6 @@ internal sealed class KpsProfileQuery(
                 Code: "invalid_kps_query",
                 Detail: "KPS sorgu bilgileri doğrulanamadı.",
                 Errors: errors);
-        }
-
-        var hasPermission = await permissionChecker.HasPermissionAsync(
-            actor.UserId,
-            actor.MunicipalityMembershipId,
-            actor.MunicipalityId,
-            PermissionCodes.KpsLookup,
-            cancellationToken);
-        if (!hasPermission)
-        {
-            return new KpsProfileQueryResult(
-                KpsProfileQueryStatus.AccessDenied,
-                Code: "kps_permission_required",
-                Detail: "KPS sorgulama yetkisi bulunmuyor.");
         }
 
         try
@@ -62,7 +46,16 @@ internal sealed class KpsProfileQuery(
                     identity.Gender,
                     identity.MaritalStatus,
                     identity.Status,
-                    address.FullAddress));
+                    address.FullAddress,
+                    address.AddressNumber,
+                    address.ProvinceCode,
+                    address.DistrictCode,
+                    address.NeighborhoodCode,
+                    address.StreetCode,
+                    address.Neighborhood,
+                    address.Street,
+                    address.ExteriorDoorNumber,
+                    address.InteriorDoorNumber));
         }
         catch (KpsQueryRejectedException error)
         {
@@ -125,10 +118,9 @@ internal sealed class KpsProfileQuery(
         DateTimeOffset now)
     {
         var errors = new Dictionary<string, string[]>();
-        if (actor is null || string.IsNullOrWhiteSpace(actor.UserId) ||
-            actor.MunicipalityMembershipId <= 0 || actor.MunicipalityId <= 0)
+        if (actor is null || string.IsNullOrWhiteSpace(actor.UserId))
         {
-            errors["actor"] = ["Doğrulanmış personel kapsamı bulunamadı."];
+            errors["actor"] = ["Doğrulanmış kullanıcı kimliği bulunamadı."];
         }
 
         if (criteria is null || string.IsNullOrEmpty(criteria.IdentityNumber) ||

@@ -1,13 +1,11 @@
 namespace SosyoBel.Application.FieldTasks;
 
 public sealed record AssignedFieldTaskSummary(
-    Guid TaskPublicId,
-    Guid ApplicationPublicId,
-    string ApplicationNumber,
+    int TaskId,
+    int CitizenId,
     string ApplicantFullName,
     string? Address,
     string StatusCode,
+    bool IsCompleted,
     string? Description,
-    DateTime AssignedAtUtc,
-    DateTime? StartedAtUtc,
-    DateTime? CompletedAtUtc);
+    DateTime ActivityAtUtc);

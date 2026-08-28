@@ -171,7 +171,6 @@ internal sealed class ApplicationHouseholdAnswerRecord
     }
 
     public int Id { get; private set; }
-    public int MunicipalityId { get; private set; }
     public int ApplicationId { get; private set; }
     public int QuestionId { get; private set; }
     public int? OptionId { get; private set; }
@@ -183,7 +182,6 @@ internal sealed class ApplicationHouseholdAnswerRecord
     public byte[] RowVersion { get; private set; } = [];
 
     public static ApplicationHouseholdAnswerRecord CreateSingleChoice(
-        int municipalityId,
         int applicationId,
         int questionId,
         int optionId,
@@ -191,7 +189,6 @@ internal sealed class ApplicationHouseholdAnswerRecord
         DateTime nowUtc) =>
         new()
         {
-            MunicipalityId = municipalityId,
             ApplicationId = applicationId,
             QuestionId = questionId,
             OptionId = optionId,
@@ -207,7 +204,6 @@ internal sealed class ApplicationPhotoRecord
     }
 
     public int Id { get; private set; }
-    public int MunicipalityId { get; private set; }
     public int ApplicationId { get; private set; }
     public string StorageKey { get; private set; } = string.Empty;
     public string? OriginalFileName { get; private set; }
@@ -225,14 +221,12 @@ internal sealed class ApplicationPhotoRecord
     public byte[] RowVersion { get; private set; } = [];
 
     public static ApplicationPhotoRecord Create(
-        int municipalityId,
         int applicationId,
         string actorUserId,
         DateTime nowUtc,
         StoredApplicationPhoto photo) =>
         new()
         {
-            MunicipalityId = municipalityId,
             ApplicationId = applicationId,
             StorageKey = photo.StorageKey,
             OriginalFileName = photo.OriginalFileName,
@@ -309,18 +303,6 @@ internal sealed class EducationStatusReference : ICompanyReferenceSource
     public bool IsDeleted { get; init; }
 }
 
-/// <summary>
-/// Şirketin değişebilen Türkçe lookup adını mobil API'nin kararlı koduna bağlar.
-/// Kaynak satırın silinme durumu ilgili dbo lookup tablosundan ayrıca denetlenir.
-/// </summary>
-internal sealed class ReferenceCodeRecord
-{
-    public int Id { get; init; }
-    public string ReferenceTypeCode { get; init; } = string.Empty;
-    public int SourceId { get; init; }
-    public string Code { get; init; } = string.Empty;
-}
-
 internal sealed class VitalStatusReference
 {
     public int Id { get; init; }
@@ -333,7 +315,6 @@ internal sealed class VitalStatusReference
 internal sealed class HouseholdQuestionReference
 {
     public int Id { get; init; }
-    public int? MunicipalityId { get; init; }
     public string Code { get; init; } = string.Empty;
     public string Label { get; init; } = string.Empty;
     public string AnswerTypeCode { get; init; } = string.Empty;

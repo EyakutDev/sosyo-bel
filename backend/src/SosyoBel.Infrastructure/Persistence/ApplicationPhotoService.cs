@@ -15,9 +15,6 @@ internal sealed class ApplicationPhotoService(
     ILogger<ApplicationPhotoService> logger) : IApplicationPhotoService
 {
     private const string UploadEndpoint = "APPLICATION_UPLOAD_PHOTOS";
-    private const long MaxPhotoBytes = 10 * 1024 * 1024;
-    private static readonly HashSet<string> AllowedContentTypes =
-        ["image/jpeg", "image/png", "image/heic", "image/heif"];
     private static readonly JsonSerializerOptions JsonOptions =
         new(JsonSerializerDefaults.Web);
 
@@ -49,7 +46,6 @@ internal sealed class ApplicationPhotoService(
             foreach (var photo in command.Photos.OrderBy(value => value.Order))
             {
                 storedPhotos.Add(await storage.SaveAsync(
-                    command.Actor.MunicipalityId,
                     command.ApplicationPublicId,
                     photo,
                     cancellationToken));
@@ -126,8 +122,7 @@ internal sealed class ApplicationPhotoService(
 
                 var activePhotos = await dbContext.Set<ApplicationPhotoRecord>()
                     .Where(
-                        value => value.MunicipalityId == command.Actor.MunicipalityId &&
-                                 value.ApplicationId == application.Id &&
+                        value => value.ApplicationId == application.Id &&
                                  !value.IsDeleted)
                     .ToArrayAsync(cancellationToken);
                 foreach (var activePhoto in activePhotos)
@@ -153,7 +148,6 @@ internal sealed class ApplicationPhotoService(
                 {
                     dbContext.Set<ApplicationPhotoRecord>().Add(
                         ApplicationPhotoRecord.Create(
-                            command.Actor.MunicipalityId,
                             application.Id,
                             command.Actor.ActorUserId,
                             nowUtc,
@@ -231,10 +225,8 @@ internal sealed class ApplicationPhotoService(
         CancellationToken cancellationToken)
     {
         var errors = new Dictionary<string, string[]>();
-        if (string.IsNullOrWhiteSpace(actor.ActorUserId) ||
-            actor.MunicipalityId <= 0 ||
-            actor.MunicipalityMembershipId <= 0)
-            errors["actor"] = ["Doğrulanmış belediye personeli bulunamadı."];
+        if (string.IsNullOrWhiteSpace(actor.ActorUserId))
+            errors["actor"] = ["Doğrulanmış kullanıcı bulunamadı."];
         if (applicationPublicId == Guid.Empty)
             errors["applicationPublicId"] = ["Başvuru kimliği zorunludur."];
         if (photoId <= 0)
@@ -254,7 +246,6 @@ internal sealed class ApplicationPhotoService(
             .AsNoTracking()
             .SingleOrDefaultAsync(
                 value => value.Id == photoId &&
-                         value.MunicipalityId == actor.MunicipalityId &&
                          value.ApplicationId == application.Id &&
                          !value.IsDeleted,
                 cancellationToken);
@@ -289,10 +280,8 @@ internal sealed class ApplicationPhotoService(
         UploadApplicationPhotosCommand command)
     {
         var errors = new Dictionary<string, string[]>();
-        if (string.IsNullOrWhiteSpace(command.Actor.ActorUserId) ||
-            command.Actor.MunicipalityId <= 0 ||
-            command.Actor.MunicipalityMembershipId <= 0)
-            errors["actor"] = ["Doğrulanmış belediye personeli bulunamadı."];
+        if (string.IsNullOrWhiteSpace(command.Actor.ActorUserId))
+            errors["actor"] = ["Doğrulanmış kullanıcı bulunamadı."];
         if (command.ApplicationPublicId == Guid.Empty)
             errors["applicationPublicId"] = ["Başvuru kimliği zorunludur."];
         if (!ApplicationDraftValidation.TryDecodeRowVersion(
@@ -302,22 +291,9 @@ internal sealed class ApplicationPhotoService(
         if (string.IsNullOrWhiteSpace(command.IdempotencyKey) ||
             command.IdempotencyKey.Trim().Length is < 8 or > 100)
             errors["Idempotency-Key"] = ["8-100 karakterlik istek anahtarı zorunludur."];
-        if (command.Photos.Count > 15)
-            errors["photos"] = ["Bir defada en fazla 15 fotoğraf yüklenmelidir."];
-
-        var orders = new HashSet<byte>();
-        var index = 0;
-        foreach (var photo in command.Photos)
+        foreach (var error in ApplicationPhotoPolicy.Validate(command.Photos))
         {
-            if (photo.Order is < 1 or > 15 || !orders.Add(photo.Order))
-                errors[$"photos[{index}].order"] = ["Fotoğraf sırası 1-15 arasında ve benzersiz olmalıdır."];
-            if (photo.Length is < 1 or > MaxPhotoBytes)
-                errors[$"photos[{index}].length"] = ["Her fotoğraf en fazla 10 MB olabilir."];
-            if (!AllowedContentTypes.Contains(photo.ContentType.ToLowerInvariant()))
-                errors[$"photos[{index}].contentType"] = ["Yalnız JPEG, PNG, HEIC veya HEIF kabul edilir."];
-            if (string.IsNullOrWhiteSpace(photo.FileName) || photo.FileName.Length > 255)
-                errors[$"photos[{index}].fileName"] = ["Geçerli dosya adı zorunludur."];
-            index++;
+            errors[error.Key] = error.Value;
         }
         return errors;
     }
@@ -339,12 +315,10 @@ internal sealed class ApplicationPhotoService(
     private Task<string?> FindStatusCodeAsync(
         int statusId,
         CancellationToken cancellationToken) =>
-        dbContext
-            .Mapped<ApplicationStatusReference>(
-                ApplicationReferenceCodeQueries.ApplicationStatus)
-            .Where(value => value.SourceId == statusId)
-            .Select(value => value.Code)
-            .SingleOrDefaultAsync(cancellationToken);
+        CompanyApplicationStatusResolver.FindCodeAsync(
+            dbContext,
+            statusId,
+            cancellationToken);
 
     private async Task<ApplicationDetails> ToDetailsAsync(
         ApplicationRecord application,
@@ -352,19 +326,14 @@ internal sealed class ApplicationPhotoService(
     {
         var statusCode = await FindStatusCodeAsync(application.StatusId, cancellationToken)
             ?? throw new InvalidOperationException("Başvuru durum kodu bulunamadı.");
-        var helpTypeCode = await dbContext
-            .Mapped<HelpTypeReference>(ApplicationReferenceCodeQueries.HelpType)
-            .Where(value => value.SourceId == application.HelpTypeId)
-            .Select(value => value.Code)
-            .SingleAsync(cancellationToken);
+        var helpTypeCode = CompanyReferenceCode.Encode(
+            ApplicationReferenceCodeQueries.HelpType,
+            application.HelpTypeId);
         var disabilityTypeCode = application.DisabilityTypeId is null
             ? null
-            : await dbContext
-                .Mapped<DisabilityTypeReference>(
-                    ApplicationReferenceCodeQueries.DisabilityType)
-                .Where(value => value.SourceId == application.DisabilityTypeId)
-                .Select(value => value.Code)
-                .SingleAsync(cancellationToken);
+            : CompanyReferenceCode.Encode(
+                ApplicationReferenceCodeQueries.DisabilityType,
+                application.DisabilityTypeId.Value);
         return new(
             application.PublicId,
             application.ApplicationNumber ??

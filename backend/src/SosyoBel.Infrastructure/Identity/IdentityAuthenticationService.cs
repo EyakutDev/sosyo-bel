@@ -1,6 +1,4 @@
 using System.Data;
-using System.Security.Cryptography;
-using System.Text;
 using Microsoft.AspNetCore.Identity;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Logging;
@@ -14,17 +12,17 @@ internal sealed class IdentityAuthenticationService(
     UserManager<ApplicationUser> userManager,
     SignInManager<ApplicationUser> signInManager,
     AuthenticationDbContext authenticationDbContext,
+    IdentityRefreshTokenStore refreshTokenStore,
     IAccessTokenIssuer accessTokenIssuer,
     IOptions<AuthenticationSessionOptions> sessionOptions,
     TimeProvider timeProvider,
     ILogger<IdentityAuthenticationService> logger) : IAuthenticationService
 {
     private static readonly PasswordHasher<ApplicationUser> DummyPasswordHasher = new();
-    private static readonly ApplicationUser DummyUser = ApplicationUser.Create(
-        "dummy@sosyobel.invalid",
-        "Dummy",
-        "User",
-        DateTime.UnixEpoch);
+    private static readonly ApplicationUser DummyUser = new()
+    {
+        UserName = "dummy@sosyobel.invalid",
+    };
     private static readonly string DummyPasswordHash = DummyPasswordHasher.HashPassword(
         DummyUser,
         "This-password-is-never-valid-9374");
@@ -33,13 +31,16 @@ internal sealed class IdentityAuthenticationService(
         LoginInput input,
         CancellationToken cancellationToken)
     {
-        ArgumentException.ThrowIfNullOrWhiteSpace(input.Email);
+        ArgumentException.ThrowIfNullOrWhiteSpace(input.Username);
         ArgumentException.ThrowIfNullOrWhiteSpace(input.Password);
 
-        var user = await userManager.FindByEmailAsync(input.Email.Trim());
+        // Şirketin web uygulaması gibi kullanıcı adı üzerinden mevcut
+        // dbo.AspNetUsers kaydı bulunur; e-posta giriş anahtarı değildir.
+        var user = await userManager.FindByNameAsync(input.Username.Trim());
         if (user is null)
         {
-            // Bilinmeyen e-postada da parola özeti hesaplanarak zamanlama farkı azaltılır.
+            // Bilinmeyen kullanıcı adında da parola özeti hesaplanarak zamanlama
+            // farkından hesap varlığının anlaşılması zorlaştırılır.
             _ = DummyPasswordHasher.VerifyHashedPassword(
                 DummyUser,
                 DummyPasswordHash,
@@ -50,31 +51,26 @@ internal sealed class IdentityAuthenticationService(
         var passwordResult = await signInManager.CheckPasswordSignInAsync(
             user,
             input.Password,
-            lockoutOnFailure: true);
-
+            lockoutOnFailure: false);
         if (passwordResult.IsLockedOut)
         {
             return new AuthenticationResult(AuthenticationStatus.LockedOut);
         }
 
-        if (!passwordResult.Succeeded || !user.IsActive || !user.EmailConfirmed)
+        if (!passwordResult.Succeeded)
         {
             return new AuthenticationResult(AuthenticationStatus.InvalidCredentials);
         }
 
-        var access = await ResolveAccessAsync(
-            user,
-            input.MunicipalityCode,
-            cancellationToken);
-
-        if (access.Status is not AuthenticationStatus.Succeeded)
+        var roles = await ResolveMobileRolesAsync(user);
+        if (roles.Count == 0)
         {
-            return new AuthenticationResult(access.Status, Municipalities: access.Options);
+            return new AuthenticationResult(AuthenticationStatus.AccessDenied);
         }
 
         return await CreateSessionAsync(
             user,
-            access.Scope!,
+            roles,
             input.DeviceId,
             input.IpAddress,
             cancellationToken);
@@ -85,133 +81,120 @@ internal sealed class IdentityAuthenticationService(
         CancellationToken cancellationToken)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(input.RefreshToken);
-
-        var tokenHash = HashToken(input.RefreshToken);
         var nowUtc = timeProvider.GetUtcNow().UtcDateTime;
 
+        // Aynı refresh tokenın eş zamanlı iki kez döndürülmesini engellemek için
+        // okuma, iptal ve yeni token ekleme tek Serializable transaction içindedir.
         await using var transaction = await authenticationDbContext.Database.BeginTransactionAsync(
             IsolationLevel.Serializable,
             cancellationToken);
+        var existingToken = await refreshTokenStore.FindAsync(
+            input.RefreshToken,
+            cancellationToken);
 
-        var existingToken = await authenticationDbContext.RefreshTokens
-            .SingleOrDefaultAsync(token => token.TokenHash == tokenHash, cancellationToken);
-
-        if (existingToken is null)
+        if (existingToken is null ||
+            existingToken.IsExpired(nowUtc) ||
+            !existingToken.MatchesDevice(input.DeviceId))
         {
             return new AuthenticationResult(AuthenticationStatus.InvalidRefreshToken);
         }
 
         if (existingToken.IsRevoked)
         {
-            // İptal edilmiş token'ın yeniden sunulması kopyalanma belirtisidir.
-            var activeTokens = await authenticationDbContext.RefreshTokens
-                .Where(token =>
-                    token.UserId == existingToken.UserId &&
-                    token.RevokedAtUtc == null &&
-                    token.ExpiresAtUtc > nowUtc)
-                .ToListAsync(cancellationToken);
-
-            foreach (var activeToken in activeTokens)
-            {
-                activeToken.Revoke(nowUtc, input.IpAddress);
-            }
-
+            // Döndürülmüş tokenın yeniden sunulması kopyalanma belirtisidir.
+            await refreshTokenStore.RevokeAllActiveAsync(
+                existingToken.Entity.UserId,
+                nowUtc,
+                input.IpAddress,
+                cancellationToken);
             await authenticationDbContext.SaveChangesAsync(cancellationToken);
             await transaction.CommitAsync(cancellationToken);
             logger.LogWarning(
                 "İptal edilmiş refresh token yeniden kullanıldı; kullanıcı oturumları kapatıldı. UserId: {UserId}",
-                existingToken.UserId);
+                existingToken.Entity.UserId);
             return new AuthenticationResult(AuthenticationStatus.RefreshTokenReuseDetected);
         }
 
-        if (existingToken.IsExpired(nowUtc))
+        var user = await userManager.FindByIdAsync(existingToken.Entity.UserId);
+        if (user is null || await userManager.IsLockedOutAsync(user))
         {
-            return new AuthenticationResult(AuthenticationStatus.InvalidRefreshToken);
-        }
-
-        var user = await userManager.FindByIdAsync(existingToken.UserId);
-        if (user is null || !user.IsActive || !user.EmailConfirmed ||
-            await userManager.IsLockedOutAsync(user))
-        {
-            existingToken.Revoke(nowUtc, input.IpAddress);
+            refreshTokenStore.Revoke(existingToken, nowUtc, input.IpAddress);
             await authenticationDbContext.SaveChangesAsync(cancellationToken);
             await transaction.CommitAsync(cancellationToken);
             return new AuthenticationResult(AuthenticationStatus.AccessDenied);
         }
 
-        // Rol ve üyelik refresh sırasında yeniden okunur; eski token yetkisi taşınmaz.
-        var access = await ResolveAccessAsync(
-            user,
-            input.MunicipalityCode,
-            cancellationToken);
-
-        if (access.Status is not AuthenticationStatus.Succeeded)
+        // Roller her yenilemede dbo.AspNetUserRoles üzerinden tekrar okunur;
+        // kaldırılmış bir yetki eski refresh tokenla taşınamaz.
+        var roles = await ResolveMobileRolesAsync(user);
+        if (roles.Count == 0)
         {
-            if (access.Status is AuthenticationStatus.AccessDenied)
-            {
-                existingToken.Revoke(nowUtc, input.IpAddress);
-                await authenticationDbContext.SaveChangesAsync(cancellationToken);
-                await transaction.CommitAsync(cancellationToken);
-            }
-
-            return new AuthenticationResult(access.Status, Municipalities: access.Options);
+            refreshTokenStore.Revoke(existingToken, nowUtc, input.IpAddress);
+            await authenticationDbContext.SaveChangesAsync(cancellationToken);
+            await transaction.CommitAsync(cancellationToken);
+            return new AuthenticationResult(AuthenticationStatus.AccessDenied);
         }
 
-        existingToken.Revoke(nowUtc, input.IpAddress);
+        refreshTokenStore.Revoke(existingToken, nowUtc, input.IpAddress);
         var result = await CreateSessionAsync(
             user,
-            access.Scope!,
+            roles,
             input.DeviceId,
             input.IpAddress,
             cancellationToken);
         await transaction.CommitAsync(cancellationToken);
-
         return result;
     }
 
     public async Task LogoutAsync(LogoutInput input, CancellationToken cancellationToken)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(input.RefreshToken);
-        var tokenHash = HashToken(input.RefreshToken);
-        var token = await authenticationDbContext.RefreshTokens
-            .SingleOrDefaultAsync(value => value.TokenHash == tokenHash, cancellationToken);
-
+        var token = await refreshTokenStore.FindAsync(input.RefreshToken, cancellationToken);
         if (token is null || token.IsRevoked)
         {
             return;
         }
 
-        token.Revoke(timeProvider.GetUtcNow().UtcDateTime, input.IpAddress);
+        refreshTokenStore.Revoke(
+            token,
+            timeProvider.GetUtcNow().UtcDateTime,
+            input.IpAddress);
         await authenticationDbContext.SaveChangesAsync(cancellationToken);
     }
 
     private async Task<AuthenticationResult> CreateSessionAsync(
         ApplicationUser user,
-        ResolvedAccessScope accessScope,
+        IReadOnlyCollection<string> roles,
         string? deviceId,
         string? ipAddress,
         CancellationToken cancellationToken)
     {
+        var username = user.UserName ??
+            throw new InvalidOperationException("Identity kullanıcısının kullanıcı adı bulunamadı.");
+        var displayName = string.IsNullOrWhiteSpace(user.DisplayName)
+            ? username
+            : user.DisplayName;
         var accessToken = accessTokenIssuer.Issue(new AccessTokenSubject(
             user.Id,
-            user.Email!,
-            user.DisplayName,
-            accessScope.MunicipalityId,
-            accessScope.MunicipalityCode,
-            accessScope.MunicipalityMembershipId,
-            accessScope.Roles));
+            username,
+            string.IsNullOrWhiteSpace(user.Email) ? null : user.Email,
+            displayName,
+            roles));
 
         var nowUtc = timeProvider.GetUtcNow().UtcDateTime;
-        var refreshToken = GenerateRefreshToken();
         var refreshExpiresAtUtc = nowUtc.AddDays(sessionOptions.Value.RefreshTokenDays);
-
-        authenticationDbContext.RefreshTokens.Add(RefreshTokenRecord.Create(
+        // Aynı kullanıcıya ait süresi dolmuş API oturumları yeni tabloya ihtiyaç
+        // olmadan mevcut AspNetUserTokens tablosunda düzenli olarak temizlenir.
+        await refreshTokenStore.RemoveExpiredOrInvalidAsync(
             user.Id,
-            HashToken(refreshToken),
+            nowUtc,
+            cancellationToken);
+        var refreshToken = refreshTokenStore.Issue(
+            user.Id,
             deviceId,
             ipAddress,
             nowUtc,
-            refreshExpiresAtUtc));
+            refreshExpiresAtUtc);
         await authenticationDbContext.SaveChangesAsync(cancellationToken);
 
         return new AuthenticationResult(
@@ -219,112 +202,23 @@ internal sealed class IdentityAuthenticationService(
             new AuthenticationSession(
                 accessToken.Value,
                 accessToken.ExpiresAtUtc,
-                refreshToken,
-                refreshExpiresAtUtc,
+                refreshToken.Value,
+                refreshToken.ExpiresAtUtc,
                 new AuthenticatedUserProfile(
                     user.Id,
-                    user.Email!,
-                    user.DisplayName,
-                    accessScope.MunicipalityCode,
-                    accessScope.MunicipalityName,
-                    accessScope.MunicipalityMembershipId,
-                    accessScope.Roles)));
+                    username,
+                    string.IsNullOrWhiteSpace(user.Email) ? null : user.Email,
+                    displayName,
+                    roles)));
     }
 
-    private async Task<AccessResolution> ResolveAccessAsync(
-        ApplicationUser user,
-        string? requestedMunicipalityCode,
-        CancellationToken cancellationToken)
+    private async Task<IReadOnlyCollection<string>> ResolveMobileRolesAsync(
+        ApplicationUser user)
     {
         var identityRoles = await userManager.GetRolesAsync(user);
-        if (identityRoles.Contains(RoleCodes.SystemAdministrator, StringComparer.Ordinal))
-        {
-            // Sistem yöneticisi tenant dışıdır; belediye claim'i üretmez.
-            return new AccessResolution(
-                AuthenticationStatus.Succeeded,
-                ResolvedAccessScope.ForSystemAdministrator());
-        }
-
-        var scopes = await (
-            from membership in authenticationDbContext.UserMunicipalities.AsNoTracking()
-            join municipality in authenticationDbContext.Municipalities.AsNoTracking()
-                on membership.MunicipalityId equals municipality.Id
-            where membership.UserId == user.Id &&
-                  membership.IsActive &&
-                  municipality.IsActive &&
-                  (membership.RoleCode == RoleCodes.MunicipalityAdministrator ||
-                   membership.RoleCode == RoleCodes.Personnel)
-            orderby municipality.Name
-            select new ResolvedAccessScope(
-                membership.Id,
-                municipality.Id,
-                municipality.Code,
-                municipality.Name,
-                new[] { membership.RoleCode }))
-            .ToArrayAsync(cancellationToken);
-
-        if (scopes.Length == 0)
-        {
-            return new AccessResolution(AuthenticationStatus.AccessDenied);
-        }
-
-        if (!string.IsNullOrWhiteSpace(requestedMunicipalityCode))
-        {
-            var normalizedCode = requestedMunicipalityCode.Trim().ToUpperInvariant();
-            var selected = scopes.SingleOrDefault(value =>
-                string.Equals(
-                    value.MunicipalityCode,
-                    normalizedCode,
-                    StringComparison.Ordinal));
-            return selected is null
-                ? new AccessResolution(AuthenticationStatus.AccessDenied)
-                : new AccessResolution(AuthenticationStatus.Succeeded, selected);
-        }
-
-        if (scopes.Length == 1)
-        {
-            return new AccessResolution(AuthenticationStatus.Succeeded, scopes[0]);
-        }
-
-        return new AccessResolution(
-            AuthenticationStatus.MunicipalitySelectionRequired,
-            Options: scopes
-                .Select(value => new MunicipalityOption(
-                    value.MunicipalityCode!,
-                    value.MunicipalityName!))
-                .ToArray());
+        return identityRoles
+            .Where(CompanyIdentityRoleCodes.GrantsMobileFieldAccess)
+            .Distinct(StringComparer.OrdinalIgnoreCase)
+            .ToArray();
     }
-
-    private static string GenerateRefreshToken()
-    {
-        var bytes = RandomNumberGenerator.GetBytes(64);
-        return Convert.ToBase64String(bytes)
-            .TrimEnd('=')
-            .Replace('+', '-')
-            .Replace('/', '_');
-    }
-
-    private static byte[] HashToken(string token) =>
-        SHA256.HashData(Encoding.UTF8.GetBytes(token));
-
-    private sealed record ResolvedAccessScope(
-        long? MunicipalityMembershipId,
-        int? MunicipalityId,
-        string? MunicipalityCode,
-        string? MunicipalityName,
-        IReadOnlyCollection<string> Roles)
-    {
-        public static ResolvedAccessScope ForSystemAdministrator() =>
-            new(
-                null,
-                null,
-                null,
-                null,
-                new[] { RoleCodes.SystemAdministrator });
-    }
-
-    private sealed record AccessResolution(
-        AuthenticationStatus Status,
-        ResolvedAccessScope? Scope = null,
-        IReadOnlyCollection<MunicipalityOption>? Options = null);
 }

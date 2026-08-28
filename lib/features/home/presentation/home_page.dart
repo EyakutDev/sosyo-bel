@@ -47,14 +47,18 @@ class _HomePageState extends State<HomePage> {
   List<WorkItem> _workItems = const [];
   bool _isLoading = true;
   String? _loadErrorMessage;
-  String? _openingApplicationId;
+  String? _openingDraftId;
 
   Future<void> _openEditableDraft(WorkItem item) async {
     final callback = widget.onOpenEditableDraft;
-    if (callback == null || !item.isEditable || _openingApplicationId != null) {
+    final draftId = item.localDraftId ?? item.applicationPublicId;
+    if (callback == null ||
+        !item.isEditable ||
+        draftId == null ||
+        _openingDraftId != null) {
       return;
     }
-    setState(() => _openingApplicationId = item.applicationPublicId);
+    setState(() => _openingDraftId = draftId);
     try {
       await callback(item);
     } on ApiException catch (error) {
@@ -62,7 +66,7 @@ class _HomePageState extends State<HomePage> {
     } catch (_) {
       _showOpenError('Taslak açılamadı. Lütfen tekrar deneyin.');
     } finally {
-      if (mounted) setState(() => _openingApplicationId = null);
+      if (mounted) setState(() => _openingDraftId = null);
     }
   }
 

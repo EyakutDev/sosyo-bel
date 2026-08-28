@@ -1,4 +1,3 @@
-using System.Globalization;
 using System.IdentityModel.Tokens.Jwt;
 using System.Security.Claims;
 using Microsoft.AspNetCore.Mvc;
@@ -14,14 +13,14 @@ internal static class KpsEndpoints
         var group = endpoints
             .MapGroup("/api/v1/kps")
             .WithTags("KPS Sorguları")
-            .RequireAuthorization(AuthorizationPolicyNames.Personnel);
+            .RequireAuthorization(AuthorizationPolicyNames.MobileFieldOperations);
 
         group.MapGet("/profile", GetProfileAsync)
             .WithSummary("KPS kimlik ve adres profilini getirir")
             .WithDescription(
                 "T.C. kimlik numarası ve doğum tarihiyle kurumun KPS kimlik ve adres servislerine " +
-                "yalnız GET isteği gönderir. Personelin aktif KPS_SORGULA yetkisi her istekte " +
-                "veritabanından doğrulanır; yetki yoksa kurum KPS servisine istek çıkmaz.")
+                "yalnız GET isteği gönderir. Endpoint, şirketin mevcut Identity rollerinden " +
+                "Admin, Kurul veya Personel rolüne sahip oturumlar tarafından kullanılabilir.")
             .Produces<KpsProfile>(StatusCodes.Status200OK)
             .ProducesValidationProblem()
             .ProducesProblem(StatusCodes.Status403Forbidden)
@@ -51,8 +50,8 @@ internal static class KpsEndpoints
         var actor = ReadActor(httpContext);
         if (actor is null)
         {
-            // Personel politikası normalde bu durumu daha önce durdurur. Claim kapsamı
-            // bozuk bir tokenla KPS'ye çıkılmaması için endpointte de kapalı davranılır.
+            // Rol politikası normalde bu durumu daha önce durdurur. Kullanıcı kimliği
+            // bulunmayan bozuk bir tokenla KPS'ye çıkılmaması için endpoint de kapalı davranır.
             return Results.Forbid();
         }
         if (errors.Count > 0)
@@ -69,10 +68,6 @@ internal static class KpsEndpoints
                 {
                     ["request"] = [result.Detail ?? "KPS sorgu bilgileri doğrulanamadı."],
                 }),
-            KpsProfileQueryStatus.AccessDenied => Problem(
-                StatusCodes.Status403Forbidden,
-                result.Code ?? "kps_permission_required",
-                result.Detail ?? "KPS sorgulama yetkisi bulunmuyor."),
             KpsProfileQueryStatus.InvalidIdentityNumber => Problem(
                 StatusCodes.Status400BadRequest,
                 result.Code ?? "kps_invalid_identity_number",
@@ -140,26 +135,9 @@ internal static class KpsEndpoints
     private static KpsProfileActor? ReadActor(HttpContext context)
     {
         var userId = context.User.FindFirstValue(JwtRegisteredClaimNames.Sub);
-        var municipalityIdValue = context.User.FindFirstValue(CustomClaimTypes.MunicipalityId);
-        var membershipIdValue = context.User.FindFirstValue(
-            CustomClaimTypes.MunicipalityMembershipId);
 
-        if (string.IsNullOrWhiteSpace(userId) ||
-            !int.TryParse(
-                municipalityIdValue,
-                NumberStyles.None,
-                CultureInfo.InvariantCulture,
-                out var municipalityId) || municipalityId <= 0 ||
-            !long.TryParse(
-                membershipIdValue,
-                NumberStyles.None,
-                CultureInfo.InvariantCulture,
-                out var membershipId) || membershipId <= 0)
-        {
-            return null;
-        }
-
-        return new KpsProfileActor(userId, membershipId, municipalityId);
+        // sub claim'i token üretilirken mevcut dbo.AspNetUsers.Id değerinden yazılır.
+        return string.IsNullOrWhiteSpace(userId) ? null : new KpsProfileActor(userId);
     }
 
     private static IResult Problem(int status, string code, string title) =>

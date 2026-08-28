@@ -21,7 +21,6 @@ INSERT INTO @ExpectedColumns
     (ColumnName, TypeName, MaxLengthBytes, IsNullable)
 VALUES
     (N'Id', N'int', NULL, 0),
-    (N'BelediyeId', N'int', NULL, 0),
     (N'BasvuruId', N'int', NULL, 0),
     (N'StorageKey', N'nvarchar', 1000, 0),
     (N'OrijinalDosyaAdi', N'nvarchar', 510, 1),
@@ -70,8 +69,7 @@ INSERT INTO @RequiredIndexes (IndexName, MustBeUnique)
 VALUES
     (N'UX_BasvuruFotograflari_AktifSira', 1),
     (N'UX_BasvuruFotograflari_AktifStorageKey', 1),
-    (N'IX_BasvuruFotograflari_BasvuruId', 0),
-    (N'IX_BasvuruFotograflari_BelediyeBasvuru', 0);
+    (N'IX_BasvuruFotograflari_BasvuruId', 0);
 
 IF EXISTS
 (
@@ -95,7 +93,6 @@ DECLARE @RequiredForeignKeys TABLE
 
 INSERT INTO @RequiredForeignKeys (ConstraintName)
 VALUES
-    (N'FK_BasvuruFotograflari_Belediyeler'),
     (N'FK_BasvuruFotograflari_Basvurular'),
     (N'FK_BasvuruFotograflari_OlusturanUser'),
     (N'FK_BasvuruFotograflari_SilenUser');

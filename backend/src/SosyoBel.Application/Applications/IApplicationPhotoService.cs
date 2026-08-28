@@ -48,7 +48,6 @@ public sealed record StoredApplicationPhoto(
 public interface IApplicationPhotoStorage
 {
     Task<StoredApplicationPhoto> SaveAsync(
-        int municipalityId,
         Guid applicationPublicId,
         ApplicationPhotoUpload photo,
         CancellationToken cancellationToken);

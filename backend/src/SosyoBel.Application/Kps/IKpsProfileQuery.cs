@@ -1,8 +1,8 @@
 namespace SosyoBel.Application.Kps;
 
 /// <summary>
-/// KPS erişim yetkisini güncel veritabanı kaydından doğrulayıp kimlik ve adres
-/// sonuçlarını tek, sınırlı bir profile dönüştüren uygulama sınırıdır.
+/// KPS kimlik ve adres sonuçlarını tek, sınırlı bir profile dönüştüren uygulama sınırıdır.
+/// Rol yetkilendirmesi API politikasında, kurum KPS çağrısından önce uygulanır.
 /// </summary>
 public interface IKpsProfileQuery
 {
@@ -13,9 +13,6 @@ public interface IKpsProfileQuery
 }
 
 /// <summary>
-/// Bu değerler istek gövdesinden değil, doğrulanmış personel JWT claim'lerinden gelir.
+/// Kullanıcı kimliği istekten alınmaz; doğrulanmış JWT'nin sub claim'inden gelir.
 /// </summary>
-public sealed record KpsProfileActor(
-    string UserId,
-    long MunicipalityMembershipId,
-    int MunicipalityId);
+public sealed record KpsProfileActor(string UserId);

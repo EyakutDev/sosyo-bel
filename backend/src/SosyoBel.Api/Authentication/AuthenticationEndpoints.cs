@@ -1,9 +1,7 @@
 using System.IdentityModel.Tokens.Jwt;
-using System.Net.Mail;
 using System.Security.Claims;
 using Microsoft.AspNetCore.Mvc;
 using SosyoBel.Application.Authentication;
-using SosyoBel.Application.Authorization;
 
 namespace SosyoBel.Api.Authentication;
 
@@ -21,9 +19,14 @@ internal static class AuthenticationEndpoints
         group.MapPost("/login", LoginAsync)
             .WithSummary("Kullanıcı oturumu açar")
             .WithDescription(
-                "E-posta ve şifreyi doğrular; kullanıcı birden fazla belediyeye bağlıysa " +
-                "belediye seçimi ister. Başarılı sonuç erişim ve yenileme anahtarlarını içerir. " +
+                "Mevcut ASP.NET Identity kullanıcı adı ve şifresini doğrular. Admin, Kurul veya " +
+                "Personel rolüne sahip hesaplara erişim ve yenileme anahtarlarını döndürür. " +
                 "İstemci cihaz kimliğini isteğe bağlı X-Device-Id başlığında gönderebilir.")
+            .Produces<AuthenticationSession>(StatusCodes.Status200OK)
+            .ProducesValidationProblem(StatusCodes.Status400BadRequest)
+            .ProducesProblem(StatusCodes.Status401Unauthorized)
+            .ProducesProblem(StatusCodes.Status403Forbidden)
+            .ProducesProblem(StatusCodes.Status423Locked)
             .AllowAnonymous()
             .RequireRateLimiting(AuthenticationRateLimiting.PolicyName);
         group.MapPost("/refresh", RefreshAsync)
@@ -31,6 +34,9 @@ internal static class AuthenticationEndpoints
             .WithDescription(
                 "Geçerli refresh token ile yeni erişim ve refresh token üretir. Güvenlik için " +
                 "eski refresh token tekrar kullanılamaz; varsa X-Device-Id değeri oturumla eşleştirilir.")
+            .Produces<AuthenticationSession>(StatusCodes.Status200OK)
+            .ProducesValidationProblem(StatusCodes.Status400BadRequest)
+            .ProducesProblem(StatusCodes.Status401Unauthorized)
             .AllowAnonymous()
             .RequireRateLimiting(AuthenticationRateLimiting.PolicyName);
         group.MapPost("/logout", LogoutAsync)
@@ -38,13 +44,17 @@ internal static class AuthenticationEndpoints
             .WithDescription(
                 "Gönderilen refresh tokenı iptal eder. Erişim tokenının süresi dolmuş olsa bile " +
                 "oturum kapatılabilmesi için bu uç anonim çağrı kabul eder.")
+            .Produces(StatusCodes.Status204NoContent)
+            .ProducesValidationProblem(StatusCodes.Status400BadRequest)
             .AllowAnonymous()
             .RequireRateLimiting(AuthenticationRateLimiting.PolicyName);
         group.MapGet("/me", CurrentUser)
             .WithSummary("Aktif kullanıcı bilgilerini getirir")
             .WithDescription(
-                "Bearer erişim tokenındaki kullanıcı, belediye üyeliği ve rol bilgilerini döndürür. " +
-                "İstemci aktif oturumun kapsamını bu uçla doğrulayabilir.");
+                "Bearer erişim tokenındaki mevcut Identity kullanıcısını ve rollerini döndürür. " +
+                "İstemci aktif oturumu bu uçla doğrulayabilir.")
+            .Produces(StatusCodes.Status200OK)
+            .ProducesProblem(StatusCodes.Status401Unauthorized);
 
         return endpoints;
     }
@@ -64,9 +74,8 @@ internal static class AuthenticationEndpoints
 
         var result = await authenticationService.LoginAsync(
             new LoginInput(
-                request.Email,
+                request.Username,
                 request.Password,
-                request.MunicipalityCode,
                 deviceId,
                 ReadRemoteIp(httpContext)),
             cancellationToken);
@@ -90,7 +99,6 @@ internal static class AuthenticationEndpoints
         var result = await authenticationService.RefreshAsync(
             new RefreshInput(
                 request.RefreshToken,
-                request.MunicipalityCode,
                 deviceId,
                 ReadRemoteIp(httpContext)),
             cancellationToken);
@@ -104,7 +112,7 @@ internal static class AuthenticationEndpoints
         IAuthenticationService authenticationService,
         CancellationToken cancellationToken)
     {
-        if (string.IsNullOrWhiteSpace(request.RefreshToken) || request.RefreshToken.Length > 500)
+        if (string.IsNullOrWhiteSpace(request.RefreshToken) || request.RefreshToken.Length > 1024)
         {
             return Results.ValidationProblem(new Dictionary<string, string[]>
             {
@@ -123,12 +131,9 @@ internal static class AuthenticationEndpoints
         return Results.Ok(new
         {
             userId = principal.FindFirstValue(JwtRegisteredClaimNames.Sub),
+            username = principal.FindFirstValue(JwtRegisteredClaimNames.PreferredUsername),
             email = principal.FindFirstValue(JwtRegisteredClaimNames.Email),
             displayName = principal.FindFirstValue(JwtRegisteredClaimNames.Name),
-            municipalityId = principal.FindFirstValue(CustomClaimTypes.MunicipalityId),
-            municipalityCode = principal.FindFirstValue(CustomClaimTypes.MunicipalityCode),
-            municipalityMembershipId = principal.FindFirstValue(
-                CustomClaimTypes.MunicipalityMembershipId),
             roles = principal.FindAll("role").Select(claim => claim.Value).ToArray(),
         });
     }
@@ -138,7 +143,7 @@ internal static class AuthenticationEndpoints
         AuthenticationStatus.Succeeded => Results.Ok(result.Session),
         AuthenticationStatus.InvalidCredentials => Results.Problem(
             statusCode: StatusCodes.Status401Unauthorized,
-            title: "E-posta veya şifre hatalı.",
+            title: "Kullanıcı adı veya şifre hatalı.",
             extensions: new Dictionary<string, object?> { ["code"] = "invalid_credentials" }),
         AuthenticationStatus.LockedOut => Results.Problem(
             statusCode: StatusCodes.Status423Locked,
@@ -146,13 +151,8 @@ internal static class AuthenticationEndpoints
             extensions: new Dictionary<string, object?> { ["code"] = "account_locked" }),
         AuthenticationStatus.AccessDenied => Results.Problem(
             statusCode: StatusCodes.Status403Forbidden,
-            title: "Bu hesap için aktif belediye erişimi bulunamadı.",
-            extensions: new Dictionary<string, object?> { ["code"] = "municipality_access_denied" }),
-        AuthenticationStatus.MunicipalitySelectionRequired => Results.Conflict(new
-        {
-            code = "municipality_selection_required",
-            municipalities = result.Municipalities,
-        }),
+            title: "Bu hesabın mobil uygulama erişimi bulunmuyor.",
+            extensions: new Dictionary<string, object?> { ["code"] = "mobile_access_denied" }),
         AuthenticationStatus.RefreshTokenReuseDetected => Results.Problem(
             statusCode: StatusCodes.Status401Unauthorized,
             title: "Oturum güvenlik nedeniyle kapatıldı. Tekrar giriş yapın.",
@@ -166,10 +166,9 @@ internal static class AuthenticationEndpoints
     private static Dictionary<string, string[]> ValidateLogin(LoginRequest request)
     {
         var errors = new Dictionary<string, string[]>();
-        if (string.IsNullOrWhiteSpace(request.Email) || request.Email.Length > 256 ||
-            !MailAddress.TryCreate(request.Email.Trim(), out _))
+        if (string.IsNullOrWhiteSpace(request.Username) || request.Username.Length > 256)
         {
-            errors["email"] = ["Geçerli bir e-posta adresi girilmelidir."];
+            errors["username"] = ["Kullanıcı adı boş olamaz ve en fazla 256 karakter olabilir."];
         }
 
         if (string.IsNullOrWhiteSpace(request.Password) || request.Password.Length > 256)
@@ -177,30 +176,18 @@ internal static class AuthenticationEndpoints
             errors["password"] = ["Şifre boş olamaz."];
         }
 
-        ValidateMunicipalityCode(request.MunicipalityCode, errors);
         return errors;
     }
 
     private static Dictionary<string, string[]> ValidateRefresh(RefreshRequest request)
     {
         var errors = new Dictionary<string, string[]>();
-        if (string.IsNullOrWhiteSpace(request.RefreshToken) || request.RefreshToken.Length > 500)
+        if (string.IsNullOrWhiteSpace(request.RefreshToken) || request.RefreshToken.Length > 1024)
         {
             errors["refreshToken"] = ["Geçerli bir refresh token gönderilmelidir."];
         }
 
-        ValidateMunicipalityCode(request.MunicipalityCode, errors);
         return errors;
-    }
-
-    private static void ValidateMunicipalityCode(
-        string? municipalityCode,
-        IDictionary<string, string[]> errors)
-    {
-        if (municipalityCode?.Length > 50)
-        {
-            errors["municipalityCode"] = ["Belediye kodu en fazla 50 karakter olabilir."];
-        }
     }
 
     private static string? ReadDeviceId(
@@ -221,11 +208,10 @@ internal static class AuthenticationEndpoints
         context.Connection.RemoteIpAddress?.ToString();
 
     private sealed record LoginRequest(
-        string Email,
-        string Password,
-        string? MunicipalityCode);
+        string Username,
+        string Password);
 
-    private sealed record RefreshRequest(string RefreshToken, string? MunicipalityCode);
+    private sealed record RefreshRequest(string RefreshToken);
 
     private sealed record LogoutRequest(string RefreshToken);
 }

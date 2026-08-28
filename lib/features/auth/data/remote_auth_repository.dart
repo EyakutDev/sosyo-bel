@@ -73,18 +73,13 @@ class RemoteAuthRepository implements AuthRepository {
 
   @override
   Future<AuthenticationSession> login({
-    required String email,
+    required String username,
     required String password,
-    String? municipalityCode,
   }) async {
     try {
       final response = await _apiClient.post<Map<String, dynamic>>(
         'api/v1/auth/login',
-        data: {
-          'email': email.trim(),
-          'password': password,
-          'municipalityCode': municipalityCode?.trim(),
-        },
+        data: {'username': username.trim(), 'password': password},
         // Login endpoint'i anonimdir; eski bir token yanlışlıkla gönderilmez.
         skipAuthorization: true,
       );
@@ -97,13 +92,6 @@ class RemoteAuthRepository implements AuthRepository {
       final session = AuthenticationSession.fromJson(data);
       await _sessionStore.saveSession(session);
       return session;
-    } on ApiException catch (error) {
-      if (error.code == 'municipality_selection_required') {
-        throw MunicipalitySelectionRequiredException(
-          _readMunicipalityOptions(error.responseData),
-        );
-      }
-      rethrow;
     } on FormatException {
       throw const ApiException(
         kind: ApiErrorKind.invalidResponse,
@@ -119,10 +107,7 @@ class RemoteAuthRepository implements AuthRepository {
     try {
       final response = await _apiClient.post<Map<String, dynamic>>(
         'api/v1/auth/refresh',
-        data: {
-          'refreshToken': currentSession.tokens.refreshToken,
-          'municipalityCode': currentSession.user.municipalityCode,
-        },
+        data: {'refreshToken': currentSession.tokens.refreshToken},
         skipAuthorization: true,
       );
       final data = response.data;
@@ -148,26 +133,5 @@ class RemoteAuthRepository implements AuthRepository {
             'Sunucunun token yenileme cevabı geçersiz. Lütfen yöneticinize bildirin.',
       );
     }
-  }
-
-  List<MunicipalityOption> _readMunicipalityOptions(Object? responseData) {
-    if (responseData is! Map) return const [];
-    final rawOptions = responseData['municipalities'];
-    if (rawOptions is! List) return const [];
-
-    final options = <MunicipalityOption>[];
-    for (final value in rawOptions) {
-      if (value is! Map) continue;
-      try {
-        options.add(
-          MunicipalityOption.fromJson(
-            value.map((key, dynamic item) => MapEntry(key.toString(), item)),
-          ),
-        );
-      } on FormatException {
-        // Tek bir bozuk seçenek, diğer geçerli belediyelerin kaybolmasına neden olmaz.
-      }
-    }
-    return List.unmodifiable(options);
   }
 }

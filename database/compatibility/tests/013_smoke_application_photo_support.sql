@@ -14,13 +14,8 @@ VALUES (N'application-photo-test-user');
 INSERT INTO dbo.Basvurular DEFAULT VALUES;
 DECLARE @ApplicationId int = CONVERT(int, SCOPE_IDENTITY());
 
-INSERT INTO sosyobel.Belediyeler (Kod, Ad)
-VALUES (N'PHOTO_TEST', N'Fotoğraf Test Belediyesi');
-DECLARE @MunicipalityId int = CONVERT(int, SCOPE_IDENTITY());
-
 INSERT INTO sosyobel.BasvuruFotograflari
 (
-    BelediyeId,
     BasvuruId,
     StorageKey,
     OrijinalDosyaAdi,
@@ -32,7 +27,6 @@ INSERT INTO sosyobel.BasvuruFotograflari
 )
 VALUES
 (
-    @MunicipalityId,
     @ApplicationId,
     N'photo-test/application/01-test.png',
     N'ev.png',
@@ -49,10 +43,7 @@ IF NOT EXISTS
     FROM sosyobel.BasvuruFotograflari AS photo
     INNER JOIN dbo.Basvurular AS application
         ON application.Id = photo.BasvuruId
-    INNER JOIN sosyobel.Belediyeler AS municipality
-        ON municipality.Id = photo.BelediyeId
     WHERE photo.BasvuruId = @ApplicationId
-      AND photo.BelediyeId = @MunicipalityId
       AND photo.SiraNo = 1
       AND photo.MimeType = 'image/png'
       AND photo.BoyutByte = 8

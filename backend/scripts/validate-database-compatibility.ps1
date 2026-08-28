@@ -122,6 +122,12 @@ try {
     Invoke-SqlFile 'database/compatibility/checks/007_verify_kps_lookup_permission.sql'
     Invoke-SqlFile 'database/compatibility/tests/015_smoke_kps_lookup_permission.sql'
     Invoke-SqlFile 'database/compatibility/checks/007_verify_kps_lookup_permission.sql'
+
+    Invoke-SqlFile 'database/compatibility/migrations/008_remove_application_municipality_scope.sql'
+    # 008 tekrar calistirildiginda tek belediye semasi degismemelidir.
+    Invoke-SqlFile 'database/compatibility/migrations/008_remove_application_municipality_scope.sql'
+    Invoke-SqlFile 'database/compatibility/checks/008_verify_application_single_municipality.sql'
+
     Invoke-SqlFile 'database/compatibility/rollbacks/007_remove_kps_lookup_permission.sql'
     Invoke-SqlFile 'database/compatibility/rollbacks/007_remove_kps_lookup_permission.sql'
 

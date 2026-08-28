@@ -9,7 +9,6 @@ import 'package:sosyo_bel/core/network/api_client.dart';
 import 'package:sosyo_bel/core/network/api_exception.dart';
 import 'package:sosyo_bel/features/auth/data/authentication_session_store.dart';
 import 'package:sosyo_bel/features/auth/data/remote_auth_repository.dart';
-import 'package:sosyo_bel/features/auth/domain/auth_repository.dart';
 import 'package:sosyo_bel/features/auth/domain/authentication_session.dart';
 
 void main() {
@@ -24,17 +23,16 @@ void main() {
         final repository = _repository(adapter, tokenStore);
 
         final session = await repository.login(
-          email: '  test@belediye.com  ',
+          username: '  personel  ',
           password: 'TestSifresi123!',
         );
 
         expect(session.user.displayName, 'Test Personeli');
-        expect(session.user.municipalityCode, 'DEMOLAR');
+        expect(session.user.username, 'personel');
         expect(tokenStore.tokens?.accessToken, 'access-token');
         expect(adapter.lastRequest?.data, {
-          'email': 'test@belediye.com',
+          'username': 'personel',
           'password': 'TestSifresi123!',
-          'municipalityCode': null,
         });
         expect(
           adapter.lastRequest?.headers[ApiClient.authorizationHeader],
@@ -42,36 +40,6 @@ void main() {
         );
       },
     );
-
-    test('çoklu belediye cevabındaki seçenekleri korur', () async {
-      final adapter = _RecordingAdapter(
-        (_) => _jsonResponse(409, {
-          'code': 'municipality_selection_required',
-          'municipalities': [
-            {'code': 'DEMOLAR', 'name': 'Demolar Belediyesi'},
-            {'code': 'ORNEK', 'name': 'Örnek Belediyesi'},
-          ],
-        }),
-      );
-      final repository = _repository(adapter, _MemoryTokenStore());
-
-      expect(
-        () => repository.login(email: 'test@belediye.com', password: 'secret'),
-        throwsA(
-          isA<MunicipalitySelectionRequiredException>()
-              .having(
-                (error) => error.municipalities.length,
-                'municipality count',
-                2,
-              )
-              .having(
-                (error) => error.municipalities.first.code,
-                'first municipality code',
-                'DEMOLAR',
-              ),
-        ),
-      );
-    });
 
     test('bozuk başarı cevabında token kaydetmez', () async {
       final adapter = _RecordingAdapter(
@@ -86,7 +54,7 @@ void main() {
       final repository = _repository(adapter, tokenStore);
 
       expect(
-        () => repository.login(email: 'test@belediye.com', password: 'secret'),
+        () => repository.login(username: 'personel', password: 'secret'),
         throwsA(
           isA<ApiException>().having(
             (error) => error.kind,
@@ -147,10 +115,7 @@ void main() {
       expect(restored?.tokens.accessToken, 'refreshed-access-token');
       expect(sessionStore.tokens?.refreshToken, 'rotated-refresh-token');
       expect(adapter.lastRequest?.uri.path, '/sosyo-bel/api/v1/auth/refresh');
-      expect(adapter.lastRequest?.data, {
-        'refreshToken': 'refresh-token',
-        'municipalityCode': 'DEMOLAR',
-      });
+      expect(adapter.lastRequest?.data, {'refreshToken': 'refresh-token'});
       expect(
         adapter.lastRequest?.headers[ApiClient.authorizationHeader],
         isNull,
@@ -310,12 +275,10 @@ Map<String, dynamic> _successfulLoginResponse({
   'refreshTokenExpiresAtUtc': refreshTokenExpiresAtUtc,
   'user': {
     'userId': 'user-1',
+    'username': 'personel',
     'email': 'test@belediye.com',
     'displayName': 'Test Personeli',
-    'municipalityCode': 'DEMOLAR',
-    'municipalityName': 'Demolar Belediyesi',
-    'municipalityMembershipId': 15,
-    'roles': ['PERSONNEL'],
+    'roles': ['Personel'],
   },
 };
 

@@ -1,4 +1,3 @@
-using System.Globalization;
 using System.IdentityModel.Tokens.Jwt;
 using System.Security.Claims;
 using SosyoBel.Application.Authorization;
@@ -15,11 +14,10 @@ internal static class WorkItemEndpoints
             .WithTags("İş Listesi")
             .WithSummary("Personelin bekleyen ve tamamlanan işlerini getirir")
             .WithDescription(
-                "Şirketin dbo.Basvurular tablosundaki, personelin kendi oluşturduğu başvuruları mobil metadata ve " +
-                "kararlı durum kodlarıyla listeler. Görev atama tablosunun şirket eşlemesi kesinleştiğinde aynı " +
-                "yanıt sözleşmesine ikinci kaynak olarak eklenecektir. " +
+                "Oturumdaki kullanıcının dbo.Basvurular kayıtları ile dbo.SahaAktiviteleri üzerinden atanmış " +
+                "görevlerini tek listede döndürür. " +
                 "limit değeri 1-100 arasındadır ve varsayılanı 50'dir.")
-            .RequireAuthorization(AuthorizationPolicyNames.Personnel);
+            .RequireAuthorization(AuthorizationPolicyNames.MobileFieldOperations);
 
         return endpoints;
     }
@@ -31,21 +29,7 @@ internal static class WorkItemEndpoints
         CancellationToken cancellationToken)
     {
         var userId = principal.FindFirstValue(JwtRegisteredClaimNames.Sub);
-        var municipalityValue = principal.FindFirstValue(CustomClaimTypes.MunicipalityId);
-        var membershipValue = principal.FindFirstValue(
-            CustomClaimTypes.MunicipalityMembershipId);
-
-        if (string.IsNullOrWhiteSpace(userId) ||
-            !int.TryParse(
-                municipalityValue,
-                NumberStyles.None,
-                CultureInfo.InvariantCulture,
-                out var municipalityId) ||
-            !long.TryParse(
-                membershipValue,
-                NumberStyles.None,
-                CultureInfo.InvariantCulture,
-                out var membershipId))
+        if (string.IsNullOrWhiteSpace(userId))
         {
             return Results.Forbid();
         }
@@ -61,8 +45,6 @@ internal static class WorkItemEndpoints
 
         var workItems = await query.GetMineAsync(
             userId,
-            municipalityId,
-            membershipId,
             requestedLimit,
             cancellationToken);
         return Results.Ok(workItems);

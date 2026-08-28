@@ -1,5 +1,4 @@
 using System.Net;
-using SosyoBel.Application.Authorization;
 using SosyoBel.Application.Kps;
 using SosyoBel.Infrastructure.Kps;
 
@@ -7,40 +6,35 @@ namespace SosyoBel.UnitTests;
 
 public sealed class KpsProfileQueryTests
 {
-    private static readonly KpsProfileActor Actor = new("personnel-1", 12, 34);
+    private static readonly KpsProfileActor Actor = new("identity-user-1");
     private static readonly KpsLookupCriteria Criteria = new(
         "12345678901",
         new DateOnly(1986, 9, 14));
 
     [Fact]
-    public async Task MissingPermissionStopsBeforeAnyKpsCall()
+    public async Task MissingAuthenticatedUserStopsBeforeAnyKpsCall()
     {
-        var permissionChecker = new StubPermissionChecker(false);
         var kpsClient = new StubKpsClient();
         var query = new KpsProfileQuery(
-            permissionChecker,
             kpsClient,
             TimeProvider.System);
 
         var result = await query.GetProfileAsync(
-            Actor,
+            new KpsProfileActor(" "),
             Criteria,
             CancellationToken.None);
 
-        Assert.Equal(KpsProfileQueryStatus.AccessDenied, result.Status);
-        Assert.Equal("kps_permission_required", result.Code);
-        Assert.Equal(PermissionCodes.KpsLookup, permissionChecker.PermissionCode);
+        Assert.Equal(KpsProfileQueryStatus.InvalidInput, result.Status);
+        Assert.Contains("actor", result.Errors!.Keys);
         Assert.Equal(0, kpsClient.IdentityCallCount);
         Assert.Equal(0, kpsClient.AddressCallCount);
     }
 
     [Fact]
-    public async Task AuthorizedQueryCombinesIdentityAndAddress()
+    public async Task AuthenticatedUserQueryCombinesIdentityAndAddress()
     {
-        var permissionChecker = new StubPermissionChecker(true);
         var kpsClient = new StubKpsClient();
         var query = new KpsProfileQuery(
-            permissionChecker,
             kpsClient,
             TimeProvider.System);
 
@@ -58,12 +52,10 @@ public sealed class KpsProfileQueryTests
     }
 
     [Fact]
-    public async Task InvalidCriteriaStopsBeforePermissionAndKpsCalls()
+    public async Task InvalidCriteriaStopsBeforeKpsCalls()
     {
-        var permissionChecker = new StubPermissionChecker(true);
         var kpsClient = new StubKpsClient();
         var query = new KpsProfileQuery(
-            permissionChecker,
             kpsClient,
             TimeProvider.System);
 
@@ -73,7 +65,6 @@ public sealed class KpsProfileQueryTests
             CancellationToken.None);
 
         Assert.Equal(KpsProfileQueryStatus.InvalidInput, result.Status);
-        Assert.Equal(0, permissionChecker.CallCount);
         Assert.Equal(0, kpsClient.IdentityCallCount);
         Assert.Equal(0, kpsClient.AddressCallCount);
     }
@@ -104,7 +95,6 @@ public sealed class KpsProfileQueryTests
         var kpsClient = new StubKpsClient(
             identityException: new KpsQueryRejectedException(reason));
         var query = new KpsProfileQuery(
-            new StubPermissionChecker(true),
             kpsClient,
             TimeProvider.System);
 
@@ -127,7 +117,6 @@ public sealed class KpsProfileQueryTests
             addressException: new KpsQueryRejectedException(
                 KpsQueryRejectionReason.AddressOutsideServiceArea));
         var query = new KpsProfileQuery(
-            new StubPermissionChecker(true),
             kpsClient,
             TimeProvider.System);
 
@@ -152,7 +141,6 @@ public sealed class KpsProfileQueryTests
                 "Ham upstream mesajı",
                 HttpStatusCode.BadRequest));
         var query = new KpsProfileQuery(
-            new StubPermissionChecker(true),
             kpsClient,
             TimeProvider.System);
 
@@ -165,26 +153,6 @@ public sealed class KpsProfileQueryTests
         Assert.Equal("kps_invalid_request", result.Code);
         Assert.Equal("KPS sorgu bilgileri eksik veya geçersiz.", result.Detail);
         Assert.DoesNotContain("upstream", result.Detail, StringComparison.OrdinalIgnoreCase);
-    }
-
-    private sealed class StubPermissionChecker(bool allowed) : IAccessPermissionChecker
-    {
-        public int CallCount { get; private set; }
-
-        public string? PermissionCode { get; private set; }
-
-        public Task<bool> HasPermissionAsync(
-            string userId,
-            long municipalityMembershipId,
-            int municipalityId,
-            string permissionCode,
-            CancellationToken cancellationToken)
-        {
-            cancellationToken.ThrowIfCancellationRequested();
-            CallCount++;
-            PermissionCode = permissionCode;
-            return Task.FromResult(allowed);
-        }
     }
 
     private sealed class StubKpsClient(

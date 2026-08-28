@@ -1,110 +1,64 @@
-using SosyoBel.Infrastructure.Identity;
 using System.Security.Cryptography;
 using System.Text;
+using System.Text.Json;
+using Microsoft.EntityFrameworkCore;
+using SosyoBel.Infrastructure.Identity;
 
 namespace SosyoBel.UnitTests;
 
 public sealed class IdentityModelTests
 {
     [Fact]
-    public void UserWithoutApplicationInfoIsNotTreatedAsActive()
+    public void RefreshTokenUsesExistingIdentityTokenTableAndStoresOnlyHash()
     {
-        // Eski Identity satırına kurum onayı olmadan otomatik yetki verilmez.
-        var userWithoutApplicationInfo = new ApplicationUser();
+        using var context = CreateContext();
+        var store = new IdentityRefreshTokenStore(context);
 
-        Assert.False(userWithoutApplicationInfo.IsActive);
-    }
-
-    [Fact]
-    public void AdministratorCreatedUserUsesEmailAsUsername()
-    {
-        var user = ApplicationUser.Create(
-            " personel@belediye.gov.tr ",
-            " Ayşe ",
-            " Yılmaz ",
-            new DateTime(2026, 8, 6, 9, 0, 0, DateTimeKind.Utc));
-
-        Assert.Equal("personel@belediye.gov.tr", user.Email);
-        Assert.Equal(user.Email, user.UserName);
-        Assert.Equal("Ayşe Yılmaz", user.DisplayName);
-        Assert.True(user.EmailConfirmed);
-        Assert.True(user.IsActive);
-        Assert.True(user.LockoutEnabled);
-    }
-
-    [Fact]
-    public void DeactivatedUserCannotRemainActive()
-    {
-        var user = ApplicationUser.Create(
-            "personel@belediye.gov.tr",
-            "Ayşe",
-            "Yılmaz",
-            DateTime.UnixEpoch);
-
-        user.Deactivate(
-            "municipality-admin-1",
-            "Personel kurumdan ayrıldı.",
-            new DateTime(2026, 8, 6, 10, 0, 0, DateTimeKind.Utc));
-
-        Assert.False(user.IsActive);
-        Assert.NotNull(user.UpdatedAtUtc);
-        Assert.Equal("municipality-admin-1", user.DeactivatedByUserId);
-        Assert.Equal("Personel kurumdan ayrıldı.", user.DeactivationReason);
-    }
-
-    [Fact]
-    public void RefreshTokenStoresItsOwnHashCopy()
-    {
-        var hash = Enumerable.Range(0, 32).Select(value => (byte)value).ToArray();
-        var token = RefreshTokenRecord.Create(
+        var issued = store.Issue(
             "user-1",
-            hash,
             "device-1",
             "127.0.0.1",
             DateTime.UnixEpoch,
             DateTime.UnixEpoch.AddDays(30));
+        var entity = Assert.Single(context.UserTokens.Local);
 
-        hash[0] = byte.MaxValue;
-
-        Assert.Equal(0, token.TokenHash[0]);
-        Assert.False(token.IsRevoked);
-        Assert.False(token.IsExpired(DateTime.UnixEpoch.AddDays(1)));
-    }
-
-    [Fact]
-    public void IdempotencyRecordHashesNormalizedActorUserId()
-    {
-        var record = IdempotencyRecord.Create(
-            " user-1 ",
-            "TEST_ENDPOINT",
-            "test-key-0001",
-            new byte[32],
-            DateTime.UnixEpoch,
-            DateTime.UnixEpoch.AddHours(1));
-
-        Assert.Equal("user-1", record.ActorUserId);
+        Assert.Equal(IdentityRefreshTokenStore.LoginProvider, entity.LoginProvider);
+        Assert.StartsWith(IdentityRefreshTokenStore.TokenNamePrefix, entity.Name);
+        Assert.DoesNotContain(issued.Value, entity.Value, StringComparison.Ordinal);
+        using var json = JsonDocument.Parse(entity.Value!);
+        var storedHash = Convert.FromBase64String(
+            json.RootElement.GetProperty("tokenHashBase64").GetString()!);
         Assert.Equal(
-            SHA256.HashData(Encoding.UTF8.GetBytes("user-1")),
-            record.ActorUserIdHash);
+            SHA256.HashData(Encoding.UTF8.GetBytes(issued.Value)),
+            storedHash);
+        Assert.True(IdentityRefreshTokenStore.TryReadLocator(
+            issued.Value,
+            out var userId,
+            out var tokenName));
+        Assert.Equal("user-1", userId);
+        Assert.Equal(entity.Name, tokenName);
     }
 
     [Fact]
-    public void RefreshTokenCanBeRevokedOnlyOnce()
+    public void ExistingIdentityUserLookupDoesNotJoinExtensionTables()
     {
-        var token = RefreshTokenRecord.Create(
-            "user-1",
-            new byte[32],
-            null,
-            null,
-            DateTime.UnixEpoch,
-            DateTime.UnixEpoch.AddDays(30));
-        var firstRevocation = DateTime.UnixEpoch.AddHours(1);
+        using var context = CreateContext();
+        var sql = context.Users
+            .Where(user => user.NormalizedUserName == "PERSONEL")
+            .ToQueryString();
 
-        token.Revoke(firstRevocation, "127.0.0.1");
-        token.Revoke(firstRevocation.AddHours(1), "127.0.0.2");
+        Assert.Contains("[dbo].[AspNetUsers]", sql);
+        Assert.DoesNotContain("[sosyobel]", sql);
+        Assert.DoesNotContain("KullaniciUygulamaBilgileri", sql);
+        Assert.DoesNotContain("KullaniciBelediyeleri", sql);
+    }
 
-        Assert.True(token.IsRevoked);
-        Assert.Equal(firstRevocation, token.RevokedAtUtc);
-        Assert.Equal("127.0.0.1", token.RevokedByIp);
+    private static AuthenticationDbContext CreateContext()
+    {
+        var options = new DbContextOptionsBuilder<AuthenticationDbContext>()
+            .UseSqlServer(
+                "Server=unused;Database=unused;User Id=unused;Password=unused;TrustServerCertificate=True")
+            .Options;
+        return new AuthenticationDbContext(options);
     }
 }

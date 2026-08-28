@@ -62,12 +62,13 @@ internal static class ApplicationPersistenceModelConfiguration
         {
             entity.ToTable("BasvuruHaneCevaplari", "sosyobel");
             entity.HasKey(value => value.Id);
-            entity.Property(value => value.MunicipalityId).HasColumnName("BelediyeId");
             entity.Property(value => value.ApplicationId).HasColumnName("BasvuruId");
             entity.Property(value => value.QuestionId).HasColumnName("SoruId");
             entity.Property(value => value.OptionId).HasColumnName("SecenekId");
             entity.Property(value => value.TextAnswer).HasColumnName("SerbestMetinCevap").HasMaxLength(1000);
-            entity.Property(value => value.NumericAnswer).HasColumnName("SayisalCevap");
+            entity.Property(value => value.NumericAnswer)
+                .HasColumnName("SayisalCevap")
+                .HasPrecision(18, 2);
             entity.Property(value => value.CreatedByUserId).HasColumnName("OlusturanUserId").HasMaxLength(450);
             entity.Property(value => value.CreatedAtUtc).HasColumnName("OlusturulmaTarihiUtc");
             entity.Property(value => value.UpdatedAtUtc).HasColumnName("GuncellenmeTarihiUtc");
@@ -78,7 +79,6 @@ internal static class ApplicationPersistenceModelConfiguration
         {
             entity.ToTable("BasvuruFotograflari", "sosyobel");
             entity.HasKey(value => value.Id);
-            entity.Property(value => value.MunicipalityId).HasColumnName("BelediyeId");
             entity.Property(value => value.ApplicationId).HasColumnName("BasvuruId");
             entity.Property(value => value.StorageKey).HasColumnName("StorageKey").HasMaxLength(500);
             entity.Property(value => value.OriginalFileName).HasColumnName("OrijinalDosyaAdi").HasMaxLength(255);
@@ -198,16 +198,6 @@ internal static class ApplicationPersistenceModelConfiguration
             entity.Property(value => value.Name).HasColumnName("Name");
             entity.Property(value => value.IsDeleted).HasColumnName("Sil");
         });
-        builder.Entity<ReferenceCodeRecord>(entity =>
-        {
-            entity.ToTable("ReferansKodlari", "sosyobel");
-            entity.HasKey(value => value.Id);
-            entity.Property(value => value.ReferenceTypeCode)
-                .HasColumnName("ReferansTuruKodu")
-                .HasMaxLength(50);
-            entity.Property(value => value.SourceId).HasColumnName("KaynakId");
-            entity.Property(value => value.Code).HasColumnName("Kod").HasMaxLength(80);
-        });
         builder.Entity<VitalStatusReference>(entity =>
         {
             entity.ToTable("YasamDurumlari", "sosyobel");
@@ -221,7 +211,6 @@ internal static class ApplicationPersistenceModelConfiguration
         {
             entity.ToTable("HaneSorulari", "sosyobel");
             entity.HasKey(value => value.Id);
-            entity.Property(value => value.MunicipalityId).HasColumnName("BelediyeId");
             entity.Property(value => value.Code).HasColumnName("Kod").HasMaxLength(80);
             entity.Property(value => value.Label).HasColumnName("SoruMetni").HasMaxLength(300);
             entity.Property(value => value.AnswerTypeCode).HasColumnName("CevapTipi").HasMaxLength(30);

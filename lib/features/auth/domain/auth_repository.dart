@@ -9,19 +9,7 @@ abstract interface class AuthRepository {
   Future<void> logout();
 
   Future<AuthenticationSession> login({
-    required String email,
+    required String username,
     required String password,
-    String? municipalityCode,
   });
-}
-
-/// Backend, aynı hesabın birden fazla belediyeye bağlı olduğunu bildirdiğinde
-/// seçim ekranının kullanacağı seçenekleri kaybetmeden taşır.
-class MunicipalitySelectionRequiredException implements Exception {
-  const MunicipalitySelectionRequiredException(this.municipalities);
-
-  final List<MunicipalityOption> municipalities;
-
-  @override
-  String toString() => 'Devam etmek için belediye seçimi gerekiyor.';
 }

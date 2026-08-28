@@ -15,7 +15,6 @@
     </PackageReference>
   </ItemGroup>
   <ItemGroup>
-    <ProjectReference Include="..\..\src\SosyoBel.Domain\SosyoBel.Domain.csproj" />
     <ProjectReference Include="..\..\src\SosyoBel.Infrastructure\SosyoBel.Infrastructure.csproj" />
   </ItemGroup>
 </Project>

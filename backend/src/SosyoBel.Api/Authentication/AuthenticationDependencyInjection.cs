@@ -19,9 +19,6 @@ internal static class AuthenticationDependencyInjection
 
         services.Configure<JwtOptions>(configuration.GetSection(JwtOptions.SectionName));
         services.AddSingleton<IAccessTokenIssuer, JwtAccessTokenIssuer>();
-        services.AddScoped<IAuthorizationHandler, ActiveSystemAdministratorAuthorizationHandler>();
-        services.AddScoped<IAuthorizationHandler, ActiveMunicipalityMembershipAuthorizationHandler>();
-        services.AddScoped<IAuthorizationHandler, LockedApplicationEditAuthorizationHandler>();
 
         services
             .AddAuthentication(JwtBearerDefaults.AuthenticationScheme)
@@ -45,42 +42,19 @@ internal static class AuthenticationDependencyInjection
                 };
             });
 
-        // Belediye politikaları role ek olarak üyelik claim'ini de şart koşar.
-        // Bu sayede yalnız rol adına bakılarak tenant dışına çıkılamaz.
         services.AddAuthorizationBuilder()
             .AddPolicy(
-                AuthorizationPolicyNames.SystemAdministrator,
+                AuthorizationPolicyNames.MobileFieldOperations,
                 policy => policy
                     .RequireAuthenticatedUser()
-                    .RequireRole(RoleCodes.SystemAdministrator)
-                    .AddRequirements(new ActiveSystemAdministratorRequirement()))
-            .AddPolicy(
-                AuthorizationPolicyNames.MunicipalityAdministrator,
-                policy => policy
-                    .RequireAuthenticatedUser()
-                    .RequireRole(RoleCodes.MunicipalityAdministrator)
-                    .RequireClaim(CustomClaimTypes.MunicipalityId)
-                    .RequireClaim(CustomClaimTypes.MunicipalityMembershipId)
-                    .AddRequirements(new ActiveMunicipalityMembershipRequirement(
-                        RoleCodes.MunicipalityAdministrator)))
-            .AddPolicy(
-                AuthorizationPolicyNames.Personnel,
-                policy => policy
-                    .RequireAuthenticatedUser()
-                    .RequireRole(RoleCodes.Personnel)
-                    .RequireClaim(CustomClaimTypes.MunicipalityId)
-                    .RequireClaim(CustomClaimTypes.MunicipalityMembershipId)
-                    .AddRequirements(new ActiveMunicipalityMembershipRequirement(
-                        RoleCodes.Personnel)))
-            .AddPolicy(
-                AuthorizationPolicyNames.LockedApplicationEdit,
-                policy => policy
-                    .RequireAuthenticatedUser()
-                    .RequireClaim(CustomClaimTypes.MunicipalityId)
-                    .RequireClaim(CustomClaimTypes.MunicipalityMembershipId)
-                    .AddRequirements(new LockedApplicationEditRequirement()))
-            // Yeni endpoint'lerin yanlışlıkla anonim açılmasını engeller. Yalnız açıkça
-            // AllowAnonymous verilen giriş ve sağlık uçları kimlik doğrulama istemez.
+                    // Uygulama tek belediyelidir. Mobil yetki yalnız şirketin mevcut
+                    // dbo.AspNetRoles kayıtlarından okunur; ek üyelik tablosu aranmaz.
+                    .RequireRole(
+                        CompanyIdentityRoleCodes.Administrator,
+                        CompanyIdentityRoleCodes.Board,
+                        CompanyIdentityRoleCodes.Personnel))
+            // Yeni endpointlerin yanlışlıkla anonim açılmasını engeller. Yalnız açıkça
+            // AllowAnonymous verilen login ve health uçları kimlik doğrulama istemez.
             .SetFallbackPolicy(
                 new AuthorizationPolicyBuilder()
                     .RequireAuthenticatedUser()

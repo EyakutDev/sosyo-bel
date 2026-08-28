@@ -24,20 +24,16 @@ class AuthenticationSession {
 class AuthenticatedUser {
   const AuthenticatedUser({
     required this.userId,
-    required this.email,
+    required this.username,
     required this.displayName,
     required this.roles,
-    this.municipalityCode,
-    this.municipalityName,
-    this.municipalityMembershipId,
+    this.email,
   });
 
   final String userId;
-  final String email;
+  final String username;
+  final String? email;
   final String displayName;
-  final String? municipalityCode;
-  final String? municipalityName;
-  final int? municipalityMembershipId;
   final List<String> roles;
 
   factory AuthenticatedUser.fromJson(Map<String, dynamic> json) {
@@ -51,45 +47,22 @@ class AuthenticatedUser {
         .map((role) => role.trim())
         .where((role) => role.isNotEmpty)
         .toList(growable: false);
-    final membershipId = json['municipalityMembershipId'];
-    if (membershipId != null && membershipId is! num) {
-      throw const FormatException('Belediye üyelik bilgisi geçersiz.');
-    }
-
     return AuthenticatedUser(
       userId: _readRequiredString(json, 'userId'),
-      email: _readRequiredString(json, 'email'),
+      username: _readRequiredString(json, 'username'),
+      email: _readOptionalString(json, 'email'),
       displayName: _readRequiredString(json, 'displayName'),
-      municipalityCode: _readOptionalString(json, 'municipalityCode'),
-      municipalityName: _readOptionalString(json, 'municipalityName'),
-      municipalityMembershipId: (membershipId as num?)?.toInt(),
       roles: List.unmodifiable(roles),
     );
   }
 
   Map<String, dynamic> toJson() => {
     'userId': userId,
+    'username': username,
     'email': email,
     'displayName': displayName,
-    'municipalityCode': municipalityCode,
-    'municipalityName': municipalityName,
-    'municipalityMembershipId': municipalityMembershipId,
     'roles': roles,
   };
-}
-
-/// Bir kullanıcı birden fazla belediyeye bağlıysa backend'in sunduğu seçimdir.
-class MunicipalityOption {
-  const MunicipalityOption({required this.code, required this.name});
-
-  final String code;
-  final String name;
-
-  factory MunicipalityOption.fromJson(Map<String, dynamic> json) =>
-      MunicipalityOption(
-        code: _readRequiredString(json, 'code'),
-        name: _readRequiredString(json, 'name'),
-      );
 }
 
 Map<String, dynamic> _readMap(Object? value, {required String fieldName}) {

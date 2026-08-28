@@ -4,7 +4,6 @@ using System.Security.Claims;
 using Microsoft.Extensions.Options;
 using Microsoft.IdentityModel.Tokens;
 using SosyoBel.Application.Authentication;
-using SosyoBel.Application.Authorization;
 
 namespace SosyoBel.Api.Authentication;
 
@@ -25,33 +24,16 @@ internal sealed class JwtAccessTokenIssuer(
                 JwtRegisteredClaimNames.Iat,
                 new DateTimeOffset(nowUtc).ToUnixTimeSeconds().ToString(CultureInfo.InvariantCulture),
                 ClaimValueTypes.Integer64),
-            new(JwtRegisteredClaimNames.Email, subject.Email),
+            new(JwtRegisteredClaimNames.PreferredUsername, subject.Username),
             new(JwtRegisteredClaimNames.Name, subject.DisplayName),
             new("client_id", "sosyobel-mobile"),
         };
 
-        var tenantValueCount =
-            (subject.MunicipalityId is null ? 0 : 1) +
-            (subject.MunicipalityCode is null ? 0 : 1) +
-            (subject.MunicipalityMembershipId is null ? 0 : 1);
-        if (tenantValueCount is not (0 or 3))
+        // Mevcut web hesaplarında e-posta boş olabildiği için yalnızca doluysa
+        // claim üretilir; tokenın asıl kullanıcı anahtarı sub ve preferred_username'dır.
+        if (!string.IsNullOrWhiteSpace(subject.Email))
         {
-            throw new InvalidOperationException(
-                "Belediye token kapsamı eksik veya tutarsız üretilemez.");
-        }
-
-        if (subject.MunicipalityId is int municipalityId &&
-            subject.MunicipalityMembershipId is long membershipId)
-        {
-            claims.Add(new Claim(
-                CustomClaimTypes.MunicipalityId,
-                municipalityId.ToString(CultureInfo.InvariantCulture)));
-            claims.Add(new Claim(
-                CustomClaimTypes.MunicipalityCode,
-                subject.MunicipalityCode!));
-            claims.Add(new Claim(
-                CustomClaimTypes.MunicipalityMembershipId,
-                membershipId.ToString(CultureInfo.InvariantCulture)));
+            claims.Add(new Claim(JwtRegisteredClaimNames.Email, subject.Email));
         }
 
         claims.AddRange(subject.Roles.Select(role => new Claim("role", role)));

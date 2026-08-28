@@ -153,8 +153,7 @@ final _workItems = <WorkItem>[
     activityAtUtc: DateTime.utc(2026, 8, 10, 9),
   ),
   WorkItem(
-    taskPublicId: 'task-2',
-    applicationPublicId: 'application-2',
+    taskId: 2,
     applicationNumber: 'B-2026-151',
     applicantFullName: 'Emel Seçen',
     address: 'Yıldız Mahallesi No: 8',

@@ -2,9 +2,7 @@ using Microsoft.AspNetCore.Identity;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
-using SosyoBel.Application.Administration;
 using SosyoBel.Application.Authentication;
-using SosyoBel.Application.Authorization;
 
 namespace SosyoBel.Infrastructure.Identity;
 
@@ -33,16 +31,20 @@ public static class IdentityDependencyInjection
         services
             .AddIdentityCore<ApplicationUser>(options =>
             {
-                options.User.RequireUniqueEmail = true;
+                // Web uygulaması kullanıcı adıyla giriş yapar; mevcut hesaplarda
+                // e-posta boş veya onaysız olabildiği için giriş koşulu yapılmaz.
+                options.User.RequireUniqueEmail = false;
                 // Şirketin mevcut ASP.NET Identity tablolarındaki anahtar uzunluğu.
                 options.Stores.MaxLengthForKeys = 450;
-                options.SignIn.RequireConfirmedEmail = true;
+                options.SignIn.RequireConfirmedEmail = false;
 
-                options.Password.RequiredLength = 10;
-                options.Password.RequiredUniqueChars = 4;
-                options.Password.RequireDigit = true;
-                options.Password.RequireLowercase = true;
-                options.Password.RequireUppercase = true;
+                // Aynı dbo.AspNetUsers kayıtlarını yöneten web uygulamasıyla
+                // parola ilkeleri aynı tutulur.
+                options.Password.RequiredLength = 3;
+                options.Password.RequiredUniqueChars = 1;
+                options.Password.RequireDigit = false;
+                options.Password.RequireLowercase = false;
+                options.Password.RequireUppercase = false;
                 options.Password.RequireNonAlphanumeric = false;
 
                 options.Lockout.AllowedForNewUsers = true;
@@ -52,7 +54,7 @@ public static class IdentityDependencyInjection
             .AddRoles<IdentityRole>()
             .AddSignInManager()
             .AddEntityFrameworkStores<AuthenticationDbContext>()
-            // Belediye yöneticisinin parola sıfırlama akışı bu sağlayıcıyı kullanır.
+            // Mevcut web panelinin ürettiği Identity tokenlarıyla uyumluluk korunur.
             .AddDefaultTokenProviders();
 
         services
@@ -64,12 +66,8 @@ public static class IdentityDependencyInjection
             .ValidateOnStart();
 
         services.AddSingleton(TimeProvider.System);
+        services.AddScoped<IdentityRefreshTokenStore>();
         services.AddScoped<IAuthenticationService, IdentityAuthenticationService>();
-        services.AddScoped<IAccountAdministrationService, AccountAdministrationService>();
-        services.AddScoped<ISystemAdministratorBootstrapper, SystemAdministratorBootstrapper>();
-        services.AddScoped<IAccessPermissionChecker, DatabaseAccessPermissionChecker>();
-        services.AddScoped<IActiveMunicipalityMembershipChecker, ActiveMunicipalityMembershipChecker>();
-        services.AddScoped<IActiveSystemAdministratorChecker, ActiveSystemAdministratorChecker>();
 
         return services;
     }

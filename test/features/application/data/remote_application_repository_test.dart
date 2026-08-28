@@ -16,209 +16,74 @@ import 'package:sosyo_bel/features/activity/presentation/models/household_status
 import 'package:sosyo_bel/features/application/data/remote_application_repository.dart';
 import 'package:sosyo_bel/features/application/domain/kps_profile.dart';
 import 'package:sosyo_bel/features/application/presentation/models/application_draft.dart';
-import '../../../support/application_reference_test_catalog.dart';
 
 void main() {
   group('RemoteApplicationRepository', () {
     test(
-      'ekran taslağını API sözleşmesine çevirip idempotent oluşturur',
+      'tamamlanmış başvuruyu ve fotoğrafı tek atomik multipart istekte gönderir',
       () async {
-        final adapter = _RecordingAdapter(
-          (_) => _jsonResponse(201, _applicationResponse()),
+        final temporaryDirectory = await Directory.systemTemp.createTemp(
+          'sosyo-bel-atomic-submit-test-',
         );
-        final repository = _repository(adapter);
+        try {
+          final photo = File.fromUri(
+            temporaryDirectory.uri.resolve('hane.jpg'),
+          );
+          await photo.writeAsBytes(const [255, 216, 255, 217]);
+          final adapter = _RecordingAdapter(
+            (_) => _jsonResponse(200, {
+              'applicationPublicId': '22222222-2222-2222-2222-222222222222',
+              'applicationNumber': '#150',
+              'statusCode': 'KURUL_BEKLIYOR',
+              'isEditable': false,
+            }),
+          );
+          final repository = _repository(adapter);
+          final draft = _fieldDraft.copyWith(
+            householdStatus: HouseholdStatusDraft(
+              answers: _fieldDraft.householdStatus!.answers,
+              photos: [HouseholdPhotoViewData.file(photo.path)],
+              saveToBeneficiaryDirectory: true,
+            ),
+            completionNote: 'Kurula iletilecek not',
+          );
 
-        final result = await repository.createDraft(
-          draft: _draft,
-          idempotencyKey: 'create-draft-test-key',
-        );
+          final result = await repository.submitCompleted(
+            draft: draft,
+            idempotencyKey: 'atomic-submit-test-key',
+          );
 
-        expect(result.statusCode, 'TASLAK');
-        expect(result.rowVersion, 'AAAAAAAAAAE=');
-        expect(
-          adapter.lastRequest?.uri.path,
-          '/sosyo-bel/api/v1/applications/drafts',
-        );
-        expect(
-          adapter.lastRequest?.headers['Idempotency-Key'],
-          'create-draft-test-key',
-        );
-        expect(adapter.lastRequest?.data, {
-          'draft': {
-            'identityNumber': '12345678901',
-            'birthDate': '2002-11-03',
-            'phoneNumber': '5345512872',
-            'helpTypeCode': 'GIDA',
-            'hasDisability': true,
-            'disabilityTypeCode': 'ORTOPEDIK',
-            'disabilityRate': null,
-            'description': 'Başvuru açıklaması',
-            'applicantFirstName': 'ÖRNEK',
-            'applicantLastName': 'KİŞİ',
-            'address': 'ÖRNEK MAH. TEST SK. NO: 1',
-            'fieldInspectionNote': 'Saha notu',
-          },
-        });
+          expect(result.statusCode, 'KURUL_BEKLIYOR');
+          expect(result.isEditable, isFalse);
+          expect(result.rowVersion, isEmpty);
+          expect(
+            adapter.lastRequest?.uri.path,
+            '/sosyo-bel/api/v1/applications/submit',
+          );
+          expect(
+            adapter.lastRequest?.headers['Idempotency-Key'],
+            'atomic-submit-test-key',
+          );
+          final formData = adapter.lastRequest?.data as FormData;
+          expect(formData.files, hasLength(1));
+          expect(formData.files.single.key, 'photos');
+          expect(formData.files.single.value.filename, 'hane.jpg');
+          final fields = Map<String, String>.fromEntries(formData.fields);
+          final payload =
+              jsonDecode(fields['payload']!) as Map<String, dynamic>;
+          expect(payload.keys, {'draft', 'familyMembers', 'householdAnswers'});
+          expect(
+            (payload['draft'] as Map<String, dynamic>)['fieldInspectionNote'],
+            'Kurula iletilecek not',
+          );
+          expect(payload['familyMembers'], hasLength(1));
+          expect(payload['householdAnswers'], hasLength(2));
+          expect(payload.containsKey('saveToBeneficiaryDirectory'), isFalse);
+        } finally {
+          await temporaryDirectory.delete(recursive: true);
+        }
       },
     );
-
-    test('kaydedilmiş snapshotı ekran taslağına geri dönüştürür', () async {
-      final adapter = _RecordingAdapter(
-        (_) => _jsonResponse(200, _draftSnapshotResponse()),
-      );
-      final repository = _repository(adapter);
-
-      final result = await repository.getDraft(
-        applicationPublicId: '22222222-2222-2222-2222-222222222222',
-        referenceCatalog: applicationReferenceTestCatalog,
-      );
-
-      expect(result.entry.statusCode, 'TASLAK');
-      expect(result.draft.applicationForm?.birthDate, '03.11.2002');
-      expect(result.draft.applicationForm?.helpType, 'Gıda Yardımı');
-      expect(
-        result.draft.familyInformation.members.single.fullName,
-        'Ayşe Yılmaz',
-      );
-      expect(result.draft.familyInformation.members.single.age, '0');
-      expect(result.draft.citizenProfile.fullName, 'Bilgi bulunmuyor');
-      expect(result.draft.citizenProfile.address, 'Bilgi bulunmuyor');
-      expect(
-        result.draft.householdStatus?.answers['MULKIYET_DURUMU'],
-        'KIRACI',
-      );
-      expect(result.draft.householdStatus?.replaceRemotePhotosOnSave, isTrue);
-      expect(
-        adapter.lastRequest?.uri.path,
-        '/sosyo-bel/api/v1/applications/'
-        '22222222-2222-2222-2222-222222222222/draft-snapshot',
-      );
-    });
-
-    test('manuel aile ve hane cevaplarını kodlarıyla kaydeder', () async {
-      final adapter = _RecordingAdapter(
-        (_) => _jsonResponse(
-          200,
-          _applicationResponse(rowVersion: 'AAAAAAAAAAI='),
-        ),
-      );
-      final repository = _repository(adapter);
-
-      final result = await repository.saveFieldData(
-        draft: _fieldDraft,
-        applicationPublicId: '22222222-2222-2222-2222-222222222222',
-        expectedRowVersion: 'AAAAAAAAAAE=',
-      );
-
-      expect(result.rowVersion, 'AAAAAAAAAAI=');
-      expect(
-        adapter.lastRequest?.uri.path,
-        '/sosyo-bel/api/v1/applications/'
-        '22222222-2222-2222-2222-222222222222/field-data',
-      );
-      expect(adapter.lastRequest?.data, {
-        'expectedRowVersion': 'AAAAAAAAAAE=',
-        'familyMembers': [
-          {
-            'fullName': 'Ayşe Yılmaz',
-            'age': 42,
-            'relationshipCode': 'DIGER',
-            'otherRelationshipDescription': 'Teyze',
-            'hasDisability': true,
-            'disabilityTypeCode': 'SUREGEN_HASTALIK',
-            'disabilityDescription': null,
-            'employmentStatusCode': 'CALISIYOR',
-            'educationStatusCode': 'LISE',
-            'vitalStatusCode': 'SAG',
-          },
-        ],
-        'householdAnswers': [
-          {'questionCode': 'MULKIYET_DURUMU', 'optionCode': 'KIRACI'},
-          {'questionCode': 'EV_TEMIZLIGI', 'optionCode': 'EVET'},
-        ],
-        'saveToBeneficiaryDirectory': false,
-      });
-    });
-
-    test('hane fotoğrafını RowVersion ile multipart gönderir', () async {
-      final temporaryDirectory = await Directory.systemTemp.createTemp(
-        'sosyo-bel-photo-test-',
-      );
-      try {
-        final photo = File('${temporaryDirectory.path}/ev.png');
-        await photo.writeAsBytes(const [137, 80, 78, 71, 13, 10, 26, 10]);
-        final adapter = _RecordingAdapter(
-          (_) => _jsonResponse(
-            200,
-            _applicationResponse(rowVersion: 'AAAAAAAAAAM='),
-          ),
-        );
-        final repository = _repository(adapter);
-        final photoDraft = _fieldDraft.copyWith(
-          householdStatus: HouseholdStatusDraft(
-            answers: _fieldDraft.householdStatus!.answers,
-            photos: [HouseholdPhotoViewData.file(photo.path)],
-            saveToBeneficiaryDirectory: false,
-          ),
-        );
-
-        final result = await repository.uploadPhotos(
-          draft: photoDraft,
-          applicationPublicId: '22222222-2222-2222-2222-222222222222',
-          expectedRowVersion: 'AAAAAAAAAAI=',
-          idempotencyKey: 'upload-photos-test-key',
-        );
-
-        expect(result.rowVersion, 'AAAAAAAAAAM=');
-        final formData = adapter.lastRequest?.data as FormData;
-        expect(Map<String, String>.fromEntries(formData.fields), {
-          'expectedRowVersion': 'AAAAAAAAAAI=',
-        });
-        expect(formData.files, hasLength(1));
-        expect(formData.files.single.key, 'photos');
-        expect(formData.files.single.value.filename, 'ev.png');
-        expect(formData.files.single.value.contentType.toString(), 'image/png');
-        expect(
-          adapter.lastRequest?.headers['Idempotency-Key'],
-          'upload-photos-test-key',
-        );
-      } finally {
-        await temporaryDirectory.delete(recursive: true);
-      }
-    });
-
-    test('RowVersion ile kurula gönderip kilitli cevabı ayrıştırır', () async {
-      final adapter = _RecordingAdapter(
-        (_) => _jsonResponse(
-          200,
-          _applicationResponse(
-            statusCode: 'KURUL_BEKLIYOR',
-            isEditable: false,
-            rowVersion: 'AAAAAAAAAAI=',
-          ),
-        ),
-      );
-      final repository = _repository(adapter);
-
-      final result = await repository.submitToBoard(
-        applicationPublicId: '22222222-2222-2222-2222-222222222222',
-        expectedRowVersion: 'AAAAAAAAAAE=',
-        idempotencyKey: 'submit-board-test-key',
-      );
-
-      expect(result.statusCode, 'KURUL_BEKLIYOR');
-      expect(result.isEditable, isFalse);
-      expect(
-        adapter.lastRequest?.uri.path,
-        '/sosyo-bel/api/v1/applications/'
-        '22222222-2222-2222-2222-222222222222/submit',
-      );
-      expect(adapter.lastRequest?.data, {'expectedRowVersion': 'AAAAAAAAAAE='});
-      expect(
-        adapter.lastRequest?.headers['Idempotency-Key'],
-        'submit-board-test-key',
-      );
-    });
 
     test('geçersiz doğum tarihini ağ çağrısından önce reddeder', () async {
       final adapter = _RecordingAdapter(
@@ -236,14 +101,21 @@ void main() {
           helpType: 'Gıda Yardımı',
           description: '',
         ),
+        kpsProfile: const KpsProfile(
+          identityNumber: '12345678901',
+          firstName: 'ÖRNEK',
+          lastName: 'KİŞİ',
+          birthDate: '31/02/2002',
+          fullAddress: 'ÖRNEK MAH. TEST SK. NO: 1',
+        ),
         citizenProfile: CitizenProfileDesignFixture.profile,
         familyInformation: FamilyInformationDesignFixture.family,
       );
 
       await expectLater(
-        repository.createDraft(
+        repository.submitCompleted(
           draft: invalidDraft,
-          idempotencyKey: 'create-invalid-test-key',
+          idempotencyKey: 'submit-invalid-test-key',
         ),
         throwsA(
           isA<ApiException>().having(
@@ -258,7 +130,7 @@ void main() {
   });
 }
 
-const _draft = ApplicationDraft(
+const _fieldDraft = ApplicationDraft(
   applicationForm: NewApplicationFormData(
     identityNumber: '12345678901',
     birthDate: '03/11/2002',
@@ -275,22 +147,6 @@ const _draft = ApplicationDraft(
     lastName: 'KİŞİ',
     birthDate: '03/11/2002',
     fullAddress: 'ÖRNEK MAH. TEST SK. NO: 1',
-  ),
-  citizenProfile: CitizenProfileDesignFixture.profile,
-  familyInformation: FamilyInformationDesignFixture.family,
-  completionNote: 'Saha notu',
-);
-
-const _fieldDraft = ApplicationDraft(
-  applicationForm: NewApplicationFormData(
-    identityNumber: '12345678901',
-    birthDate: '03/11/2002',
-    disabilityStatusCode: 'ORTOPEDIK',
-    disabilityStatus: 'Ortopedik',
-    phoneNumber: '(534)-551-2872',
-    helpTypeCode: 'GIDA',
-    helpType: 'Gıda Yardımı',
-    description: 'Başvuru açıklaması',
   ),
   citizenProfile: CitizenProfileDesignFixture.profile,
   familyInformation: FamilyInformationViewData(
@@ -333,54 +189,6 @@ RemoteApplicationRepository _repository(HttpClientAdapter adapter) {
   );
   return RemoteApplicationRepository(apiClient);
 }
-
-Map<String, dynamic> _applicationResponse({
-  String statusCode = 'TASLAK',
-  bool isEditable = true,
-  String rowVersion = 'AAAAAAAAAAE=',
-}) => {
-  'applicationPublicId': '22222222-2222-2222-2222-222222222222',
-  'applicationNumber': '150',
-  'statusCode': statusCode,
-  'isEditable': isEditable,
-  'rowVersion': rowVersion,
-};
-
-Map<String, dynamic> _draftSnapshotResponse() => {
-  'application': {
-    ..._applicationResponse(),
-    'identityNumber': '12345678901',
-    'birthDate': '2002-11-03',
-    'phoneNumber': '5345512872',
-    'helpTypeCode': 'GIDA',
-    'hasDisability': false,
-    'disabilityTypeCode': null,
-    'description': 'Başvuru açıklaması',
-    'applicantFirstName': null,
-    'applicantLastName': null,
-    'address': null,
-    'fieldInspectionNote': 'Saha notu',
-  },
-  'familyMembers': [
-    {
-      'fullName': 'Ayşe Yılmaz',
-      'age': 0,
-      'relationshipCode': 'DIGER',
-      'otherRelationshipDescription': 'Teyze',
-      'hasDisability': false,
-      'disabilityTypeCode': null,
-      'disabilityDescription': null,
-      'employmentStatusCode': 'CALISIYOR',
-      'educationStatusCode': 'LISE',
-      'vitalStatusCode': 'SAG',
-    },
-  ],
-  'householdAnswers': [
-    {'questionCode': 'MULKIYET_DURUMU', 'optionCode': 'KIRACI'},
-  ],
-  'saveToBeneficiaryDirectory': false,
-  'photos': <Object>[],
-};
 
 ResponseBody _jsonResponse(int statusCode, Object body) =>
     ResponseBody.fromString(

@@ -22,7 +22,16 @@ public sealed record KpsIdentityInformation(
 /// </summary>
 public sealed record KpsAddressInformation(
     string IdentityNumber,
-    string FullAddress);
+    string FullAddress,
+    long? AddressNumber = null,
+    int? ProvinceCode = null,
+    int? DistrictCode = null,
+    int? NeighborhoodCode = null,
+    int? StreetCode = null,
+    string? Neighborhood = null,
+    string? Street = null,
+    string? ExteriorDoorNumber = null,
+    string? InteriorDoorNumber = null);
 
 /// <summary>
 /// Kimlik ve adres sorgularından başvuru formuna aktarılabilecek tek profili temsil eder.
@@ -39,13 +48,21 @@ public sealed record KpsProfile(
     string? Gender,
     string? MaritalStatus,
     string? Status,
-    string FullAddress);
+    string FullAddress,
+    long? AddressNumber = null,
+    int? ProvinceCode = null,
+    int? DistrictCode = null,
+    int? NeighborhoodCode = null,
+    int? StreetCode = null,
+    string? Neighborhood = null,
+    string? Street = null,
+    string? ExteriorDoorNumber = null,
+    string? InteriorDoorNumber = null);
 
 public enum KpsProfileQueryStatus
 {
     Succeeded,
     InvalidInput,
-    AccessDenied,
     InvalidIdentityNumber,
     BirthDateMismatch,
     AddressOutsideServiceArea,

@@ -9,7 +9,6 @@ public enum AuthenticationStatus
     InvalidCredentials,
     LockedOut,
     AccessDenied,
-    MunicipalitySelectionRequired,
     InvalidRefreshToken,
     RefreshTokenReuseDetected,
 }

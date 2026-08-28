@@ -1,18 +1,15 @@
 namespace SosyoBel.Application.Authentication;
 
-public sealed record MunicipalityOption(string Code, string Name);
-
 /// <summary>
-/// Sistem yöneticisinin belediye kapsamı olmadığı için belediye alanları nullable'dır.
-/// Belediye kullanıcılarında üyelik kimliği token ile sunucu tarafında doğrulanır.
+/// Oturum açan mevcut ASP.NET Identity kullanıcısının mobil istemciye
+/// döndürülen profilidir. E-posta, şirketin mevcut hesaplarında boş olabildiği
+/// için zorunlu değildir; giriş anahtarı kullanıcı adıdır.
 /// </summary>
 public sealed record AuthenticatedUserProfile(
     string UserId,
-    string Email,
+    string Username,
+    string? Email,
     string DisplayName,
-    string? MunicipalityCode,
-    string? MunicipalityName,
-    long? MunicipalityMembershipId,
     IReadOnlyCollection<string> Roles);
 
 public sealed record AuthenticationSession(
@@ -24,19 +21,16 @@ public sealed record AuthenticationSession(
 
 public sealed record AuthenticationResult(
     AuthenticationStatus Status,
-    AuthenticationSession? Session = null,
-    IReadOnlyCollection<MunicipalityOption>? Municipalities = null);
+    AuthenticationSession? Session = null);
 
 public sealed record LoginInput(
-    string Email,
+    string Username,
     string Password,
-    string? MunicipalityCode,
     string? DeviceId,
     string? IpAddress);
 
 public sealed record RefreshInput(
     string RefreshToken,
-    string? MunicipalityCode,
     string? DeviceId,
     string? IpAddress);
 
@@ -44,11 +38,9 @@ public sealed record LogoutInput(string RefreshToken, string? IpAddress);
 
 public sealed record AccessTokenSubject(
     string UserId,
-    string Email,
+    string Username,
+    string? Email,
     string DisplayName,
-    int? MunicipalityId,
-    string? MunicipalityCode,
-    long? MunicipalityMembershipId,
     IReadOnlyCollection<string> Roles);
 
 public sealed record IssuedAccessToken(string Value, DateTime ExpiresAtUtc);

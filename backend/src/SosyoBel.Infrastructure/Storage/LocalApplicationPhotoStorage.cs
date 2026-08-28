@@ -33,7 +33,6 @@ internal sealed class LocalApplicationPhotoStorage
     }
 
     public async Task<StoredApplicationPhoto> SaveAsync(
-        int municipalityId,
         Guid applicationPublicId,
         ApplicationPhotoUpload photo,
         CancellationToken cancellationToken)
@@ -76,7 +75,6 @@ internal sealed class LocalApplicationPhotoStorage
             var hashText = Convert.ToHexString(hash).ToLowerInvariant();
             var extension = ExtensionFor(photo.ContentType);
             var relativeDirectory = Path.Combine(
-                municipalityId.ToString(System.Globalization.CultureInfo.InvariantCulture),
                 applicationPublicId.ToString("N"));
             var relativePath = Path.Combine(
                 relativeDirectory,

@@ -1,20 +1,32 @@
 # Sosyo-Bel
 
-Sosyo-Bel; belediye saha personelinin sosyal yardım başvurusu oluşturmasını,
-vatandaş ve aile bilgilerini incelemesini, hane sorularını cevaplamasını, fotoğraf
-eklemesini ve başvuruyu kurula göndermesini sağlayan mobil uygulamadır.
+Sosyo-Bel, belediye personelinin sahada sosyal yardım başvurusu hazırlamasını,
+vatandaş ve aile bilgilerini incelemesini, hane durumunu kaydetmesini, fotoğraf
+eklemesini ve tamamlanan başvuruyu kurula göndermesini sağlayan Flutter
+uygulamasıdır.
 
-Repository; Flutter mobil uygulamasını, ASP.NET Core API'yi, SQL Server
-dosyalarını ve otomatik testleri birlikte içerir.
+Bu repository mobil uygulamayı, ASP.NET Core API'yi ve otomatik testleri birlikte
+içerir. Backend kodunu ilk kez okuyacak kişiler önce
+[API mimarisi ve kod okuma rehberine](backend/API_ARCHITECTURE.md), kurulumu
+yapacak kişiler ise [backend çalıştırma ve IIS rehberine](backend/README.md)
+bakmalıdır.
 
-## Teknik belgeler
+## Güncel teknik kararlar
 
-Projeyi ve özellikle backend kodunu ilk kez inceleyecek kişiler öncelikle
-[API mimarisi ve kod okuma rehberine](backend/API_ARCHITECTURE.md) bakmalıdır.
-
-- [Rol ve yetki modeli](backend/ACCESS_CONTROL.md)
-- [İlk sistem yöneticisi kurulumu](backend/BOOTSTRAP.md)
-- [Kimlik doğrulama notları](backend/AUTH_VALIDATION.md)
+- Uygulama şimdilik tek belediye için çalışır; login isteğinde
+  `municipalityCode` bulunmaz.
+- Kullanıcı ve roller şirketin mevcut `dbo.AspNet*` tablolarından okunur.
+  Admin, Kurul ve Personel rolleri mobil uygulamaya girebilir.
+- API canlı veritabanında migration çalıştırmaz, yeni tablo veya kolon oluşturmaz.
+- Tamamlanan başvuru tek HTTP isteği ve tek SQL transaction ile şirketin mevcut
+  `dbo.Basvurular`, `dbo.BasvuruAileFertleri` ve
+  `dbo.HaneFotograflari` tablolarına yazılır.
+- Taslaklar API'ye gönderilmez; kurula gönderilene kadar yalnız telefonda tutulur.
+- Hane cevapları, aile fertlerinin ölü/sağ bilgisi, diğer yakınlık açıklaması ve
+  tamamla ekranındaki not, etiketli biçimde
+  `dbo.Basvurular.TalepAciklamasi` alanına eklenir.
+- Sunucuya ulaşan başvuru kurula gönderilmiş kabul edilir ve mobil uygulamada
+  yeniden düzenlenmez.
 
 ## Teknolojiler
 
@@ -29,8 +41,8 @@ Projeyi ve özellikle backend kodunu ilk kez inceleyecek kişiler öncelikle
 ```text
 android/                 Android platform dosyaları
 assets/                  Görsel, ikon ve fontlar
-backend/                 API, bootstrap aracı ve backend testleri
-database/                Migration, seed ve SQL doğrulama dosyaları
+backend/                 API kaynak kodu, belgeler, scriptler ve backend testleri
+database/                Yerel/uyumluluk SQL materyalleri; canlı DB'ye uygulanmaz
 ios/                     iOS platform dosyaları
 lib/                     Flutter uygulama kodu
 test/                    Flutter testleri
@@ -40,70 +52,37 @@ tool/                    Geliştirici önizleme giriş noktaları
 ## Gereksinimler
 
 - Git
-- Flutter stable; kullanılan sürüm Dart `>=3.11.5 <4.0.0` sağlamalıdır
-- .NET 10 SDK; `backend/global.json` şu anda `10.0.302` sürümünü ister
-- PowerShell
-- SQL Server Developer veya SQL Server Express
-- Android için Android Studio, Android SDK ve emülatör/fiziksel cihaz
+- Flutter stable; Dart `>=3.11.5 <4.0.0`
+- .NET 10 SDK; `backend/global.json` şu anda `10.0.302` ister
+- SQL Server'a erişim ve şirket şemasının yerel/test kopyası
+- Android için Android Studio, Android SDK ve emülatör veya fiziksel cihaz
 - iOS için macOS, Xcode ve CocoaPods
 
-iOS uygulaması Windows üzerinde derlenemez. iOS geliştirme ve derleme işlemleri
-Mac üzerinde yapılmalıdır.
+iOS uygulaması Windows üzerinde derlenemez.
 
-Kurulumları kontrol etmek için:
+## İlk çalıştırma
 
-```powershell
-flutter doctor
-dotnet --version
-```
-
-## İlk kurulum
-
-Komutlar repository kökünde çalıştırılmalıdır.
-
-### 1. Bağımlılıkları yükleme
+Komutları repository kökünde çalıştırın:
 
 ```powershell
 flutter pub get
 dotnet restore backend\SosyoBel.Backend.sln
 ```
 
-### 2. Yerel veritabanını hazırlama
+API, şirketin mevcut dbo şemasına bağlanır. Şirketin test/canlı veritabanında
+`database/` altındaki SQL dosyalarını veya
+`backend/scripts/initialize-local-development.ps1` scriptini
+çalıştırmayın. API kendi şemasını üretmez.
 
-Varsayılan yerel SQL Server için:
-
-```powershell
-powershell -ExecutionPolicy Bypass -File backend\scripts\initialize-local-development.ps1
-```
-
-SQL Server Express kullanılıyorsa:
-
-```powershell
-powershell -ExecutionPolicy Bypass -File backend\scripts\initialize-local-development.ps1 -SqlServer ".\SQLEXPRESS"
-```
-
-Farklı bir yerel veritabanı adı kullanılabilir:
-
-```powershell
-powershell -ExecutionPolicy Bypass -File backend\scripts\initialize-local-development.ps1 -SqlServer ".\SQLEXPRESS" -DatabaseName "SosyoBelDev"
-```
-
-Script yalnızca yerel SQL Server instance'larında çalışır. Varsayılan
-`SosyoBelCompanyLocal` veritabanına önce şirketin veri içermeyen `dbo` şema
-snapshot'ını, ardından yalnız `sosyobel` teknik uyumluluk migration'larını ve
-yerel geliştirme seed'ini uygular. Şirket test veya canlı veritabanında bu
-initializer çalıştırılmaz; mevcut veritabanını da silmez.
-
-### 3. API ortam değişkenlerini tanımlama
-
-Aşağıdaki değerler yalnız açık PowerShell penceresi için geçerlidir. Terminal
-kapatıldığında yeniden tanımlanmalıdır.
+Yerel test için önce bu PowerShell penceresine ayarları verin:
 
 ```powershell
 $env:ASPNETCORE_ENVIRONMENT="Development"
-$env:ConnectionStrings__SosyoBel="Server=localhost;Database=SosyoBelCompanyLocal;Integrated Security=True;Encrypt=True;TrustServerCertificate=True"
+$env:ConnectionStrings__SosyoBel="Server=localhost;Database=SirketDbTestKopyasi;Integrated Security=True;Encrypt=True;TrustServerCertificate=True"
+$env:ApplicationPhotos__RootPath="C:\sosyobel-test\uploads"
+$env:Kps__BaseUrl="http://localhost:8090"
 
-# PowerShell 5.1 ve PowerShell 7 ile uyumlu 32 byte rastgele JWT anahtarı.
+# PowerShell 5.1 ve 7 ile uyumlu, en az 32 byte JWT anahtarı üretir.
 $keyBytes = New-Object byte[] 32
 $rng = [System.Security.Cryptography.RandomNumberGenerator]::Create()
 try {
@@ -115,241 +94,134 @@ finally {
 $env:Authentication__Jwt__SigningKeyBase64=[Convert]::ToBase64String($keyBytes)
 ```
 
-SQL Server Express kullanılıyorsa bağlantı cümlesi de değiştirilmelidir:
-
-```powershell
-$env:ConnectionStrings__SosyoBel="Server=.\SQLEXPRESS;Database=SosyoBelCompanyLocal;Integrated Security=True;Encrypt=True;TrustServerCertificate=True"
-```
-
-### 4. API'yi çalıştırma
-
-Ortam değişkenlerinin tanımlandığı PowerShell penceresinde:
+Ardından API'yi başlatın:
 
 ```powershell
 dotnet run --project backend\src\SosyoBel.Api\SosyoBel.Api.csproj --urls http://localhost:5000
 ```
 
-API çalışırken terminal açık tutulmalıdır.
-
 | Adres | Açıklama |
 | --- | --- |
 | `http://localhost:5000/` | Servis ve ortam bilgisi |
-| `http://localhost:5000/health/live` | API süreci çalışıyor mu |
-| `http://localhost:5000/health/ready` | API ve SQL Server hazır mı |
-| `http://localhost:5000/swagger` | Swagger arayüzü |
-| `http://localhost:5000/swagger/v1/swagger.json` | OpenAPI JSON belgesi |
+| `http://localhost:5000/health/live` | API süreci ayakta mı |
+| `http://localhost:5000/health/ready` | API ve SQL bağlantısı hazır mı |
+| `http://localhost:5000/swagger` | Development ortamındaki Swagger |
 
-Swagger ayrı bir program değildir; API Development ortamında çalışınca otomatik
-olarak açılır.
+`/health/live` başarılıyken `/health/ready` başarısızsa süreç
+çalışıyor fakat SQL bağlantısı veya gerekli dbo şeması hazır değildir.
 
-## İlk kullanıcıların oluşturulması
+## Kullanıcı hesabı ve Swagger
 
-Repository içinde varsayılan kullanıcı veya parola yoktur. Yerel bilgisayardaki
-mevcut bir kullanıcı hesabı commit ile başka bilgisayara aktarılmaz.
-
-Kullanıcı oluşturma sırası:
-
-1. Bootstrap aracıyla ilk sistem yöneticisi oluşturulur.
-2. Sistem yöneticisi Swagger üzerinden belediyeyi ve belediye yöneticisini açar.
-3. Belediye yöneticisi Swagger üzerinden saha personelini açar.
-4. Mobil uygulamaya saha personeli hesabıyla giriş yapılır.
-
-### Sistem yöneticisi oluşturma
-
-Bağlantı cümlesinin tanımlı olduğu PowerShell penceresinde:
-
-```powershell
-$env:SOSYOBEL_BOOTSTRAP_EMAIL="system.admin@example.com"
-$env:SOSYOBEL_BOOTSTRAP_FIRST_NAME="Cats"
-$env:SOSYOBEL_BOOTSTRAP_LAST_NAME="Administrator"
-
-dotnet run --project backend\src\SosyoBel.Bootstrap\SosyoBel.Bootstrap.csproj
-```
-
-Parola ortam değişkeninde verilmezse terminalde gizli olarak istenir. Parola en
-az 10 karakter, büyük harf, küçük harf, rakam ve en az dört benzersiz karakter
-içermelidir.
-
-### Swagger ile oturum açma
-
-`POST /api/v1/auth/login` isteği çalıştırılır:
+API kullanıcı veya rol oluşturmaz. Şirketin web panelinde bulunan ve Admin, Kurul
+veya Personel rolüne sahip mevcut hesapla şu istek çalıştırılır:
 
 ```json
 {
-  "email": "system.admin@example.com",
-  "password": "YerelGucluParola123",
-  "municipalityCode": null
+  "username": "mevcut-kullanici-adi",
+  "password": "mevcut-sifre"
 }
 ```
 
-Başarılı yanıttaki `accessToken` kopyalanır. Swagger'ın sağ üstündeki
-**Authorize** alanına yalnız token yapıştırılır; başına `Bearer` yazılmaz.
-`traceId` erişim tokenı değildir.
+`POST /api/v1/auth/login` yanıtındaki `accessToken` kopyalanır.
+Swagger'daki **Authorize** alanına yalnız token yapıştırılır; başına
+`Bearer` yazılmaz. `traceId` token değildir.
 
-### Belediye ve ilk belediye yöneticisi
+API'nin güncel uygulama uçları:
 
-Sistem yöneticisi tokenı ile `POST /api/v1/system/municipalities` çalıştırılır.
-`Idempotency-Key` başlığına 8-100 karakterlik benzersiz bir değer yazılır; örnek:
-`create-local-municipality-001`.
-
-```json
-{
-  "code": "DEMO",
-  "name": "Demo Belediyesi",
-  "administrator": {
-    "email": "yonetici@demo.example",
-    "firstName": "Demo",
-    "lastName": "Yonetici",
-    "initialPassword": "YerelYonetici123"
-  }
-}
-```
-
-### Saha personeli
-
-Belediye yöneticisi hesabıyla tekrar login olunur ve yeni token Swagger'a
-tanıtılır. `POST /api/v1/municipality/personnel/` çalıştırılır.
-`Idempotency-Key` örneği: `create-local-personnel-001`.
-
-```json
-{
-  "email": "personel@demo.example",
-  "firstName": "Demo",
-  "lastName": "Personel",
-  "initialPassword": "YerelPersonel123"
-}
-```
-
-Bu bilgiler yalnız yerel geliştirme örneğidir. Gerçek hesap ve parolalar kaynak
-koda veya README'ye yazılmamalıdır.
+| Metot | Endpoint | Amaç |
+| --- | --- | --- |
+| POST | `/api/v1/auth/login` | Oturum açar |
+| POST | `/api/v1/auth/refresh` | Access token yeniler |
+| POST | `/api/v1/auth/logout` | Refresh oturumunu kapatır |
+| GET | `/api/v1/auth/me` | Aktif kullanıcıyı getirir |
+| GET | `/api/v1/application-references` | Form seçeneklerini getirir |
+| GET | `/api/v1/kps/profile` | KPS kişi ve adres sonucunu birleştirir |
+| POST | `/api/v1/applications/submit` | Tamamlanan başvuruyu kurula gönderir |
+| GET | `/api/v1/work-items/mine` | Başvuruları ve atanmış işleri listeler |
 
 ## Mobil uygulamayı çalıştırma
 
-API çalışırken ikinci bir terminal açılır:
+API açıkken ikinci terminalde:
 
 ```powershell
 flutter devices
 flutter run
 ```
 
-Varsayılan geliştirme API adresleri:
-
-| Platform | API adresi |
-| --- | --- |
-| Android emülatörü | `http://10.0.2.2:5000` |
-| iOS simülatörü | `http://localhost:5000` |
-
-Android emülatöründe `localhost` emülatörün kendisidir. Bilgisayarda çalışan
-API'ye `10.0.2.2` ile ulaşılır ve uygulama bu adresi otomatik seçer.
-
-Fiziksel cihaz veya ortak test API'si için adres build sırasında verilir:
+Android emülatörü bilgisayardaki API'ye `http://10.0.2.2:5000` ile,
+iOS simülatörü `http://localhost:5000` ile ulaşır. Fiziksel cihaz veya IIS
+test ortamı için adres derleme sırasında verilir:
 
 ```powershell
 flutter run --dart-define=SOSYOBEL_API_BASE_URL=https://test-api.example.com/
 ```
 
-IIS sanal dizini kullanılıyorsa dizin de adrese eklenir:
+IIS altında alt uygulama kullanılıyorsa yol da eklenir:
 
 ```powershell
 flutter run --dart-define=SOSYOBEL_API_BASE_URL=https://test.example.com/sosyobel/
 ```
 
-Release derlemelerinde API adresi HTTPS olmak zorundadır.
+Release sürümünde API adresi HTTPS olmalıdır.
 
-## KPS entegrasyonunu test etme
+## Başvuru ve fotoğraf akışı
 
-Mobil uygulama KPS servisine doğrudan bağlanmaz. İstek önce Sosyo-Bel API'ye
-gider; personelin oturumu ve `KPS_SORGULA` yetkisi doğrulandıktan sonra API,
-kurumun kimlik ve adres servislerine yalnız GET isteği gönderir.
+`POST /api/v1/applications/submit` bir
+`multipart/form-data` isteğidir:
 
-### 1. KPS bağlantısını tanımlama
+- `payload` alanı kişi/talep, aile ve hane bilgilerini JSON olarak taşır.
+- `photos` alanı en fazla 15 JPEG, PNG, HEIC veya HEIF dosyası taşır.
+- Her fotoğraf en fazla 10 MB olabilir.
+- `Idempotency-Key` başlığı 8-100 karakter olmalıdır; aynı gönderimin
+  bağlantı sorunu nedeniyle tekrarlanması ikinci başvuru oluşturmaz.
+- KPS bilgisi kayıt öncesinde sunucuda tekrar doğrulanır.
+- Vatandaşın mevcut `dbo.Vatandaslar` kaydı bulunmak zorundadır; bu akış
+  yeni vatandaş oluşturmaz.
+- Başvuru kanalı mevcut `dbo.TalepGelisKanallari` tablosundaki tek etkin
+  `Yüzyüze Görüşme` kaydından çözülür.
 
-API başlatılmadan önce:
+Development ortamında fotoğraf yolu
+`backend/src/SosyoBel.Api/appsettings.Development.json` içinden gelir.
+IIS'te `ApplicationPhotos__RootPath`, şirket web uygulamasının
+`/uploads` adresi olarak sunduğu fiziksel klasör olmalıdır. API veritabanına
+`/uploads/...` biçiminde yol yazar.
 
-```powershell
-$env:Kps__BaseUrl="http://localhost:8090"
-$env:Kps__TimeoutSeconds="30"
-```
+## KPS testi
 
-`localhost`, Sosyo-Bel API'nin çalıştığı sunucudur. KPS farklı bir sunucudaysa
-kurum içi IP veya DNS adresi verilmelidir. Mobil cihazın KPS sunucusuna doğrudan
-erişmesi gerekmez.
-
-Mevcut adaptör aşağıdaki iki KPS adresine GET isteği gönderir:
+Mobil uygulama KPS'ye doğrudan bağlanmaz. Sosyo-Bel API şu kurum uçlarına GET
+isteği gönderir:
 
 ```text
 GET /api/kps/sorgula?tcKimlikNo=...&dogumYil=...&dogumAy=...&dogumGun=...
 GET /api/kpsadres/sorgula?tcKimlikNo=...&dogumYil=...&dogumAy=...&dogumGun=...
 ```
 
-KPS servisine şu anda ek bir token veya API anahtarı gönderilmez. Kurum servisi
-ileride kimlik doğrulama isterse adaptör buna göre güncellenmelidir.
-
-### 2. Personelin KPS yetkisini açma
-
-Belediye yöneticisi Swagger'da oturum açıp tokenını **Authorize** alanına tanıtır
-ve aşağıdaki endpointi çalıştırır:
-
-```text
-PUT /api/v1/municipality/personnel/{targetUserId}/permissions/kps-lookup
-Idempotency-Key: kps-test-permission-001
-```
-
-```json
-{
-  "enabled": true,
-  "reason": "KPS entegrasyon testi"
-}
-```
-
-`targetUserId`, sorguyu yapacak aktif saha personelinin kullanıcı kimliğidir.
-Yetki yoksa istek `403 Forbidden` ile durdurulur ve KPS'ye istek gönderilmez.
-
-### 3. Swagger üzerinden test
-
-KPS yetkili saha personeliyle `POST /api/v1/auth/login` üzerinden giriş yapılır.
-Cevaptaki `accessToken`, Swagger'ın **Authorize** alanına yalnız token olarak
-yapıştırılır. Ardından kurum tarafından test için onaylanmış bilgilerle şu uç
-çalıştırılır:
+KPS tarafında şu an ek token/API anahtarı yoktur. Swagger'da oturum açıp token
+tanıtıldıktan sonra şu uç çağrılır:
 
 ```text
 GET /api/v1/kps/profile?tcKimlikNo=...&dogumYil=...&dogumAy=...&dogumGun=...
 ```
 
-Başarılı cevap kimlik ve adres servislerinin birleştirilmiş sonucunu döndürür.
-Ham KPS cevabı mobil uygulamaya açılmaz.
+Yalnız kurumun test için onayladığı kimlik bilgilerini kullanın. Gerçek T.C. kimlik
+numarası, parola, token veya ham KPS cevabı repository'ye eklenmemelidir.
 
-| HTTP durumu | Anlamı |
-| --- | --- |
-| `400` | Sorgu alanları eksik/geçersiz veya KPS Kod=5 ile T.C. kimlik numarasını reddetti |
-| `401` | Oturum açılmamış veya token geçersiz |
-| `403` | Personelde KPS sorgulama yetkisi yok |
-| `422` | KPS Kod=31 ile kimlik/doğum tarihi uyuşmazlığı veya Kod=16 ile hizmet alanı dışı adres bildirdi |
-| `502` | KPS cevabı beklenen başarılı sözleşmeyle uyuşmuyor |
-| `503` | KPS servisine ulaşılamıyor veya istek zaman aşımına uğradı |
+## Taslaklar ve görev listesi
 
-Kurum KPS servisi iş kuralı hatalarını HTTP 200 ve `Success:false` ile döndürür.
-Bilinen Kod=5, Kod=16 ve Kod=31 cevapları yukarıdaki güvenli HTTP sonuçlarına
-çevrilir. Bilinmeyen kodlar genel `502` olarak ele alınır; ham kurum cevabı ve
-kişisel veri hata mesajına eklenmez.
+`Taslağı Kaydet` işlemi veriyi yalnız cihazda saklar. Sunucuda taslak
+endpointi veya taslak tablosu yoktur. Başvuru kurula başarıyla gönderildiğinde
+telefondaki taslak silinir.
 
-### 4. Mobil uygulama üzerinden test
+`GET /api/v1/work-items/mine` şu iki kaynağı birleştirir:
 
-Swagger testi başarılı olduktan sonra uygulama test API adresiyle çalıştırılır:
+- Kullanıcının oluşturduğu `dbo.Basvurular` kayıtları
+- Kullanıcıya atanmış `dbo.SahaAktiviteleri` kayıtları
 
-```powershell
-flutter run --dart-define=SOSYOBEL_API_BASE_URL=https://test-api.example.com/
-```
-
-KPS yetkili saha personeliyle giriş yapılıp **Başvuru Yap** ekranına aynı onaylı
-test bilgileri girilir. **Devam Et** sonrasında kimlik ve adres bilgilerinin profil
-ekranına aktarıldığı doğrulanır. Gerçek parola, token, T.C. kimlik numarası veya
-ham KPS cevabı kaynak koda, README'ye ve ekran görüntülerine eklenmemelidir.
-
+Sunucudaki kayıtlar mobil uygulamada salt okunurdur.
 
 ## Testler
 
-Commit veya Pull Request öncesinde:
+Commit veya teslim öncesinde:
 
 ```powershell
 flutter analyze
@@ -358,91 +230,14 @@ dotnet build backend\SosyoBel.Backend.sln --configuration Release
 dotnet test backend\SosyoBel.Backend.sln --configuration Release
 ```
 
-`backend/scripts/validate-*.ps1` dosyaları daha kapsamlı yerel SQL/API testleri
-içindir. Bazıları geçici veritabanı oluşturup test sonunda kaldırır. Şirket test
-veya canlı veritabanına karşı çalıştırılmamalıdır.
+`backend/scripts/validate-*.ps1` dosyaları yerel doğrulama içindir.
+Bazıları geçici veritabanı oluşturabilir; şirket test veya canlı veritabanına karşı
+çalıştırılmamalıdır.
 
-## Bekleyen taslağı yeniden açma
+## IIS
 
-`GET /api/v1/work-items/mine` personelin kendi başvurularını şirketin
-`dbo.Basvurular` tablosu ile mobil metadata uzantısından listeler. Yalnız
-`TASLAK` ve `isEditable=true` olan kartlar mobil uygulamada açılabilir.
+Yayın alma, uygulama havuzu, ortam değişkenleri, SQL izinleri, fotoğraf klasörü ve
+kontrol sırası [backend README](backend/README.md) içinde açıklanmıştır.
 
-Kart açıldığında `GET /api/v1/applications/{applicationPublicId}/draft-snapshot`
-çekirdek form, aile üyeleri, hane cevapları ve aktif fotoğraf metadata bilgisini
-tek yanıtta döndürür. Fotoğraf içeriği fiziksel depolama yolu açıklanmadan,
-yetkilendirilmiş
-`GET /api/v1/applications/{applicationPublicId}/photos/{photoId}` endpointinden
-alınır. Kurula gönderilmiş başvurular listede kalır fakat yeniden düzenlenemez.
-
-Şirketin görev atama tablosu ve başvuru bağlantısı henüz doğrulanmadığı için iş
-listesi şu aşamada yalnız personelin kendi oluşturduğu başvuruları içerir. Görev
-kaynağı, tablo eşlemesi yetkili tarafından netleştirildikten sonra aynı yanıt
-sözleşmesine eklenecektir.
-
-
-
-
-
-## Fotoğraf depolama
-
-Development ortamında fotoğraflar Git tarafından izlenmeyen
-`.application-photos/` klasörüne yazılır. Bir başvuruya en fazla 15 JPEG, PNG,
-HEIC veya HEIF fotoğraf eklenebilir; her dosya en fazla 10 MB olabilir.
-Taslakta yeniden yüklenen toplu fotoğraflar aktif anlık kopyayı değiştirir;
-kurula gönderilmiş başvurunun fotoğrafları değiştirilemez.
-
-IIS veya ortak test ortamında `ApplicationPhotos__RootPath`, publish klasörü
-dışındaki kalıcı bir klasöre verilmelidir. API'yi çalıştıran kullanıcıya bu klasör
-için yazma ve silme izni gerekir. Veritabanı yedeği fotoğraf dosyalarını içermez;
-bu klasör veya kullanılan object storage ayrıca yedeklenmelidir.
-
-## IIS notu
-
-
-```powershell
-dotnet publish backend\src\SosyoBel.Api\SosyoBel.Api.csproj --configuration Release --output .\artifacts\publish\api
-```
-
-Production ortamında Swagger varsayılan olarak kapalıdır. Güvenilir test ortamında
-`OpenApi__Enabled=true` ile açılabilir. Swagger etkin olduğunda anonim erişime açık
-olduğu için internetten erişilen canlı ortamda korumasız bırakılmamalıdır.
-
-## Sık karşılaşılan sorunlar
-
-
-### `JWT imza anahtarı en az 32 byte olmalıdır`
-
-Bu README'deki `RandomNumberGenerator.Create()` örneğiyle yeni anahtar üretin.
-PowerShell 5.1 statik `RandomNumberGenerator.GetBytes(32)` çağrısını desteklemez.
-
-### Swagger yanıtında yalnız `traceId` görünüyor
-
-`traceId` token değildir; sunucu hatasının izleme kimliğidir. API terminalindeki
-hata incelenmelidir. Token yalnız başarılı login yanıtındaki `accessToken` alanıdır.
-
-### `/health/live` başarılı, `/health/ready` başarısız
-
-API çalışıyor fakat SQL Server bağlantısı veya şeması hazır değildir. Bağlantı
-cümlesi, SQL Server servisi, kullanıcı yetkisi ve migration sırası kontrol edilir.
-
-### Android emülatörü API'ye bağlanamıyor
-
-- API'nin `localhost:5000` üzerinde çalıştığını kontrol edin.
-- Emülatör için adresin `10.0.2.2:5000` olduğundan emin olun.
-- VPN, güvenlik duvarı ve proxy ayarlarını kontrol edin.
-
-### Login `401` dönüyor
-
-Kullanıcı/parola, kullanıcının aktifliği ve belediye kodu kontrol edilmelidir.
-Beş başarısız denemeden sonra hesap 15 dakika kilitlenebilir.
-
-### Korumalı istek `403` dönüyor
-
-Token geçerlidir ancak kullanıcının rolü, aktif belediye üyeliği veya işlem yetkisi
-yeterli değildir.
-
-### IIS'te `/swagger` adresi `404` dönüyor
-
-Production ortamında beklenen davranıştır. Yalnız güvenilir test ortamında
-`OpenApi__Enabled=true` tanımlanıp uygulama yeniden başlatılır.
+Production ortamında Swagger varsayılan olarak kapalıdır. Yalnız güvenilir test
+ortamında `OpenApi__Enabled=true` ile açılmalıdır.

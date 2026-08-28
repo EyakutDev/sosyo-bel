@@ -32,6 +32,7 @@ $oldEnvironment = $env:ASPNETCORE_ENVIRONMENT
 $oldPhotoRoot = $env:ApplicationPhotos__RootPath
 
 # Bu hesap yalnız her çalıştırmada silinen geçici doğrulama veritabanında bulunur.
+$testUsername = 'personel.demo'
 $testEmail = 'personel@demo.bel.tr'
 $testPassword = 'TestPersonel2026'
 $testPasswordHash =
@@ -185,6 +186,7 @@ try {
     Invoke-SqlFile 'database/compatibility/tests/007_expand_company_identity_fixture.sql'
     Invoke-SqlFile 'database/compatibility/tests/009_expand_company_application_fixture.sql'
     Invoke-SqlFile 'database/compatibility/tests/010_expand_company_family_fixture.sql'
+    Invoke-SqlFile 'database/compatibility/tests/016_expand_company_field_task_fixture.sql'
     Invoke-SqlFile 'database/compatibility/migrations/001_create_foundation_extensions.sql'
     Invoke-SqlFile 'database/compatibility/checks/001_verify_foundation_extensions.sql'
     Invoke-SqlFile 'database/compatibility/migrations/002_create_auth_support.sql'
@@ -199,10 +201,10 @@ try {
     Invoke-SqlFile 'database/compatibility/checks/006_verify_application_photo_support.sql'
     Invoke-SqlFile 'database/compatibility/migrations/007_add_kps_lookup_permission.sql'
     Invoke-SqlFile 'database/compatibility/checks/007_verify_kps_lookup_permission.sql'
+    Invoke-SqlFile 'database/compatibility/migrations/008_remove_application_municipality_scope.sql'
+    Invoke-SqlFile 'database/compatibility/checks/008_verify_application_single_municipality.sql'
 
     $seedSql = @"
-DECLARE @MunicipalityId int;
-
 INSERT INTO dbo.AspNetUsers
 (
     Id,
@@ -226,8 +228,8 @@ VALUES
     N'auth-test-user-1',
     N'Test',
     N'Personel',
-    N'$testEmail',
-    N'PERSONEL@DEMO.BEL.TR',
+    N'$testUsername',
+    N'PERSONEL.DEMO',
     N'$testEmail',
     N'PERSONEL@DEMO.BEL.TR',
     1,
@@ -240,18 +242,12 @@ VALUES
     0
 );
 
-INSERT INTO sosyobel.KullaniciUygulamaBilgileri (UserId)
-VALUES (N'auth-test-user-1');
+INSERT INTO dbo.AspNetRoles (Id, Name, NormalizedName, ConcurrencyStamp)
+VALUES (N'auth-test-role-personel', N'Personel', N'PERSONEL', N'test-role-stamp');
 
-INSERT INTO sosyobel.Belediyeler (Kod, Ad)
-VALUES (N'DEMO', N'Demo Belediyesi');
-
-SET @MunicipalityId = CONVERT(int, SCOPE_IDENTITY());
-
-INSERT INTO sosyobel.KullaniciBelediyeleri
-    (UserId, BelediyeId, RolKodu)
+INSERT INTO dbo.AspNetUserRoles (UserId, RoleId)
 VALUES
-    (N'auth-test-user-1', @MunicipalityId, N'PERSONEL');
+    (N'auth-test-user-1', N'auth-test-role-personel');
 
 DECLARE @DraftStatusId int;
 DECLARE @PendingStatusId int;
@@ -357,7 +353,7 @@ VALUES
     }
 
     $invalidBody = @{
-        email = $testEmail
+        username = $testUsername
         password = 'WrongPassword2026'
     } | ConvertTo-Json -Compress
     try {
@@ -373,7 +369,7 @@ VALUES
     }
 
     $loginBody = @{
-        email = $testEmail
+        username = $testUsername
         password = $testPassword
     } | ConvertTo-Json -Compress
     $login = Invoke-RestMethod -Method Post `
@@ -833,10 +829,13 @@ WHERE metadata.PublicId = @publicId;
 
     Assert-Equal $health.status 'Healthy' 'Readiness sonucu hatalı.'
     Assert-Equal $invalidLoginStatus 401 'Hatalı parola reddedilmedi.'
+    Assert-Equal $login.user.username $testUsername 'Login kullanıcı adı hatalı.'
     Assert-Equal $login.user.email $testEmail 'Login kullanıcı e-postası hatalı.'
-    Assert-Equal $login.user.municipalityCode 'DEMO' 'Login belediye kapsamı hatalı.'
+    Assert-Equal ($login.user.PSObject.Properties.Name -contains 'municipalityCode') $false `
+        'Tek belediye login cevabı eski belediye kapsamını taşıyor.'
+    Assert-Equal $me.username $testUsername 'Bearer /me kullanıcı adı hatalı.'
     Assert-Equal $me.email $testEmail 'Bearer /me kullanıcı bilgisi hatalı.'
-    Assert-Equal ($me.roles -contains 'PERSONEL') $true 'PERSONEL rolü tokena eklenmedi.'
+    Assert-Equal ($me.roles -contains 'Personel') $true 'Personel rolü tokena eklenmedi.'
     Assert-Equal $applicationReferences.helpTypes.Count 1 `
         'Yardım türü referans kataloğuna gelmedi.'
     Assert-Equal $applicationReferences.helpTypes[0].code 'GIDA' `
@@ -882,9 +881,8 @@ WHERE metadata.PublicId = @publicId;
     [pscustomobject]@{
         ReadyStatus = $health.status
         InvalidPasswordStatus = $invalidLoginStatus
-        LoginUser = $login.user.email
-        Municipality = $login.user.municipalityCode
-        CurrentUser = $me.email
+        LoginUsername = $login.user.username
+        CurrentUsername = $me.username
         Roles = ($me.roles -join ',')
         HelpTypeReferenceCount = $applicationReferences.helpTypes.Count
         HouseholdQuestionReferenceCount = `

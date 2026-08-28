@@ -40,7 +40,7 @@ void main() {
     await tester.tap(find.byKey(const Key('login-submit-button')));
     await tester.pump();
 
-    expect(find.text('E-posta adresinizi girin.'), findsOneWidget);
+    expect(find.text('Kullanıcı adınızı girin.'), findsOneWidget);
     expect(callbackCalled, isFalse);
   });
 
@@ -48,20 +48,20 @@ void main() {
     tester,
   ) async {
     final completer = Completer<void>();
-    String? submittedEmail;
+    String? submittedUsername;
     String? submittedPassword;
     await pumpLogin(
       tester,
-      onLogin: (email, password) {
-        submittedEmail = email;
+      onLogin: (username, password) {
+        submittedUsername = username;
         submittedPassword = password;
         return completer.future;
       },
     );
 
     await tester.enterText(
-      find.byKey(const Key('login-email-field')),
-      '  test@belediye.com  ',
+      find.byKey(const Key('login-username-field')),
+      '  personel  ',
     );
     await tester.enterText(
       find.byKey(const Key('login-password-field')),
@@ -71,7 +71,7 @@ void main() {
     await tester.pump();
 
     expect(find.byKey(const Key('login-loading-indicator')), findsOneWidget);
-    expect(submittedEmail, 'test@belediye.com');
+    expect(submittedUsername, 'personel');
     expect(submittedPassword, 'TestSifresi123!');
 
     completer.complete();
@@ -87,7 +87,7 @@ void main() {
       onLogin: (_, _) async {
         throw const ApiException(
           kind: ApiErrorKind.unauthenticated,
-          message: 'E-posta veya şifre hatalı.',
+          message: 'Kullanıcı adı veya şifre hatalı.',
           statusCode: 401,
           code: 'invalid_credentials',
         );
@@ -95,8 +95,8 @@ void main() {
     );
 
     await tester.enterText(
-      find.byKey(const Key('login-email-field')),
-      'test@belediye.com',
+      find.byKey(const Key('login-username-field')),
+      'personel',
     );
     await tester.enterText(
       find.byKey(const Key('login-password-field')),
@@ -105,7 +105,7 @@ void main() {
     await tester.tap(find.byKey(const Key('login-submit-button')));
     await tester.pumpAndSettle();
 
-    expect(find.text('E-posta veya şifre hatalı.'), findsOneWidget);
+    expect(find.text('Kullanıcı adı veya şifre hatalı.'), findsOneWidget);
     expect(find.byKey(const Key('login-error-message')), findsOneWidget);
   });
 }

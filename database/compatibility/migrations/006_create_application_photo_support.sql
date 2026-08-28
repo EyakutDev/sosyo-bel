@@ -13,10 +13,9 @@ SET ANSI_NULLS ON;
 SET QUOTED_IDENTIFIER ON;
 
 IF OBJECT_ID(N'dbo.AspNetUsers', N'U') IS NULL OR
-   OBJECT_ID(N'dbo.Basvurular', N'U') IS NULL OR
-   OBJECT_ID(N'sosyobel.Belediyeler', N'U') IS NULL
+   OBJECT_ID(N'dbo.Basvurular', N'U') IS NULL
 BEGIN
-    THROW 51340, N'Uyumluluk 006 icin dbo kullanici/basvuru ve sosyobel belediye tablolari gereklidir.', 1;
+    THROW 51340, N'Uyumluluk 006 icin dbo kullanici ve basvuru tablolari gereklidir.', 1;
 END;
 
 IF OBJECT_ID(N'sosyobel.BasvuruFotograflari', N'U') IS NOT NULL
@@ -46,7 +45,6 @@ BEGIN TRY
     CREATE TABLE sosyobel.BasvuruFotograflari
     (
         Id                    int IDENTITY(1,1) NOT NULL,
-        BelediyeId            int NOT NULL,
         BasvuruId             int NOT NULL,
         StorageKey            nvarchar(500) NOT NULL,
         OrijinalDosyaAdi      nvarchar(255) NULL,
@@ -71,9 +69,6 @@ BEGIN TRY
         SilinmeTarihiUtc      datetime2(3) NULL,
         RowVersion            rowversion NOT NULL,
         CONSTRAINT PK_BasvuruFotograflari PRIMARY KEY CLUSTERED (Id),
-        CONSTRAINT FK_BasvuruFotograflari_Belediyeler
-            FOREIGN KEY (BelediyeId)
-            REFERENCES sosyobel.Belediyeler (Id),
         CONSTRAINT FK_BasvuruFotograflari_Basvurular
             FOREIGN KEY (BasvuruId)
             REFERENCES dbo.Basvurular (Id)
@@ -115,9 +110,6 @@ BEGIN TRY
 
     CREATE INDEX IX_BasvuruFotograflari_BasvuruId
         ON sosyobel.BasvuruFotograflari (BasvuruId, SilindiMi);
-
-    CREATE INDEX IX_BasvuruFotograflari_BelediyeBasvuru
-        ON sosyobel.BasvuruFotograflari (BelediyeId, BasvuruId);
 
     EXEC sys.sp_addextendedproperty
         @name = N'SosyoBelOwnerMigration',

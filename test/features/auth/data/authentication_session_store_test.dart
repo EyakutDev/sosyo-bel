@@ -14,21 +14,24 @@ void main() {
       sessionStore = SecureAuthenticationSessionStore(storage);
     });
 
-    test('token ve kullanıcı kapsamını tek şifreli kayıtta saklar', () async {
-      final session = _session();
+    test(
+      'token ve Identity kullanıcısını tek şifreli kayıtta saklar',
+      () async {
+        final session = _session();
 
-      await sessionStore.saveSession(session);
-      final restored = await sessionStore.readSession();
+        await sessionStore.saveSession(session);
+        final restored = await sessionStore.readSession();
 
-      expect(storage.values.length, 1);
-      expect(restored?.tokens.accessToken, 'access-token');
-      expect(restored?.user.userId, 'user-1');
-      expect(restored?.user.municipalityName, 'Demolar Belediyesi');
-      expect(restored?.user.roles, ['PERSONNEL']);
-    });
+        expect(storage.values.length, 1);
+        expect(restored?.tokens.accessToken, 'access-token');
+        expect(restored?.user.userId, 'user-1');
+        expect(restored?.user.username, 'personel');
+        expect(restored?.user.roles, ['Personel']);
+      },
+    );
 
     test('bozuk oturum kaydını kabul etmez ve temizler', () async {
-      storage.values['sosyobel.auth.session.v2'] = '{bozuk-json';
+      storage.values['sosyobel.auth.session.v3'] = '{bozuk-json';
 
       expect(await sessionStore.readSession(), isNull);
       expect(storage.values, isEmpty);
@@ -59,12 +62,10 @@ AuthenticationSession _session() => AuthenticationSession(
   ),
   user: const AuthenticatedUser(
     userId: 'user-1',
+    username: 'personel',
     email: 'test@belediye.com',
     displayName: 'Test Personeli',
-    municipalityCode: 'DEMOLAR',
-    municipalityName: 'Demolar Belediyesi',
-    municipalityMembershipId: 15,
-    roles: ['PERSONNEL'],
+    roles: ['Personel'],
   ),
 );
 

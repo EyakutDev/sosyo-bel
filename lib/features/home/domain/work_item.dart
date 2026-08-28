@@ -1,24 +1,27 @@
 /// Bekleyen/Tamamlanmış ekranında gösterilebilen tek bir kullanıcı işidir.
 ///
 /// Kayıt, kullanıcının kendi oluşturduğu bir başvuru olabileceği gibi kullanıcıya
-/// atanmış bir saha görevi de olabilir. Bu nedenle [taskPublicId] zorunlu değildir.
+/// atanmış bir saha görevi de olabilir. Şirket şemasında saha aktivitesinin
+/// başvuru bağlantısı olmadığı için iki kimlik de kendi kaynağını temsil eder.
 class WorkItem {
   const WorkItem({
-    required this.applicationPublicId,
     required this.applicationNumber,
     required this.sourceCode,
     required this.statusCode,
     required this.isCompleted,
     required this.isEditable,
     required this.activityAtUtc,
-    this.taskPublicId,
+    this.applicationPublicId,
+    this.localDraftId,
+    this.taskId,
     this.applicantFullName,
     this.address,
     this.description,
   });
 
-  final String applicationPublicId;
-  final String? taskPublicId;
+  final String? applicationPublicId;
+  final String? localDraftId;
+  final int? taskId;
   final String applicationNumber;
   final String? applicantFullName;
   final String? address;
@@ -31,15 +34,27 @@ class WorkItem {
 
   bool get isAssignedTask => sourceCode == 'ASSIGNED_TASK';
 
+  static const localDraftSourceCode = 'LOCAL_DRAFT';
+
+  bool get isLocalDraft => sourceCode == localDraftSourceCode;
+
   factory WorkItem.fromJson(Map<String, dynamic> json) {
     final sourceCode = _requiredString(json, 'sourceCode').toUpperCase();
     if (sourceCode != 'ASSIGNED_TASK' && sourceCode != 'OWN_APPLICATION') {
       throw const FormatException('sourceCode alanı geçersiz.');
     }
+    final applicationPublicId = _optionalString(json, 'applicationPublicId');
+    final taskId = _optionalPositiveInt(json, 'taskId');
+    if (sourceCode == 'OWN_APPLICATION' && applicationPublicId == null) {
+      throw const FormatException('Başvuru kimliği eksik veya geçersiz.');
+    }
+    if (sourceCode == 'ASSIGNED_TASK' && taskId == null) {
+      throw const FormatException('Görev kimliği eksik veya geçersiz.');
+    }
 
     return WorkItem(
-      applicationPublicId: _requiredString(json, 'applicationPublicId'),
-      taskPublicId: _optionalString(json, 'taskPublicId'),
+      applicationPublicId: applicationPublicId,
+      taskId: taskId,
       applicationNumber: _requiredString(json, 'applicationNumber'),
       applicantFullName: _optionalString(json, 'applicantFullName'),
       address: _optionalString(json, 'address'),
@@ -51,6 +66,15 @@ class WorkItem {
       activityAtUtc: _requiredDateTime(json, 'activityAtUtc'),
     );
   }
+}
+
+int? _optionalPositiveInt(Map<String, dynamic> json, String key) {
+  final value = json[key];
+  if (value == null) return null;
+  if (value is! int || value <= 0) {
+    throw FormatException('$key alanı geçersiz.');
+  }
+  return value;
 }
 
 String _requiredString(Map<String, dynamic> json, String key) {

@@ -14,10 +14,10 @@ import 'package:sosyo_bel/features/activity/presentation/models/application_comp
 import 'package:sosyo_bel/features/activity/presentation/models/citizen_profile_view_data.dart';
 import 'package:sosyo_bel/features/activity/presentation/models/family_information_view_data.dart';
 import 'package:sosyo_bel/features/activity/presentation/models/household_status_view_data.dart';
-import 'package:sosyo_bel/features/application/domain/application_lifecycle_entry.dart';
 import 'package:sosyo_bel/features/application/domain/application_reference_catalog.dart';
 import 'package:sosyo_bel/features/application/domain/application_repository.dart';
 import 'package:sosyo_bel/features/application/domain/kps_profile.dart';
+import 'package:sosyo_bel/features/application/domain/local_application_draft_repository.dart';
 import 'package:sosyo_bel/features/application/presentation/new_application_page.dart';
 import 'package:sosyo_bel/features/application/presentation/models/application_draft.dart';
 import 'package:sosyo_bel/features/application/presentation/widgets/application_exit_dialog.dart';
@@ -25,6 +25,7 @@ import 'package:sosyo_bel/features/auth/presentation/login_page.dart';
 import 'package:sosyo_bel/features/auth/domain/auth_repository.dart';
 import 'package:sosyo_bel/features/auth/domain/authentication_session.dart';
 import 'package:sosyo_bel/features/home/presentation/home_page.dart';
+import 'package:sosyo_bel/features/home/data/local_draft_aware_work_items_repository.dart';
 import 'package:sosyo_bel/features/home/domain/work_item.dart';
 import 'package:sosyo_bel/features/home/domain/work_items_repository.dart';
 
@@ -40,6 +41,7 @@ class AppFlow extends StatefulWidget {
     required this.applicationRepository,
     required this.applicationReferenceRepository,
     required this.kpsProfileRepository,
+    required this.localApplicationDraftRepository,
     required this.workItemsRepository,
     this.initialMunicipalityBranding = MunicipalityBranding.demo,
     super.key,
@@ -49,6 +51,7 @@ class AppFlow extends StatefulWidget {
   final ApplicationRepository applicationRepository;
   final ApplicationReferenceRepository applicationReferenceRepository;
   final KpsProfileRepository kpsProfileRepository;
+  final LocalApplicationDraftRepository localApplicationDraftRepository;
   final WorkItemsRepository workItemsRepository;
 
   /// Başarılı giriş cevabı gelene kadar tasarım önizlemesinde kullanılan kimlik.
@@ -64,11 +67,10 @@ class _AppFlowState extends State<AppFlow> {
   static final _householdPhotoPicker = DeviceHouseholdPhotoPicker();
 
   late ApplicationDraft _applicationDraft;
-  late String _createDraftIdempotencyKey;
-  late String _photoUploadIdempotencyKey;
   late String _submitIdempotencyKey;
-  ApplicationLifecycleEntry? _remoteApplication;
+  String? _localDraftId;
   ApplicationReferenceCatalog? _applicationReferences;
+  String? _authenticatedUserId;
   late MunicipalityBranding _municipalityBranding;
   bool _isRestoringSession = true;
   String? _restoreErrorMessage;
@@ -88,8 +90,8 @@ class _AppFlowState extends State<AppFlow> {
         return LoginPage(
           isRestoringSession: _isRestoringSession,
           externalErrorMessage: _restoreErrorMessage,
-          onLogin: (email, password) =>
-              _login(loginContext, email: email, password: password),
+          onLogin: (username, password) =>
+              _login(loginContext, username: username, password: password),
         );
       },
     );
@@ -102,6 +104,7 @@ class _AppFlowState extends State<AppFlow> {
 
       setState(() => _isRestoringSession = false);
       if (session != null) {
+        _authenticatedUserId = session.user.userId;
         _municipalityBranding = _brandingFromSession(session);
         _openActionSelection(context);
       }
@@ -111,7 +114,7 @@ class _AppFlowState extends State<AppFlow> {
       _finishRestoreWithError(error.message);
     } catch (_) {
       _finishRestoreWithError(
-        'Kayıtlı oturum kontrol edilemedi. E-posta ve parolanızla giriş yapın.',
+        'Kayıtlı oturum kontrol edilemedi. Kullanıcı adı ve parolanızla giriş yapın.',
       );
     }
   }
@@ -126,32 +129,27 @@ class _AppFlowState extends State<AppFlow> {
 
   Future<void> _login(
     BuildContext context, {
-    required String email,
+    required String username,
     required String password,
   }) async {
     if (_restoreErrorMessage != null) {
       setState(() => _restoreErrorMessage = null);
     }
     final session = await widget.authRepository.login(
-      email: email,
+      username: username,
       password: password,
     );
     if (!mounted || !context.mounted) return;
 
+    _authenticatedUserId = session.user.userId;
     _municipalityBranding = _brandingFromSession(session);
     _openActionSelection(context);
   }
 
-  MunicipalityBranding _brandingFromSession(AuthenticationSession session) {
-    final user = session.user;
-    return MunicipalityBranding(
-      id:
-          user.municipalityCode ??
-          user.municipalityMembershipId?.toString() ??
-          user.userId,
-      displayName: user.municipalityName ?? 'Sosyo-Bel',
-    );
-  }
+  // Uygulama tek belediyeye bağlıdır; Identity oturumu marka/tenant bilgisi
+  // taşımaz. Yapılandırılmış belediye kimliği girişten sonra korunur.
+  MunicipalityBranding _brandingFromSession(AuthenticationSession _) =>
+      widget.initialMunicipalityBranding;
 
   void _openActionSelection(BuildContext context) {
     // Giriş rotası geçmişte tutulur; ekrandaki ve sistemdeki geri eylemi
@@ -221,7 +219,7 @@ class _AppFlowState extends State<AppFlow> {
         (tasksContext) => HomePage(
           onBack: () => Navigator.of(tasksContext).pop(),
           municipalityBranding: _municipalityBranding,
-          workItemsRepository: widget.workItemsRepository,
+          workItemsRepository: _currentUserWorkItemsRepository(),
           onOpenEditableDraft: (item) => _openSavedDraft(tasksContext, item),
         ),
       ),
@@ -229,30 +227,39 @@ class _AppFlowState extends State<AppFlow> {
   }
 
   Future<void> _openSavedDraft(BuildContext context, WorkItem item) async {
-    if (!item.isEditable || item.statusCode != 'TASLAK') return;
+    // Taslaklar şirket veritabanına yazılmaz; yalnız oluşturuldukları cihazdan
+    // açılabilir. Sunucudaki başvurular kurula gönderilmiş ve kilitli kayıtlardır.
+    if (!item.isLocalDraft || !item.isEditable || item.statusCode != 'TASLAK') {
+      return;
+    }
 
     final references = await _loadApplicationReferences(context);
     if (references == null || !context.mounted) return;
 
-    final loaded = await widget.applicationRepository.getDraft(
-      applicationPublicId: item.applicationPublicId,
-      referenceCatalog: references,
+    final localDraftId = item.localDraftId;
+    if (localDraftId == null) return;
+    final record = await widget.localApplicationDraftRepository.read(
+      ownerUserId: _requiredAuthenticatedUserId,
+      localDraftId: localDraftId,
     );
-    // Liste ile ayrıntı arasında durum değiştiyse sunucunun güncel kilidi esas alınır.
-    if (!loaded.entry.isEditable || loaded.entry.statusCode != 'TASLAK') {
+    if (record == null) {
       throw const ApiException(
-        kind: ApiErrorKind.conflict,
-        message: 'Bu başvuru artık düzenlenebilir bir taslak değil.',
+        kind: ApiErrorKind.notFound,
+        message: 'Bu cihazdaki taslak artık bulunamıyor.',
       );
     }
 
-    _applicationDraft = loaded.draft;
-    _remoteApplication = loaded.entry;
-    _createDraftIdempotencyKey = _newIdempotencyKey('create-draft');
-    _photoUploadIdempotencyKey = _newIdempotencyKey('upload-photos');
-    _submitIdempotencyKey = _newIdempotencyKey('submit-board');
+    _applicationDraft = record.draft;
+    _localDraftId = record.localDraftId;
+    _resetApplicationOperationKeys();
     if (!mounted || !context.mounted) return;
+    _pushDraftForm(context, references);
+  }
 
+  void _pushDraftForm(
+    BuildContext context,
+    ApplicationReferenceCatalog references,
+  ) {
     Navigator.of(context).push(
       _pageRoute(
         (formContext) => _guardApplicationExit(
@@ -362,7 +369,19 @@ class _AppFlowState extends State<AppFlow> {
     ApplicationCompletionPayload payload,
   ) async {
     _applicationDraft = payload.applicationDraft;
-    await _persistApplicationData();
+    final localDraftId = _localDraftId;
+    final record = localDraftId == null
+        ? await widget.localApplicationDraftRepository.create(
+            ownerUserId: _requiredAuthenticatedUserId,
+            draft: _applicationDraft,
+          )
+        : await widget.localApplicationDraftRepository.update(
+            ownerUserId: _requiredAuthenticatedUserId,
+            localDraftId: localDraftId,
+            draft: _applicationDraft,
+          );
+    _applicationDraft = record.draft;
+    _localDraftId = record.localDraftId;
     if (!mounted || !context.mounted) return;
 
     _resetApplicationDraft();
@@ -374,13 +393,20 @@ class _AppFlowState extends State<AppFlow> {
     ApplicationCompletionPayload payload,
   ) async {
     _applicationDraft = payload.applicationDraft;
-    final draft = await _persistApplicationData();
-    final submitted = await widget.applicationRepository.submitToBoard(
-      applicationPublicId: draft.applicationPublicId,
-      expectedRowVersion: draft.rowVersion,
+    await widget.applicationRepository.submitCompleted(
+      draft: _applicationDraft,
       idempotencyKey: _submitIdempotencyKey,
     );
-    _remoteApplication = submitted;
+    // Yerel taslak yalnız sunucu kurula gönderme işlemini kesin olarak kabul
+    // ettikten sonra silinir; ağ hatasında personelin taslağı kaybolmaz.
+    final localDraftId = _localDraftId;
+    if (localDraftId != null) {
+      await widget.localApplicationDraftRepository.delete(
+        ownerUserId: _requiredAuthenticatedUserId,
+        localDraftId: localDraftId,
+      );
+      _localDraftId = null;
+    }
     if (!mounted || !context.mounted) return;
 
     _resetApplicationDraft();
@@ -388,65 +414,6 @@ class _AppFlowState extends State<AppFlow> {
       context,
       successMessage: 'Başvuru başarıyla kurula gönderildi.',
     );
-  }
-
-  Future<ApplicationLifecycleEntry> _ensureRemoteDraft() async {
-    final existing = _remoteApplication;
-    if (existing != null) return existing;
-
-    final created = await widget.applicationRepository.createDraft(
-      draft: _applicationDraft,
-      idempotencyKey: _createDraftIdempotencyKey,
-    );
-    _remoteApplication = created;
-    return created;
-  }
-
-  Future<ApplicationLifecycleEntry> _persistApplicationData() async {
-    final isExistingDraft = _remoteApplication != null;
-    var current = await _ensureRemoteDraft();
-
-    if (isExistingDraft) {
-      // Yeniden açılan taslakta kişi/talep ekranındaki değişiklikler de aile ve
-      // hane verisinden önce aynı iyimser eşzamanlılık zincirine yazılır.
-      current = await widget.applicationRepository.updateDraft(
-        draft: _applicationDraft,
-        applicationPublicId: current.applicationPublicId,
-        expectedRowVersion: current.rowVersion,
-      );
-      _remoteApplication = current;
-    }
-
-    // Aile ve hane verileri ayri tablolarda basvurunun anlik kopyasi olarak
-    // tutulur. Donen RowVersion bir sonraki yazma isleminin kilididir.
-    current = await widget.applicationRepository.saveFieldData(
-      draft: _applicationDraft,
-      applicationPublicId: current.applicationPublicId,
-      expectedRowVersion: current.rowVersion,
-    );
-    _remoteApplication = current;
-
-    final hasUploadablePhotos =
-        _applicationDraft.householdStatus?.photos.any(
-          (photo) => photo.kind == HouseholdPhotoKind.file,
-        ) ??
-        false;
-    final replacesRemotePhotos =
-        _applicationDraft.householdStatus?.replaceRemotePhotosOnSave ?? false;
-    if (hasUploadablePhotos || replacesRemotePhotos) {
-      current = await widget.applicationRepository.uploadPhotos(
-        draft: _applicationDraft,
-        applicationPublicId: current.applicationPublicId,
-        expectedRowVersion: current.rowVersion,
-        idempotencyKey: _photoUploadIdempotencyKey,
-      );
-      _remoteApplication = current;
-      // Basarili yuklemeden sonraki fotograf degisikligi yeni bir istek sayilir.
-      // Cevap kaybolursa anahtar degismedigi icin sunucu ayni istegi replay eder.
-      _photoUploadIdempotencyKey = _newIdempotencyKey('upload-photos');
-    }
-
-    return current;
   }
 
   void _replaceApplicationFlowWithPendingList(
@@ -459,7 +426,7 @@ class _AppFlowState extends State<AppFlow> {
           onBack: () => Navigator.of(homeContext).pop(),
           initialSuccessMessage: successMessage,
           municipalityBranding: _municipalityBranding,
-          workItemsRepository: widget.workItemsRepository,
+          workItemsRepository: _currentUserWorkItemsRepository(),
           onOpenEditableDraft: (item) => _openSavedDraft(homeContext, item),
         ),
       ),
@@ -551,6 +518,7 @@ class _AppFlowState extends State<AppFlow> {
 
     widget.applicationReferenceRepository.clearCache();
     _applicationReferences = null;
+    _authenticatedUserId = null;
     _resetApplicationDraft();
     setState(() {
       _municipalityBranding = widget.initialMunicipalityBranding;
@@ -605,11 +573,25 @@ class _AppFlowState extends State<AppFlow> {
 
   void _resetApplicationDraft() {
     _applicationDraft = _createInitialApplicationDraft();
-    _remoteApplication = null;
-    _createDraftIdempotencyKey = _newIdempotencyKey('create-draft');
-    _photoUploadIdempotencyKey = _newIdempotencyKey('upload-photos');
+    _localDraftId = null;
+    _resetApplicationOperationKeys();
+  }
+
+  void _resetApplicationOperationKeys() {
     _submitIdempotencyKey = _newIdempotencyKey('submit-board');
   }
+
+  WorkItemsRepository _currentUserWorkItemsRepository() {
+    return LocalDraftAwareWorkItemsRepository(
+      remoteRepository: widget.workItemsRepository,
+      localDraftRepository: widget.localApplicationDraftRepository,
+      ownerUserId: _requiredAuthenticatedUserId,
+    );
+  }
+
+  String get _requiredAuthenticatedUserId =>
+      _authenticatedUserId ??
+      (throw StateError('Yerel taslak işlemi için oturum bulunamadı.'));
 
   String _newIdempotencyKey(String operation) {
     final random = Random.secure();

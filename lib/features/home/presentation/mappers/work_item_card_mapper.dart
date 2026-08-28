@@ -18,12 +18,17 @@ abstract final class WorkItemCardMapper {
   }
 
   static _WorkItemStatusView _status(WorkItem item) {
+    if (item.statusCode == 'IPTAL') {
+      return const _WorkItemStatusView('İptal', AppColors.statusRejected);
+    }
+    if (item.statusCode == 'REDDEDILDI') {
+      return const _WorkItemStatusView('Reddedildi', AppColors.statusRejected);
+    }
     if (item.isCompleted) {
       return const _WorkItemStatusView('Tamamlandı', AppColors.statusApproved);
     }
 
     return switch (item.statusCode) {
-      'IPTAL' => const _WorkItemStatusView('İptal', AppColors.statusRejected),
       'TASLAK' => const _WorkItemStatusView('Taslak', AppColors.statusDraft),
       'KURUL_BEKLIYOR' => const _WorkItemStatusView(
         'Kurulda',
@@ -31,6 +36,10 @@ abstract final class WorkItemCardMapper {
       ),
       'BASLADI' ||
       'ISLEMDE' => const _WorkItemStatusView('İşlemde', AppColors.statusDraft),
+      'BILINMEYEN' => const _WorkItemStatusView(
+        'Durum bilinmiyor',
+        AppColors.statusBoard,
+      ),
       _ => const _WorkItemStatusView('Bekliyor', AppColors.statusBoard),
     };
   }

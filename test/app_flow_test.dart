@@ -10,10 +10,8 @@ import 'package:sosyo_bel/features/application/domain/application_lifecycle_entr
 import 'package:sosyo_bel/features/application/domain/application_reference_catalog.dart';
 import 'package:sosyo_bel/features/application/domain/application_repository.dart';
 import 'package:sosyo_bel/features/application/domain/kps_profile.dart';
+import 'package:sosyo_bel/features/application/domain/local_application_draft_repository.dart';
 import 'package:sosyo_bel/features/application/presentation/models/application_draft.dart';
-import 'package:sosyo_bel/features/activity/presentation/fixtures/citizen_profile_design_fixture.dart';
-import 'package:sosyo_bel/features/activity/presentation/models/family_information_view_data.dart';
-import 'package:sosyo_bel/features/activity/presentation/models/household_status_view_data.dart';
 import 'package:sosyo_bel/features/home/domain/work_item.dart';
 import 'package:sosyo_bel/features/home/domain/work_items_repository.dart';
 import 'support/application_reference_test_catalog.dart';
@@ -24,6 +22,7 @@ void main() {
     AuthRepository? authRepository,
     ApplicationRepository? applicationRepository,
     KpsProfileRepository? kpsProfileRepository,
+    LocalApplicationDraftRepository? localApplicationDraftRepository,
     WorkItemsRepository? workItemsRepository,
     bool waitForRestore = true,
     bool enterCredentials = true,
@@ -41,6 +40,9 @@ void main() {
         applicationReferenceRepository: _FakeApplicationReferenceRepository(),
         kpsProfileRepository:
             kpsProfileRepository ?? _SuccessfulKpsProfileRepository(),
+        localApplicationDraftRepository:
+            localApplicationDraftRepository ??
+            _FakeLocalApplicationDraftRepository(),
         workItemsRepository: workItemsRepository ?? _EmptyWorkItemsRepository(),
       ),
     );
@@ -52,8 +54,8 @@ void main() {
     if (!enterCredentials) return;
 
     await tester.enterText(
-      find.byKey(const Key('login-email-field')),
-      'test@belediye.com',
+      find.byKey(const Key('login-username-field')),
+      'personel',
     );
     await tester.enterText(
       find.byKey(const Key('login-password-field')),
@@ -136,69 +138,6 @@ void main() {
     expect(find.text('Tamamlanmış'), findsOneWidget);
   });
 
-  testWidgets('bekleyen taslağı sunucudan yükleyip formda yeniden açar', (
-    tester,
-  ) async {
-    const applicationPublicId = '22222222-2222-2222-2222-222222222222';
-    final repository = _FakeApplicationRepository(
-      loadedDraft: const LoadedApplicationDraft(
-        entry: ApplicationLifecycleEntry(
-          applicationPublicId: applicationPublicId,
-          applicationNumber: 'B-2026-152',
-          statusCode: 'TASLAK',
-          isEditable: true,
-          rowVersion: 'AAAAAAAAAAE=',
-        ),
-        draft: ApplicationDraft(
-          applicationForm: NewApplicationFormData(
-            identityNumber: '12345678901',
-            birthDate: '03.11.2002',
-            disabilityStatusCode: 'YOK',
-            disabilityStatus: 'Yok',
-            phoneNumber: '5345512872',
-            helpTypeCode: 'GIDA',
-            helpType: 'Gıda Yardımı',
-            description: 'Geri yüklenen taslak',
-          ),
-          citizenProfile: CitizenProfileDesignFixture.profile,
-          familyInformation: FamilyInformationViewData(members: []),
-          householdStatus: HouseholdStatusDraft(
-            answers: {},
-            photos: [],
-            saveToBeneficiaryDirectory: false,
-            replaceRemotePhotosOnSave: true,
-          ),
-        ),
-      ),
-    );
-    final item = WorkItem(
-      applicationPublicId: applicationPublicId,
-      applicationNumber: 'B-2026-152',
-      sourceCode: 'OWN_APPLICATION',
-      statusCode: 'TASLAK',
-      isCompleted: false,
-      isEditable: true,
-      activityAtUtc: DateTime.utc(2026, 8, 11, 10),
-    );
-    await pumpApp(
-      tester,
-      applicationRepository: repository,
-      workItemsRepository: _FixedWorkItemsRepository([item]),
-    );
-
-    await tester.tap(find.byKey(const Key('login-submit-button')));
-    await tester.pumpAndSettle();
-    await tester.tap(find.text('Görevler'));
-    await tester.pumpAndSettle();
-    await tester.tap(find.text('B-2026-152'));
-    await tester.pumpAndSettle();
-
-    expect(repository.getCount, 1);
-    expect(find.text('Yeni Başvuru'), findsOneWidget);
-    expect(find.text('12345678901'), findsOneWidget);
-    expect(find.text('Geri yüklenen taslak'), findsOneWidget);
-  });
-
   testWidgets('Başvuru Yap yeni formu açar', (tester) async {
     await pumpApp(tester);
 
@@ -269,7 +208,12 @@ void main() {
     tester,
   ) async {
     final applicationRepository = _FakeApplicationRepository();
-    await pumpApp(tester, applicationRepository: applicationRepository);
+    final localDraftRepository = _FakeLocalApplicationDraftRepository();
+    await pumpApp(
+      tester,
+      applicationRepository: applicationRepository,
+      localApplicationDraftRepository: localDraftRepository,
+    );
 
     await tester.tap(find.byKey(const Key('login-submit-button')));
     await tester.pumpAndSettle();
@@ -414,14 +358,41 @@ void main() {
     expect(find.text('Bekleyen Liste'), findsOneWidget);
     expect(find.text('Tamamlanmış'), findsOneWidget);
     expect(find.text('Tamamla'), findsNothing);
-    expect(applicationRepository.createCount, 1);
-    expect(applicationRepository.saveFieldDataCount, 1);
-    expect(applicationRepository.uploadCount, 0);
+    expect(find.text('Yerel Taslak'), findsOneWidget);
     expect(applicationRepository.submitCount, 0);
+    expect(localDraftRepository.createCount, 1);
     expect(
-      applicationRepository.lastCreatedDraft?.completionNote,
+      localDraftRepository.lastCreatedDraft?.completionNote,
       'Taslak saha notu',
     );
+
+    await tester.tap(find.text('Yerel Taslak'));
+    await tester.pumpAndSettle();
+    expect(find.text('Yeni Başvuru'), findsOneWidget);
+    expect(find.text('12345678901'), findsOneWidget);
+
+    // Yeniden açılan yerel taslak tekrar kaydedildiğinde ikinci bir kayıt
+    // üretilmemeli; aynı yerel kimlik güncellenmelidir.
+    await tester.ensureVisible(formContinue);
+    await tester.tap(formContinue);
+    await tester.pumpAndSettle();
+    await tester.tap(find.byKey(const Key('citizen-profile-continue-button')));
+    await tester.pumpAndSettle();
+    await tester.tap(
+      find.byKey(const Key('family-information-continue-button')),
+    );
+    await tester.pumpAndSettle();
+    await tester.tap(find.byKey(const Key('household-continue-button')));
+    await tester.pump();
+    await tester.tap(find.byKey(const Key('household-continue-button')));
+    await tester.pumpAndSettle();
+    expect(find.text('Taslak saha notu'), findsOneWidget);
+
+    await tester.tap(find.byKey(const Key('completion-save-draft-button')));
+    await tester.pumpAndSettle();
+    expect(localDraftRepository.createCount, 1);
+    expect(localDraftRepository.updateCount, 1);
+    expect(find.text('Yerel Taslak'), findsOneWidget);
   });
 
   testWidgets('kurula gönderilen başvuruyu Bekleyen Listeye taşır', (
@@ -487,11 +458,11 @@ void main() {
     expect(find.text('Başvuru başarıyla kurula gönderildi.'), findsOneWidget);
     expect(find.text('Tamamlanmış'), findsOneWidget);
     expect(find.text('Tamamla'), findsNothing);
-    expect(applicationRepository.createCount, 1);
-    expect(applicationRepository.saveFieldDataCount, 1);
-    expect(applicationRepository.uploadCount, 0);
     expect(applicationRepository.submitCount, 1);
-    expect(applicationRepository.lastSubmittedRowVersion, 'AAAAAAAAAAI=');
+    expect(
+      applicationRepository.lastSubmittedDraft?.completionNote,
+      'Gönderilecek kurul notu',
+    );
 
     await tester.tap(find.byKey(const Key('home-back-button')));
     await tester.pumpAndSettle();
@@ -509,9 +480,8 @@ class _SuccessfulAuthRepository implements AuthRepository {
 
   @override
   Future<AuthenticationSession> login({
-    required String email,
+    required String username,
     required String password,
-    String? municipalityCode,
   }) async {
     return _testSession();
   }
@@ -541,15 +511,6 @@ class _FakeApplicationReferenceRepository
       applicationReferenceTestCatalog;
 }
 
-class _FixedWorkItemsRepository implements WorkItemsRepository {
-  const _FixedWorkItemsRepository(this.items);
-
-  final List<WorkItem> items;
-
-  @override
-  Future<List<WorkItem>> getMyWorkItems({int limit = 100}) async => items;
-}
-
 class _SuccessfulKpsProfileRepository implements KpsProfileRepository {
   int lookupCount = 0;
   String? lastIdentityNumber;
@@ -574,118 +535,104 @@ class _SuccessfulKpsProfileRepository implements KpsProfileRepository {
   }
 }
 
-class _FakeApplicationRepository implements ApplicationRepository {
-  _FakeApplicationRepository({this.loadedDraft});
-
-  final LoadedApplicationDraft? loadedDraft;
-  int getCount = 0;
+class _FakeLocalApplicationDraftRepository
+    implements LocalApplicationDraftRepository {
+  final Map<String, LocalApplicationDraftRecord> _records = {};
   int createCount = 0;
-  int saveFieldDataCount = 0;
-  int uploadCount = 0;
-  int submitCount = 0;
+  int updateCount = 0;
+  int deleteCount = 0;
   ApplicationDraft? lastCreatedDraft;
-  String? lastSubmittedRowVersion;
 
   @override
-  Future<LoadedApplicationDraft> getDraft({
-    required String applicationPublicId,
-    required ApplicationReferenceCatalog referenceCatalog,
-  }) async {
-    getCount += 1;
-    final result = loadedDraft;
-    if (result == null) {
-      throw UnimplementedError('Bu fake testte taslak okuma kullanılmıyor.');
-    }
-    expect(result.entry.applicationPublicId, applicationPublicId);
-    return result;
-  }
-
-  @override
-  Future<ApplicationLifecycleEntry> createDraft({
+  Future<LocalApplicationDraftRecord> create({
+    required String ownerUserId,
     required ApplicationDraft draft,
-    required String idempotencyKey,
   }) async {
     createCount += 1;
     lastCreatedDraft = draft;
-    expect(idempotencyKey.length, greaterThanOrEqualTo(8));
-    return const ApplicationLifecycleEntry(
-      applicationPublicId: 'application-public-id',
-      applicationNumber: '150',
-      statusCode: 'TASLAK',
-      isEditable: true,
-      rowVersion: 'AAAAAAAAAAE=',
+    final id = createCount.toRadixString(16).padLeft(32, '0');
+    final now = DateTime.utc(2026, 8, 26, 12, createCount);
+    final record = LocalApplicationDraftRecord(
+      localDraftId: id,
+      ownerUserId: ownerUserId,
+      draft: draft,
+      createdAtUtc: now,
+      updatedAtUtc: now,
     );
+    _records[id] = record;
+    return record;
   }
 
   @override
-  Future<ApplicationLifecycleEntry> updateDraft({
-    required ApplicationDraft draft,
-    required String applicationPublicId,
-    required String expectedRowVersion,
+  Future<void> delete({
+    required String ownerUserId,
+    required String localDraftId,
   }) async {
-    return ApplicationLifecycleEntry(
-      applicationPublicId: applicationPublicId,
-      applicationNumber: '150',
-      statusCode: 'TASLAK',
-      isEditable: true,
-      rowVersion: expectedRowVersion,
-    );
+    deleteCount += 1;
+    final record = _records[localDraftId];
+    if (record?.ownerUserId == ownerUserId) _records.remove(localDraftId);
   }
 
   @override
-  Future<ApplicationLifecycleEntry> saveFieldData({
-    required ApplicationDraft draft,
-    required String applicationPublicId,
-    required String expectedRowVersion,
+  Future<List<LocalApplicationDraftRecord>> list({
+    required String ownerUserId,
   }) async {
-    saveFieldDataCount += 1;
-    expect(applicationPublicId, 'application-public-id');
-    expect(expectedRowVersion, 'AAAAAAAAAAE=');
-    return const ApplicationLifecycleEntry(
-      applicationPublicId: 'application-public-id',
-      applicationNumber: '150',
-      statusCode: 'TASLAK',
-      isEditable: true,
-      rowVersion: 'AAAAAAAAAAI=',
-    );
+    return _records.values
+        .where((record) => record.ownerUserId == ownerUserId)
+        .toList(growable: false);
   }
 
   @override
-  Future<ApplicationLifecycleEntry> uploadPhotos({
-    required ApplicationDraft draft,
-    required String applicationPublicId,
-    required String expectedRowVersion,
-    required String idempotencyKey,
+  Future<LocalApplicationDraftRecord?> read({
+    required String ownerUserId,
+    required String localDraftId,
   }) async {
-    uploadCount += 1;
-    expect(applicationPublicId, 'application-public-id');
-    expect(expectedRowVersion, 'AAAAAAAAAAI=');
-    expect(idempotencyKey.length, greaterThanOrEqualTo(8));
-    return const ApplicationLifecycleEntry(
-      applicationPublicId: 'application-public-id',
-      applicationNumber: '150',
-      statusCode: 'TASLAK',
-      isEditable: true,
-      rowVersion: 'AAAAAAAAAAM=',
-    );
+    final record = _records[localDraftId];
+    return record?.ownerUserId == ownerUserId ? record : null;
   }
 
   @override
-  Future<ApplicationLifecycleEntry> submitToBoard({
-    required String applicationPublicId,
-    required String expectedRowVersion,
+  Future<LocalApplicationDraftRecord> update({
+    required String ownerUserId,
+    required String localDraftId,
+    required ApplicationDraft draft,
+  }) async {
+    final current = await read(
+      ownerUserId: ownerUserId,
+      localDraftId: localDraftId,
+    );
+    if (current == null) throw const LocalDraftNotFoundException();
+    updateCount += 1;
+    final updated = LocalApplicationDraftRecord(
+      localDraftId: localDraftId,
+      ownerUserId: ownerUserId,
+      draft: draft,
+      createdAtUtc: current.createdAtUtc,
+      updatedAtUtc: current.updatedAtUtc.add(const Duration(minutes: 1)),
+    );
+    _records[localDraftId] = updated;
+    return updated;
+  }
+}
+
+class _FakeApplicationRepository implements ApplicationRepository {
+  int submitCount = 0;
+  ApplicationDraft? lastSubmittedDraft;
+
+  @override
+  Future<ApplicationLifecycleEntry> submitCompleted({
+    required ApplicationDraft draft,
     required String idempotencyKey,
   }) async {
     submitCount += 1;
-    lastSubmittedRowVersion = expectedRowVersion;
-    expect(applicationPublicId, 'application-public-id');
+    lastSubmittedDraft = draft;
     expect(idempotencyKey.length, greaterThanOrEqualTo(8));
     return const ApplicationLifecycleEntry(
       applicationPublicId: 'application-public-id',
-      applicationNumber: '150',
+      applicationNumber: '#150',
       statusCode: 'KURUL_BEKLIYOR',
       isEditable: false,
-      rowVersion: 'AAAAAAAAAAI=',
+      rowVersion: '',
     );
   }
 }
@@ -699,11 +646,9 @@ AuthenticationSession _testSession() => AuthenticationSession(
   ),
   user: const AuthenticatedUser(
     userId: 'test-user-id',
+    username: 'personel',
     email: 'test@belediye.com',
     displayName: 'Test Personeli',
-    municipalityCode: 'DEMOLAR',
-    municipalityName: 'Demolar Belediyesi',
-    municipalityMembershipId: 1,
-    roles: ['PERSONNEL'],
+    roles: ['Personel'],
   ),
 );

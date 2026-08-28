@@ -4,7 +4,7 @@ import 'package:sosyo_bel/core/auth/auth_tokens.dart';
 import 'package:sosyo_bel/core/auth/token_store.dart';
 import 'package:sosyo_bel/features/auth/domain/authentication_session.dart';
 
-/// Tokenlarla kullanıcı/belediye kapsamını aynı şifreli kayıtta saklar.
+/// Tokenlarla mevcut Identity kullanıcı profilini aynı şifreli kayıtta saklar.
 ///
 /// Tek kayıt kullanılması, token yenilenirken eski kullanıcı bilgisinin yeni
 /// tokenlarla eşleşmeden kalması riskini azaltır.
@@ -20,7 +20,8 @@ class SecureAuthenticationSessionStore implements AuthenticationSessionStore {
   factory SecureAuthenticationSessionStore.platform() =>
       SecureAuthenticationSessionStore(FlutterSecureKeyValueStore());
 
-  static const _sessionKey = 'sosyobel.auth.session.v2';
+  static const _sessionKey = 'sosyobel.auth.session.v3';
+  static const _legacyScopedSessionKey = 'sosyobel.auth.session.v2';
   static const _legacyTokenKey = 'sosyobel.auth.session.v1';
 
   final SecureKeyValueStore _storage;
@@ -30,8 +31,11 @@ class SecureAuthenticationSessionStore implements AuthenticationSessionStore {
     try {
       final rawValue = await _storage.read(_sessionKey);
       if (rawValue == null || rawValue.isEmpty) {
-        // Eski kayıt yalnızca token içerdiği için güvenli profil geri yüklenemez.
-        // Bir defalık temizlenir ve kullanıcıdan yeniden giriş istenir.
+        // Eski belediye kapsamlı veya yalnız-token kaydı yeni Identity
+        // sözleşmesiyle kullanılmaz; bir kez temizlenip yeniden giriş istenir.
+        if (await _storage.read(_legacyScopedSessionKey) != null) {
+          await _storage.delete(_legacyScopedSessionKey);
+        }
         if (await _storage.read(_legacyTokenKey) != null) {
           await _storage.delete(_legacyTokenKey);
         }
@@ -61,7 +65,8 @@ class SecureAuthenticationSessionStore implements AuthenticationSessionStore {
   Future<void> saveSession(AuthenticationSession session) async {
     try {
       await _storage.write(_sessionKey, jsonEncode(session.toJson()));
-      // Yeni kayıt başarıyla yazıldıktan sonra eski token kaydı tutulmaz.
+      // Yeni kayıt başarıyla yazıldıktan sonra eski oturumlar tutulmaz.
+      await _storage.delete(_legacyScopedSessionKey);
       await _storage.delete(_legacyTokenKey);
     } catch (error) {
       throw TokenStorageException(
@@ -89,6 +94,7 @@ class SecureAuthenticationSessionStore implements AuthenticationSessionStore {
   Future<void> clear() async {
     try {
       await _storage.delete(_sessionKey);
+      await _storage.delete(_legacyScopedSessionKey);
       await _storage.delete(_legacyTokenKey);
     } catch (error) {
       throw TokenStorageException(

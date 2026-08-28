@@ -14,16 +14,11 @@ VALUES (N'application-household-test-user');
 INSERT INTO dbo.Basvurular DEFAULT VALUES;
 DECLARE @ApplicationId int = CONVERT(int, SCOPE_IDENTITY());
 
-INSERT INTO sosyobel.Belediyeler (Kod, Ad)
-VALUES (N'HANE_TEST', N'Hane Test Belediyesi');
-DECLARE @MunicipalityId int = CONVERT(int, SCOPE_IDENTITY());
-
 DECLARE @QuestionId int =
 (
     SELECT Id
     FROM sosyobel.HaneSorulari
-    WHERE BelediyeId IS NULL
-      AND Kod = N'MULKIYET_DURUMU'
+    WHERE Kod = N'MULKIYET_DURUMU'
 );
 
 DECLARE @OptionId int =
@@ -36,7 +31,6 @@ DECLARE @OptionId int =
 
 INSERT INTO sosyobel.BasvuruHaneCevaplari
 (
-    BelediyeId,
     BasvuruId,
     SoruId,
     SecenekId,
@@ -44,7 +38,6 @@ INSERT INTO sosyobel.BasvuruHaneCevaplari
 )
 VALUES
 (
-    @MunicipalityId,
     @ApplicationId,
     @QuestionId,
     @OptionId,
@@ -63,7 +56,6 @@ IF NOT EXISTS
         ON optionValue.SoruId = answer.SoruId
        AND optionValue.Id = answer.SecenekId
     WHERE answer.BasvuruId = @ApplicationId
-      AND answer.BelediyeId = @MunicipalityId
       AND question.Kod = N'MULKIYET_DURUMU'
       AND optionValue.Kod = N'KIRACI'
 )

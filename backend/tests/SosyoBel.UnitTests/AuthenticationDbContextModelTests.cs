@@ -8,96 +8,54 @@ namespace SosyoBel.UnitTests;
 public sealed class AuthenticationDbContextModelTests
 {
     [Fact]
-    public void AccessControlEntitiesMatchHardenedSqlSchema()
+    public void IdentityModelUsesOnlyExistingCompanyDboTables()
     {
-        var options = new DbContextOptionsBuilder<AuthenticationDbContext>()
-            .UseSqlServer(
-                "Server=unused;Database=unused;User Id=unused;Password=unused;TrustServerCertificate=True")
-            .Options;
-        using var context = new AuthenticationDbContext(options);
+        using var context = CreateContext();
+        var mappedTables = context.Model.GetEntityTypes()
+            .Select(entity => (entity.GetTableName(), entity.GetSchema()))
+            .ToArray();
 
-        AssertColumn(
-            context,
-            typeof(UserMunicipalityMembership),
-            nameof(UserMunicipalityMembership.RoleCode),
-            "KullaniciBelediyeleri",
-            "sosyobel",
-            "RolKodu");
+        Assert.Equal(7, mappedTables.Length);
+        Assert.All(mappedTables, mapping => Assert.Equal("dbo", mapping.Item2));
+        Assert.Equal(
+            [
+                "AspNetRoleClaims",
+                "AspNetRoles",
+                "AspNetUserClaims",
+                "AspNetUserLogins",
+                "AspNetUserRoles",
+                "AspNetUserTokens",
+                "AspNetUsers",
+            ],
+            mappedTables
+                .Select(mapping => mapping.Item1!)
+                .Order(StringComparer.Ordinal)
+                .ToArray());
+    }
+
+    [Fact]
+    public void UserNameAndProfileColumnsMatchCompanySchema()
+    {
+        using var context = CreateContext();
+
         AssertColumn(
             context,
             typeof(ApplicationUser),
             nameof(ApplicationUser.FirstName),
             "AspNetUsers",
-            null,
             "Ad");
         AssertColumn(
             context,
-            typeof(UserApplicationInfo),
-            nameof(UserApplicationInfo.DeactivationReason),
-            "KullaniciUygulamaBilgileri",
-            "sosyobel",
-            "DevreDisiGerekce");
-        AssertColumn(
-            context,
-            typeof(UserPermissionRecord),
-            nameof(UserPermissionRecord.PermissionCode),
-            "KullaniciYetkileri",
-            "sosyobel",
-            "YetkiKodu");
-        AssertColumn(
-            context,
-            typeof(IdempotencyRecord),
-            nameof(IdempotencyRecord.RequestHash),
-            "IdempotencyKayitlari",
-            "sosyobel",
-            "IstekHash");
-        AssertColumn(
-            context,
-            typeof(IdempotencyRecord),
-            nameof(IdempotencyRecord.ActorUserIdHash),
-            "IdempotencyKayitlari",
-            "sosyobel",
-            "ActorUserIdHash");
-        AssertColumn(
-            context,
-            typeof(AdministrationAuditRecord),
-            nameof(AdministrationAuditRecord.TargetUserId),
-            "IslemGecmisleri",
-            "sosyobel",
-            "HedefUserId");
-    }
-
-    [Fact]
-    public void IdempotencyUniqueIndexUsesFixedLengthActorHash()
-    {
-        var options = new DbContextOptionsBuilder<AuthenticationDbContext>()
-            .UseSqlServer(
-                "Server=unused;Database=unused;User Id=unused;Password=unused;TrustServerCertificate=True")
-            .Options;
-        using var context = new AuthenticationDbContext(options);
-
-        var entity = context.Model.FindEntityType(typeof(IdempotencyRecord));
-        Assert.NotNull(entity);
-        var uniqueIndex = entity.GetIndexes().Single(index =>
-            index.IsUnique &&
-            index.Properties.Select(property => property.Name).SequenceEqual(
-                [
-                    nameof(IdempotencyRecord.ActorUserIdHash),
-                    nameof(IdempotencyRecord.EndpointCode),
-                    nameof(IdempotencyRecord.IdempotencyKey),
-                ]));
-
-        Assert.Equal("binary(32)", uniqueIndex.Properties[0].GetColumnType());
+            typeof(ApplicationUser),
+            nameof(ApplicationUser.LastName),
+            "AspNetUsers",
+            "Soyad");
     }
 
     [Fact]
     public void IdentityKeysMatchCompanySchemaLength()
     {
-        var options = new DbContextOptionsBuilder<AuthenticationDbContext>()
-            .UseSqlServer(
-                "Server=unused;Database=unused;User Id=unused;Password=unused;TrustServerCertificate=True")
-            .Options;
-        using var context = new AuthenticationDbContext(options);
+        using var context = CreateContext();
 
         AssertMaxLength(context, typeof(ApplicationUser), nameof(ApplicationUser.Id), 450);
         AssertMaxLength(context, typeof(IdentityRole), nameof(IdentityRole.Id), 450);
@@ -113,25 +71,13 @@ public sealed class AuthenticationDbContextModelTests
             450);
     }
 
-    [Fact]
-    public void PermissionForeignKeyIncludesUserAndMunicipalityScope()
+    private static AuthenticationDbContext CreateContext()
     {
         var options = new DbContextOptionsBuilder<AuthenticationDbContext>()
             .UseSqlServer(
                 "Server=unused;Database=unused;User Id=unused;Password=unused;TrustServerCertificate=True")
             .Options;
-        using var context = new AuthenticationDbContext(options);
-
-        var permissionEntity = context.Model.FindEntityType(typeof(UserPermissionRecord));
-        Assert.NotNull(permissionEntity);
-
-        var scopedForeignKey = permissionEntity.GetForeignKeys().SingleOrDefault(key =>
-            key.PrincipalEntityType.ClrType == typeof(UserMunicipalityMembership));
-
-        Assert.NotNull(scopedForeignKey);
-        Assert.Equal(
-            [nameof(UserPermissionRecord.UserId), nameof(UserPermissionRecord.MunicipalityId)],
-            scopedForeignKey.Properties.Select(property => property.Name));
+        return new AuthenticationDbContext(options);
     }
 
     private static void AssertColumn(
@@ -139,14 +85,13 @@ public sealed class AuthenticationDbContextModelTests
         Type entityType,
         string propertyName,
         string tableName,
-        string? schema,
         string expectedColumnName)
     {
         var metadata = context.Model.FindEntityType(entityType);
         Assert.NotNull(metadata);
         var property = metadata.FindProperty(propertyName);
         Assert.NotNull(property);
-        var table = StoreObjectIdentifier.Table(tableName, schema);
+        var table = StoreObjectIdentifier.Table(tableName, "dbo");
 
         Assert.Equal(expectedColumnName, property.GetColumnName(table));
     }

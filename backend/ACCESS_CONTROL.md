@@ -2,74 +2,51 @@
 
 ## Rol modeli
 
-- `SISTEM_YONETICISI`: Cats sistem rolüdür ve yalnız ASP.NET Identity rol
-  tablosunda tutulur. Belediye üyeliği yoktur.
-- `BELEDIYE_YONETICISI`: `sosyobel.KullaniciBelediyeleri.RolKodu` üzerinde,
-  belirli bir belediyeye bağlıdır.
-- `PERSONEL`: aynı şekilde belirli belediye üyeliğine bağlıdır.
-- `KILITLI_BASVURU_DUZENLE`: rol değil, geri alınabilir ve belediye kapsamlı
-  özel yetkidir (`sosyobel.KullaniciYetkileri`).
+Mobil API şirketin mevcut ASP.NET Identity tablolarını kullanır. Kullanıcı ve rol
+kayıtları `dbo.AspNetUsers`, `dbo.AspNetRoles` ve `dbo.AspNetUserRoles`
+tablolarından okunur; mobil API ikinci bir kullanıcı veya belediye üyeliği
+oluşturmaz.
 
-Belediye rolleri global Identity rolü olarak verilmez. Böylece bir belediyedeki
-rol başka bir belediyeye taşınamaz. Veritabanı gelecekte çoklu üyeliği
-destekler; mevcut servis akışı yeni kullanıcıyı yalnız tek üyelikle oluşturur.
+Mobil erişim verebilen mevcut rol adları:
 
-## Token ve anlık doğrulama
+- `Admin`
+- `Kurul`
+- `Personel`
 
-Belediye kullanıcısının access token'ında şu claim'ler birlikte bulunur:
+Bu roller yeniden adlandırılmaz. Admin ve Kurul hesapları da mobil saha
+işlemlerinde Personel hesabıyla aynı temel erişime sahip olabilir.
 
-- `municipality_id`
-- `municipality_code`
-- `municipality_membership_id`
-- üyelikten gelen tek belediye rolü
+## API sınırı
 
-Sistem yöneticisi token'ında belediye claim'i bulunmaz. Refresh sırasında rol
-ve üyelik yeniden okunur. Ayrıca yetkili endpoint politikaları her istekte
-kullanıcı, belediye, üyelik ve rolün hâlâ aktif olduğunu veritabanından kontrol
-eder; bu nedenle kapatılan hesabın henüz süresi dolmamış access token'ı da
-belediye işlemlerinde kullanılamaz.
+Kullanıcı, rol, parola ve belediye yönetimi şirketin web panelinin
+sorumluluğundadır. Bu nedenle aşağıdaki eski yönetim yüzeyleri mobil API'ye map
+edilmez ve Swagger'da gösterilmez:
 
-`KILITLI_BASVURU_DUZENLE` JWT'ye gömülmez. Kritik işlem anında güncel yetki
-kaydı okunur.
+- sistem/belediye oluşturma,
+- personel oluşturma, pasifleştirme veya parola sıfırlama,
+- belediye üyeliğine bağlı yetki yönetimi,
+- eski çoklu belediye audit endpointleri.
 
-## Yönetim endpoint'leri
+Mobil API yalnız oturum, başvuru, KPS, görev, iş listesi ve form referans
+sözleşmelerini dışarı açar.
 
-| Yetki | Endpoint | İşlem |
-|---|---|---|
-| Sistem yöneticisi | `POST /api/v1/system/municipalities` | Belediye ve ilk belediye yöneticisi |
-| Sistem yöneticisi | `PUT /api/v1/system/municipalities/{code}/personnel/{userId}/permissions/locked-application-edit` | Özel yetki ver/iptal et |
-| Belediye yöneticisi | `POST /api/v1/municipality/personnel/` | Kendi belediyesinde personel oluştur |
-| Belediye yöneticisi | `POST /api/v1/municipality/personnel/{userId}/reset-password` | Personel şifresini sıfırla |
-| Belediye yöneticisi | `POST /api/v1/municipality/personnel/{userId}/deactivate` | Personeli kapat |
-| Personel | `GET /api/v1/tasks/assigned` | Yalnız kendi üyeliğine atanmış görevler |
+## Token ve oturum
 
-Mutasyon endpoint'lerinde 8-100 karakterlik tek bir `Idempotency-Key` header'ı
-zorunludur. Aynı aktör/endpoint/anahtar tekrarında işlem ikinci kez uygulanmaz;
-aynı anahtar farklı güvenli payload ile kullanılırsa `409` döner. Parola,
-idempotency hashine veya sonuç JSON'una yazılmaz.
+Başarılı login sonucunda JWT access token ile tek kullanımlık refresh token
+döndürülür. Access token kullanıcı kimliği, kullanıcı adı, isteğe bağlı e-posta,
+görünen ad ve mevcut Identity rollerini taşır. Belediye kodu veya belediye
+üyeliği login isteğinin parçası değildir.
 
-## Audit görünürlüğü
+Refresh tokenın kendisi veritabanına açık metin olarak yazılmaz. Hash ve oturum
+metadata bilgileri şirketin mevcut `dbo.AspNetUserTokens` tablosunda tutulur.
+Logout refresh tokenı iptal eder; yeniden kullanım tespit edilirse oturum
+güvenlik nedeniyle kapatılır.
 
-- Sistem yöneticisi: `GET /api/v1/system/audit` (tüm belediyeler; isteğe bağlı
-  `municipalityCode` filtresi)
-- Belediye yöneticisi: `GET /api/v1/municipality/audit` (yalnız kendi belediyesi)
-- Personel: `GET /api/v1/audit/mine` (yalnız kendi ürettiği olaylar)
+## HTTP davranışı
 
-Audit kaydı aktör, hedef kullanıcı, UTC zaman, gerekçe, cihaz, IP ve correlation
-kimliği taşır. Parola/token taşımaz. `TR_IslemGecmisleri_AppendOnly` triggerı
-mevcut audit satırlarının güncellenmesini ve silinmesini engeller.
-
-## Kurulum ve doğrulama
-
-İlk sistem yöneticisi için [BOOTSTRAP.md](BOOTSTRAP.md) izlenir. Migration sırası
-`000` → `001` → `002` → `003` → `004` şeklindedir.
-
-Yerel geçici veritabanında doğrulama:
-
-```powershell
-./backend/scripts/validate-schema.ps1 -SqlServer 'localhost\MSSQLSERVER01'
-./backend/scripts/validate-administration-flow.ps1 -SqlServer 'localhost\MSSQLSERVER01'
-```
-
-İki betik de yalnız kendilerinin oluşturduğu geçici veritabanını kullanır ve
-`finally` bloğunda kaldırır.
+- Login, refresh ve logout anonim çağrı kabul eder.
+- Diğer mobil endpointler geçerli Bearer access token ister.
+- Token yoksa veya geçersizse `401` döner.
+- Hesapta mobil erişim veren rol yoksa `403` döner.
+- Swagger'daki Authorize alanına yalnız token yapıştırılır; Bearer önekini
+  Swagger ekler.

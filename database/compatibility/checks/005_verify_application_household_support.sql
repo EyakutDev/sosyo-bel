@@ -27,7 +27,6 @@ INSERT INTO @ExpectedColumns
     (TableName, ColumnName, TypeName, MaxLengthBytes, IsNullable, NumericPrecision, NumericScale)
 VALUES
     (N'HaneSorulari', N'Id', N'int', NULL, 0, NULL, NULL),
-    (N'HaneSorulari', N'BelediyeId', N'int', NULL, 1, NULL, NULL),
     (N'HaneSorulari', N'Kod', N'nvarchar', 160, 0, NULL, NULL),
     (N'HaneSorulari', N'SoruMetni', N'nvarchar', 600, 0, NULL, NULL),
     (N'HaneSorulari', N'CevapTipi', N'nvarchar', 60, 0, NULL, NULL),
@@ -41,7 +40,6 @@ VALUES
     (N'HaneSoruSecenekleri', N'Sira', N'smallint', NULL, 0, NULL, NULL),
     (N'HaneSoruSecenekleri', N'AktifMi', N'bit', NULL, 0, NULL, NULL),
     (N'BasvuruHaneCevaplari', N'Id', N'int', NULL, 0, NULL, NULL),
-    (N'BasvuruHaneCevaplari', N'BelediyeId', N'int', NULL, 0, NULL, NULL),
     (N'BasvuruHaneCevaplari', N'BasvuruId', N'int', NULL, 0, NULL, NULL),
     (N'BasvuruHaneCevaplari', N'SoruId', N'int', NULL, 0, NULL, NULL),
     (N'BasvuruHaneCevaplari', N'SecenekId', N'int', NULL, 1, NULL, NULL),
@@ -97,12 +95,10 @@ DECLARE @RequiredIndexes TABLE
 
 INSERT INTO @RequiredIndexes (TableName, IndexName, MustBeUnique)
 VALUES
-    (N'HaneSorulari', N'UX_HaneSorulari_GlobalKod', 1),
-    (N'HaneSorulari', N'UX_HaneSorulari_BelediyeKod', 1),
+    (N'HaneSorulari', N'UQ_HaneSorulari_Kod', 1),
     (N'HaneSoruSecenekleri', N'UQ_HaneSoruSecenekleri_Soru_Kod', 1),
     (N'BasvuruHaneCevaplari', N'UQ_BasvuruHaneCevaplari_Basvuru_Soru', 1),
-    (N'BasvuruHaneCevaplari', N'IX_BasvuruHaneCevaplari_SoruId', 0),
-    (N'BasvuruHaneCevaplari', N'IX_BasvuruHaneCevaplari_BelediyeBasvuru', 0);
+    (N'BasvuruHaneCevaplari', N'IX_BasvuruHaneCevaplari_SoruId', 0);
 
 IF EXISTS
 (
@@ -129,9 +125,7 @@ DECLARE @RequiredForeignKeys TABLE
 
 INSERT INTO @RequiredForeignKeys (ConstraintName)
 VALUES
-    (N'FK_HaneSorulari_Belediyeler'),
     (N'FK_HaneSoruSecenekleri_HaneSorulari'),
-    (N'FK_BasvuruHaneCevaplari_Belediyeler'),
     (N'FK_BasvuruHaneCevaplari_Basvurular'),
     (N'FK_BasvuruHaneCevaplari_HaneSorulari'),
     (N'FK_BasvuruHaneCevaplari_Secenek'),
@@ -183,8 +177,7 @@ IF EXISTS
     SELECT 1
     FROM @ExpectedOptions AS expected
     LEFT JOIN sosyobel.HaneSorulari AS question
-        ON question.BelediyeId IS NULL
-       AND question.Kod = expected.SoruKodu
+        ON question.Kod = expected.SoruKodu
        AND question.CevapTipi = N'TEK_SECIM'
        AND question.AktifMi = 1
     LEFT JOIN sosyobel.HaneSoruSecenekleri AS optionValue
@@ -198,8 +191,8 @@ BEGIN
 END;
 
 SELECT
-    (SELECT COUNT_BIG(*) FROM sosyobel.HaneSorulari WHERE BelediyeId IS NULL)
-        AS GlobalSoruSayisi,
+    (SELECT COUNT_BIG(*) FROM sosyobel.HaneSorulari)
+        AS SoruSayisi,
     (SELECT COUNT_BIG(*) FROM sosyobel.HaneSoruSecenekleri)
         AS SecenekSayisi,
     N'COMPATIBILITY_APPLICATION_HOUSEHOLD_OK' AS ResultCode;
