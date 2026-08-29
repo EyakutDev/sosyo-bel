@@ -511,7 +511,7 @@ internal sealed class ApplicationLifecycleService(
         CancellationToken cancellationToken)
     {
         var helpTypeId = await dbContext
-            .ResolveActiveCompanyReferenceIdAsync<HelpTypeReference>(
+            .ResolveCompanyReferenceIdAsync<HelpTypeReference>(
                 ApplicationReferenceCodeQueries.HelpType,
                 draft.HelpTypeCode,
                 cancellationToken);
@@ -520,7 +520,7 @@ internal sealed class ApplicationLifecycleService(
             return DraftReferenceResolution.Failed(Invalid(
                 new Dictionary<string, string[]>
                 {
-                    ["helpTypeCode"] = ["Aktif yardım türü bulunamadı."],
+                    ["helpTypeCode"] = ["Yardım türü bulunamadı."],
                 }));
         }
 

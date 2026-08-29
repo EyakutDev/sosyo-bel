@@ -1,6 +1,5 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
-import 'package:flutter_svg/flutter_svg.dart';
 import 'package:sosyo_bel/core/auth/token_store.dart';
 import 'package:sosyo_bel/core/constants/app_assets.dart';
 import 'package:sosyo_bel/core/network/api_exception.dart';
@@ -39,6 +38,7 @@ class _LoginPageState extends State<LoginPage> {
   final _passwordController = TextEditingController();
 
   bool _isLoading = false;
+  bool _obscurePassword = true;
   String? _errorMessage;
 
   bool get _isBusy => _isLoading || widget.isRestoringSession;
@@ -172,15 +172,28 @@ class _LoginPageState extends State<LoginPage> {
                     controller: _passwordController,
                     hintText: 'Parola',
                     scale: scaleX,
-                    obscureText: true,
+                    obscureText: _obscurePassword,
                     textInputAction: TextInputAction.done,
                     autofillHints: const [AutofillHints.password],
                     onSubmitted: (_) => _submit(),
                     enabled: !_isBusy,
-                    suffixIcon: SvgPicture.asset(
-                      AppAssets.downArrow,
-                      width: 16 * scaleX,
-                      height: 16 * scaleX,
+                    suffixIcon: IconButton(
+                      key: const Key('login-password-visibility-toggle'),
+                      tooltip: _obscurePassword
+                          ? 'Parolayı göster'
+                          : 'Parolayı gizle',
+                      onPressed: _isBusy
+                          ? null
+                          : () => setState(
+                              () => _obscurePassword = !_obscurePassword,
+                            ),
+                      icon: Icon(
+                        _obscurePassword
+                            ? Icons.visibility_off_outlined
+                            : Icons.visibility_outlined,
+                        color: AppColors.neutralPlaceholder,
+                        size: 18 * scaleX,
+                      ),
                     ),
                   ),
                 ),
@@ -401,12 +414,9 @@ class _LoginTextField extends StatelessWidget {
         focusedBorder: border.copyWith(
           borderSide: const BorderSide(color: AppColors.primary, width: 1),
         ),
-        suffixIcon: suffixIcon == null
-            ? null
-            : Padding(
-                padding: EdgeInsets.only(left: 15 * scale, right: 15 * scale),
-                child: Center(child: suffixIcon),
-              ),
+        // Etkileşimli parola ikonu, alanın sağındaki 46x44 bölgenin tamamını
+        // dokunma hedefi olarak kullanır.
+        suffixIcon: suffixIcon,
         suffixIconConstraints: BoxConstraints.tightFor(
           width: 46 * scale,
           height: 44 * scale,

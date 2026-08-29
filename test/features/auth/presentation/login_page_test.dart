@@ -28,6 +28,24 @@ void main() {
     expect(find.byType(TextField), findsNWidgets(2));
   });
 
+  testWidgets('parolayı gösterip yeniden gizler', (tester) async {
+    await pumpLogin(tester, onLogin: (_, _) async {});
+    final passwordFieldFinder = find.byKey(const Key('login-password-field'));
+
+    await tester.enterText(passwordFieldFinder, 'TestSifresi123!');
+    expect(tester.widget<TextField>(passwordFieldFinder).obscureText, isTrue);
+
+    await tester.tap(find.byKey(const Key('login-password-visibility-toggle')));
+    await tester.pump();
+    expect(tester.widget<TextField>(passwordFieldFinder).obscureText, isFalse);
+    expect(find.byTooltip('Parolayı gizle'), findsOneWidget);
+
+    await tester.tap(find.byKey(const Key('login-password-visibility-toggle')));
+    await tester.pump();
+    expect(tester.widget<TextField>(passwordFieldFinder).obscureText, isTrue);
+    expect(find.byTooltip('Parolayı göster'), findsOneWidget);
+  });
+
   testWidgets('boş formu API callbackine göndermeden doğrular', (tester) async {
     var callbackCalled = false;
     await pumpLogin(

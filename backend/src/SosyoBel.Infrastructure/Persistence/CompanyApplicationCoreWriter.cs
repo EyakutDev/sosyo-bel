@@ -77,7 +77,7 @@ internal sealed class CompanyApplicationCoreWriter(
                 context,
                 cancellationToken);
         var helpTypeId =
-            await context.ResolveActiveCompanyReferenceIdAsync<HelpTypeReference>(
+            await context.ResolveCompanyReferenceIdAsync<HelpTypeReference>(
                 ApplicationReferenceCodeQueries.HelpType,
                 draft.HelpTypeCode,
                 cancellationToken);

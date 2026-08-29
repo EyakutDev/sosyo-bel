@@ -11,7 +11,8 @@ internal sealed class ApplicationReferenceQuery(SosyoBelDbContext dbContext)
     {
         var helpTypes = await LoadCompanyOptionsAsync<HelpTypeReference>(
             ApplicationReferenceCodeQueries.HelpType,
-            cancellationToken);
+            cancellationToken,
+            includeDeleted: true);
         var disabilityTypes = await LoadCompanyOptionsAsync<DisabilityTypeReference>(
             ApplicationReferenceCodeQueries.DisabilityType,
             cancellationToken);
@@ -86,14 +87,19 @@ internal sealed class ApplicationReferenceQuery(SosyoBelDbContext dbContext)
     private async Task<IReadOnlyCollection<ApplicationReferenceOption>>
         LoadCompanyOptionsAsync<TSource>(
             string referenceTypeCode,
-            CancellationToken cancellationToken)
+            CancellationToken cancellationToken,
+            bool includeDeleted = false)
         where TSource : class, ICompanyReferenceSource
     {
         // Şirket lookup tablolarında ayrı bir kod kolonu bulunmuyor. Tür + gerçek
         // dbo kimliği kullanılarak ek eşleme tablosuna ihtiyaç duymayan kod üretilir.
-        var rows = await dbContext.Set<TSource>()
-            .AsNoTracking()
-            .Where(source => !source.IsDeleted)
+        var query = dbContext.Set<TSource>().AsNoTracking();
+        if (!includeDeleted)
+            query = query.Where(source => !source.IsDeleted);
+
+        // Yardım türlerinde şirketin kararı gereği Sil alanı katalog görünürlüğünü
+        // etkilemez; diğer referans türleri yalnız aktif kayıtları döndürür.
+        var rows = await query
             .OrderBy(source => source.Id)
             .Select(source => new { source.Id, source.Name })
             .ToArrayAsync(cancellationToken);

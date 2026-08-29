@@ -14,7 +14,8 @@ internal static class ApplicationReferenceEndpoints
             .WithDescription(
                 "Yardım, engel, yakınlık, çalışma, eğitim ve yaşam durumu seçeneklerini; ayrıca " +
                 "aktif hane soruları ile seçeneklerini kararlı kod ve kullanıcı etiketi olarak döndürür. " +
-                "Şirket dbo tablolarındaki silinmiş kayıtlar gönderilmez. Hane soruları tek belediyeye " +
+                "Yardım türlerinde Sil alanı filtrelenmez; diğer dbo seçeneklerinde yalnız aktif kayıtlar " +
+                "gönderilir. Hane soruları tek belediyeye " +
                 "ait etkin katalogdan okunur.")
             .RequireAuthorization(AuthorizationPolicyNames.MobileFieldOperations);
 

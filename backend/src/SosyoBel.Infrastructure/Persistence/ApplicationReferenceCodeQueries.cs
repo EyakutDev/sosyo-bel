@@ -36,6 +36,27 @@ internal static class ApplicationReferenceCodeQueries
     }
 
     /// <summary>
+    /// Yardım türlerinde şirketin kararı gereği Sil alanını dikkate almadan,
+    /// mobil kodun karşılık geldiği mevcut dbo kaydını çözer.
+    /// </summary>
+    public static async Task<int?> ResolveCompanyReferenceIdAsync<TSource>(
+        this DbContext context,
+        string referenceTypeCode,
+        string? code,
+        CancellationToken cancellationToken)
+        where TSource : class, ICompanyReferenceSource
+    {
+        if (!CompanyReferenceCode.TryDecode(referenceTypeCode, code, out var sourceId))
+            return null;
+
+        return await context.Set<TSource>()
+            .AsNoTracking()
+            .Where(value => value.Id == sourceId)
+            .Select(value => (int?)value.Id)
+            .SingleOrDefaultAsync(cancellationToken);
+    }
+
+    /// <summary>
     /// Aynı türe ait birden çok mobil kodu tek dbo sorgusunda doğrular.
     /// Sonuç yalnız etkin ve gerçekten mevcut lookup kayıtlarını içerir.
     /// </summary>

@@ -4,4 +4,10 @@
          to allow setting breakpoints, to provide hot reload, etc.
     -->
     <uses-permission android:name="android.permission.INTERNET"/>
+    <!--
+      Şirketin geçici IIS test adresi HTTP kullandığı için yalnız debug
+      derlemelerinde şifresiz ağ trafiğine izin verilir. Release sürümü bu
+      ayarı içermez ve HTTPS zorunluluğunu korur.
+    -->
+    <application android:usesCleartextTraffic='true'/>
 </manifest>
