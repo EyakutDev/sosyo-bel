@@ -16,7 +16,7 @@ public interface IKpsClient
 }
 
 /// <summary>
-/// İki KPS GET çağrısında kullanılan ortak sorgu kriteridir.
+/// İki KPS POST çağrısında JSON gövdesine yazılan ortak sorgu kriteridir.
 /// </summary>
 public sealed record KpsLookupCriteria(
     string IdentityNumber,

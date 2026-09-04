@@ -19,7 +19,8 @@ internal static class KpsEndpoints
             .WithSummary("KPS kimlik ve adres profilini getirir")
             .WithDescription(
                 "T.C. kimlik numarası ve doğum tarihiyle kurumun KPS kimlik ve adres servislerine " +
-                "yalnız GET isteği gönderir. Endpoint, şirketin mevcut Identity rollerinden " +
+                "JSON gövdeli POST istekleri gönderir. Mobil endpoint GET olarak kalır ve şirketin " +
+                "mevcut Identity rollerinden " +
                 "Admin, Kurul veya Personel rolüne sahip oturumlar tarafından kullanılabilir.")
             .Produces<KpsProfile>(StatusCodes.Status200OK)
             .ProducesValidationProblem()

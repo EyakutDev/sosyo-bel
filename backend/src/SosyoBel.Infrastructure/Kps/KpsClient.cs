@@ -1,13 +1,15 @@
 using System.Globalization;
 using System.Net;
+using System.Net.Http.Json;
 using System.Net.Http.Headers;
+using System.Text.Json.Serialization;
 using SosyoBel.Application.Kps;
 
 namespace SosyoBel.Infrastructure.Kps;
 
 /// <summary>
-/// Kurumun KPS kimlik ve adres uçlarına body içermeyen GET istekleri gönderir.
-/// Query parametreleri yalnız bu sınıfta üretilir ve loglanmaz.
+/// Kurumun KPS kimlik ve adres uçlarına JSON gövdeli POST istekleri gönderir.
+/// Hassas sorgu değerleri URL'ye eklenmez ve bu sınıf tarafından loglanmaz.
 /// </summary>
 internal sealed class KpsClient : IKpsClient, IDisposable
 {
@@ -52,7 +54,7 @@ internal sealed class KpsClient : IKpsClient, IDisposable
         CancellationToken cancellationToken)
     {
         var normalized = NormalizeCriteria(criteria);
-        var json = await GetJsonAsync(IdentityPath, normalized, cancellationToken);
+        var json = await PostJsonAsync(IdentityPath, normalized, cancellationToken);
         return KpsResponseReader.ReadIdentity(json, normalized.IdentityNumber);
     }
 
@@ -61,18 +63,22 @@ internal sealed class KpsClient : IKpsClient, IDisposable
         CancellationToken cancellationToken)
     {
         var normalized = NormalizeCriteria(criteria);
-        var json = await GetJsonAsync(AddressPath, normalized, cancellationToken);
+        var json = await PostJsonAsync(AddressPath, normalized, cancellationToken);
         return KpsResponseReader.ReadAddress(json, normalized.IdentityNumber);
     }
 
-    private async Task<string> GetJsonAsync(
+    private async Task<string> PostJsonAsync(
         string relativePath,
         KpsLookupCriteria criteria,
         CancellationToken cancellationToken)
     {
         using var request = new HttpRequestMessage(
-            HttpMethod.Get,
-            BuildRequestUri(relativePath, criteria));
+            HttpMethod.Post,
+            new Uri(baseUri, relativePath))
+        {
+            // KPS sözleşmesi T.C. kimlik numarasını JSON number olarak bekler.
+            Content = JsonContent.Create(CreateRequestPayload(criteria)),
+        };
 
         try
         {
@@ -108,17 +114,12 @@ internal sealed class KpsClient : IKpsClient, IDisposable
         }
     }
 
-    private Uri BuildRequestUri(string path, KpsLookupCriteria criteria)
-    {
-        var query = string.Format(
-            CultureInfo.InvariantCulture,
-            "tcKimlikNo={0}&dogumYil={1}&dogumAy={2}&dogumGun={3}",
-            Uri.EscapeDataString(criteria.IdentityNumber),
+    private static KpsRequestPayload CreateRequestPayload(KpsLookupCriteria criteria) =>
+        new(
+            long.Parse(criteria.IdentityNumber, CultureInfo.InvariantCulture),
             criteria.BirthDate.Year,
             criteria.BirthDate.Month,
             criteria.BirthDate.Day);
-        return new Uri(baseUri, $"{path}?{query}");
-    }
 
     private static KpsLookupCriteria NormalizeCriteria(KpsLookupCriteria criteria)
     {
@@ -149,6 +150,12 @@ internal sealed class KpsClient : IKpsClient, IDisposable
 
         return new Uri(uri.ToString().TrimEnd('/') + "/", UriKind.Absolute);
     }
+
+    private sealed record KpsRequestPayload(
+        [property: JsonPropertyName("tcKimlikNo")] long IdentityNumber,
+        [property: JsonPropertyName("dogumYil")] int BirthYear,
+        [property: JsonPropertyName("dogumAy")] int BirthMonth,
+        [property: JsonPropertyName("dogumGun")] int BirthDay);
 
     public void Dispose() => httpClient.Dispose();
 }

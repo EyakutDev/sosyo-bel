@@ -28,12 +28,15 @@ internal static class KpsResponseReader
             "KPS kimlik cevabı okunamadı.");
 
         ThrowIfKnownRejection(json, response.Success, InvalidIdentityResponseCode);
+        // KPS'nin sahadaki cevaplarında doğum yılı hem DogumYil hem de
+        // DogumYili adıyla dönebiliyor. İki sözleşmeyi de geriye uyumlu kabul ederiz.
+        var birthYear = response.DogumYil ?? response.DogumYili;
         if (!MatchesIdentityNumber(response.TcKimlikNo, expectedIdentityNumber) ||
             string.IsNullOrWhiteSpace(response.Ad) ||
             string.IsNullOrWhiteSpace(response.Soyad) ||
-            response.DogumGunu is null ||
+            response.DogumGun is null ||
             response.DogumAy is null ||
-            response.DogumYili is null)
+            birthYear is null)
         {
             throw InvalidContract(
                 InvalidIdentityResponseCode,
@@ -44,9 +47,9 @@ internal static class KpsResponseReader
         try
         {
             birthDate = new DateOnly(
-                response.DogumYili.Value,
+                birthYear.Value,
                 response.DogumAy.Value,
-                response.DogumGunu.Value);
+                response.DogumGun.Value);
         }
         catch (ArgumentOutOfRangeException)
         {
@@ -62,7 +65,7 @@ internal static class KpsResponseReader
             NormalizeOptional(response.BabaAd),
             NormalizeOptional(response.AnneAd),
             birthDate,
-            NormalizeOptional(response.DogumYeri),
+            NormalizeOptional(response.DogumYer),
             NormalizeOptional(response.Cinsiyet),
             NormalizeOptional(response.MedeniHal),
             NormalizeOptional(response.Durum));
@@ -217,10 +220,11 @@ internal static class KpsResponseReader
         public string? Soyad { get; init; }
         public string? BabaAd { get; init; }
         public string? AnneAd { get; init; }
-        public int? DogumGunu { get; init; }
+        public int? DogumGun { get; init; }
         public int? DogumAy { get; init; }
+        public int? DogumYil { get; init; }
         public int? DogumYili { get; init; }
-        public string? DogumYeri { get; init; }
+        public string? DogumYer { get; init; }
         public string? Cinsiyet { get; init; }
         public string? MedeniHal { get; init; }
         public string? Durum { get; init; }

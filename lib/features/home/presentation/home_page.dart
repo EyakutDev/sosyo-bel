@@ -182,8 +182,6 @@ class _HomePageState extends State<HomePage> {
     final applications = listedWorkItems
         .map(WorkItemCardMapper.toViewData)
         .toList(growable: false);
-    final pendingCount = _workItems.where((item) => !item.isCompleted).length;
-
     return AnnotatedRegion<SystemUiOverlayStyle>(
       value: const SystemUiOverlayStyle(
         statusBarColor: Colors.transparent,
@@ -233,42 +231,6 @@ class _HomePageState extends State<HomePage> {
                 ),
               ),
             ),
-            Positioned(
-              left: 325 * scale,
-              top: 71 * scale,
-              width: 24 * scale,
-              height: 24 * scale,
-              child: Image.asset(
-                AppAssets.notificationBell,
-                fit: BoxFit.contain,
-                filterQuality: FilterQuality.high,
-              ),
-            ),
-            if (pendingCount > 0)
-              Positioned(
-                left: 335 * scale,
-                top: 67 * scale,
-                width: 16 * scale,
-                height: 16 * scale,
-                child: DecoratedBox(
-                  decoration: const BoxDecoration(
-                    color: AppColors.statusRejected,
-                    shape: BoxShape.circle,
-                  ),
-                  child: Center(
-                    child: Text(
-                      pendingCount > 9 ? '9+' : pendingCount.toString(),
-                      key: const Key('home-pending-count'),
-                      style: TextStyle(
-                        color: AppColors.white,
-                        fontSize: 10 * scale,
-                        fontWeight: FontWeight.w500,
-                        height: 17 / 10,
-                      ),
-                    ),
-                  ),
-                ),
-              ),
             // Geri düğmesi logodan sonra çizilir; aşağı taşındığında şeffaf logo
             // sınırının dokunma alanını kapatması böylece engellenir.
             if (widget.onBack != null)

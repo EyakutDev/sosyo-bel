@@ -44,7 +44,12 @@ void main() {
     expect(find.text('Bahçelievler Mahallesi No: 4'), findsOneWidget);
     expect(find.text('Kurulda'), findsOneWidget);
     expect(find.text('B-2026-151'), findsNothing);
-    expect(find.text('1'), findsOneWidget);
+    // Gerçek bildirim akışı kurulana kadar görev sayısı bildirim rozeti gibi gösterilmez.
+    expect(find.byKey(const Key('home-pending-count')), findsNothing);
+    expect(
+      find.image(const AssetImage(AppAssets.notificationBell)),
+      findsNothing,
+    );
 
     await tester.tap(find.text('Tamamlanmış'));
     await tester.pump();

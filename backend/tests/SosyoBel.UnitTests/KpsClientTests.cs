@@ -1,5 +1,6 @@
 using System.Net;
 using System.Text;
+using System.Text.Json;
 using SosyoBel.Application.Kps;
 using SosyoBel.Infrastructure.Kps;
 
@@ -10,7 +11,7 @@ public sealed class KpsClientTests
     private const string SyntheticIdentityNumber = "12345678901";
 
     [Fact]
-    public async Task IdentityAndAddressCallsUseGetQueryWithoutBody()
+    public async Task IdentityAndAddressCallsUsePostJsonBody()
     {
         var handler = new RecordingHandler(
             IdentityJson(),
@@ -78,13 +79,20 @@ public sealed class KpsClientTests
 
     private static void AssertRequest(RecordedRequest request, string expectedPath)
     {
-        Assert.Equal(HttpMethod.Get, request.Method);
+        Assert.Equal(HttpMethod.Post, request.Method);
         Assert.Equal(expectedPath, request.Path);
-        Assert.Equal(
-            "?tcKimlikNo=12345678901&dogumYil=1986&dogumAy=9&dogumGun=14",
-            request.Query);
-        Assert.False(request.HasContent);
+        Assert.Empty(request.Query);
+        Assert.Equal("application/json", request.ContentMediaType);
         Assert.Equal("application/json", request.AcceptMediaType);
+
+        using var document = JsonDocument.Parse(
+            request.Body ?? throw new InvalidOperationException("KPS JSON gövdesi eksik."));
+        var root = document.RootElement;
+        Assert.Equal(4, root.EnumerateObject().Count());
+        Assert.Equal(12345678901, root.GetProperty("tcKimlikNo").GetInt64());
+        Assert.Equal(1986, root.GetProperty("dogumYil").GetInt32());
+        Assert.Equal(9, root.GetProperty("dogumAy").GetInt32());
+        Assert.Equal(14, root.GetProperty("dogumGun").GetInt32());
     }
 
     private static HttpResponseMessage IdentityJson() => JsonResponse("""
@@ -93,9 +101,9 @@ public sealed class KpsClientTests
       "TcKimlikNo": 12345678901,
       "Ad": "ÖRNEK",
       "Soyad": "KİŞİ",
-      "DogumGunu": 14,
+      "DogumGun": 14,
       "DogumAy": 9,
-      "DogumYili": 1986
+      "DogumYil": 1986
     }
     """);
 
@@ -127,19 +135,23 @@ public sealed class KpsClientTests
 
         public List<RecordedRequest> Requests { get; } = [];
 
-        protected override Task<HttpResponseMessage> SendAsync(
+        protected override async Task<HttpResponseMessage> SendAsync(
             HttpRequestMessage request,
             CancellationToken cancellationToken)
         {
             cancellationToken.ThrowIfCancellationRequested();
             var uri = request.RequestUri ?? throw new InvalidOperationException();
+            var body = request.Content is null
+                ? null
+                : await request.Content.ReadAsStringAsync(cancellationToken);
             Requests.Add(new RecordedRequest(
                 request.Method,
                 uri.AbsolutePath,
                 uri.Query,
-                request.Content is not null,
+                body,
+                request.Content?.Headers.ContentType?.MediaType,
                 request.Headers.Accept.SingleOrDefault()?.MediaType));
-            return Task.FromResult(responses.Dequeue());
+            return responses.Dequeue();
         }
     }
 
@@ -147,6 +159,7 @@ public sealed class KpsClientTests
         HttpMethod Method,
         string Path,
         string Query,
-        bool HasContent,
+        string? Body,
+        string? ContentMediaType,
         string? AcceptMediaType);
 }

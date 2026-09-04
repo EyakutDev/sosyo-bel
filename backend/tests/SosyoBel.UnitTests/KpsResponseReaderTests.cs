@@ -18,10 +18,10 @@ public sealed class KpsResponseReaderTests
           "Soyad": " KİŞİ ",
           "BabaAd": "BABA",
           "AnneAd": "ANNE",
-          "DogumGunu": 14,
+          "DogumGun": 14,
           "DogumAy": 9,
-          "DogumYili": 1986,
-          "DogumYeri": "ÖRNEK İL",
+          "DogumYil": 1986,
+          "DogumYer": "ÖRNEK İL",
           "Cinsiyet": "Erkek",
           "MedeniHal": "Evli",
           "Durum": "Açık"
@@ -34,7 +34,28 @@ public sealed class KpsResponseReaderTests
         Assert.Equal("ÖRNEK", result.FirstName);
         Assert.Equal("KİŞİ", result.LastName);
         Assert.Equal(new DateOnly(1986, 9, 14), result.BirthDate);
+        Assert.Equal("ÖRNEK İL", result.BirthPlace);
         Assert.Equal("Evli", result.MaritalStatus);
+    }
+
+    [Fact]
+    public void IdentityResponseAcceptsLegacyBirthYearFieldName()
+    {
+        const string json = """
+        {
+          "Success": true,
+          "TcKimlikNo": 12345678901,
+          "Ad": "ÖRNEK",
+          "Soyad": "KİŞİ",
+          "DogumGun": 14,
+          "DogumAy": 9,
+          "DogumYili": 1986
+        }
+        """;
+
+        var result = KpsResponseReader.ReadIdentity(json, SyntheticIdentityNumber);
+
+        Assert.Equal(new DateOnly(1986, 9, 14), result.BirthDate);
     }
 
     [Fact]
@@ -186,7 +207,7 @@ public sealed class KpsResponseReaderTests
           "TcKimlikNo": 10987654321,
           "Ad": "ÖRNEK",
           "Soyad": "KİŞİ",
-          "DogumGunu": 1,
+          "DogumGun": 1,
           "DogumAy": 1,
           "DogumYili": 1990
         }
