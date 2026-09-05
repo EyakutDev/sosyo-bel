@@ -1,6 +1,7 @@
 # Miscellaneous
 *.class
 *.log
+.sosyobel-writer.lock
 *.pyc
 *.swp
 .DS_Store

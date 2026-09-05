@@ -3,6 +3,7 @@ using SosyoBel.Application.Kps;
 using SosyoBel.Application.References;
 using SosyoBel.Infrastructure.Kps;
 using SosyoBel.Infrastructure.Persistence;
+using Microsoft.Extensions.Logging.Abstractions;
 
 namespace SosyoBel.UnitTests;
 
@@ -377,7 +378,8 @@ public sealed class CompanyApplicationCoreTests
         var storage = new StubPhotoStorage();
         var timeProvider = new FixedTimeProvider(
             new DateTimeOffset(2026, 8, 28, 12, 30, 0, TimeSpan.FromHours(3)));
-        var preparer = new CompanyApplicationPhotoPreparer(storage, timeProvider);
+        var preparer = new CompanyApplicationPhotoPreparer(
+            storage, timeProvider, NullLogger<CompanyApplicationPhotoPreparer>.Instance);
         var applicationPublicId = Guid.Parse("01234567-89ab-cdef-0123-456789abcdef");
         ApplicationPhotoUpload[] photos =
         [
@@ -397,11 +399,21 @@ public sealed class CompanyApplicationCoreTests
         Assert.All(result.Records, record =>
         {
             Assert.Equal(42, record.CitizenId);
-            Assert.StartsWith("/uploads/", record.PhotoPath, StringComparison.Ordinal);
+            Assert.StartsWith(
+                "/uploads/hanefotograflari/",
+                record.PhotoPath,
+                StringComparison.Ordinal);
             Assert.Equal("Başvuru Formundan Yüklendi", record.Description);
             Assert.Equal(timeProvider.GetLocalNow().DateTime, record.UploadedAt);
         });
         Assert.Equal([1, 2], storage.SavedOrders);
+        Assert.Equal(
+            new[]
+            {
+                $"/uploads/hanefotograflari/{applicationPublicId:N}/01.jpg",
+                $"/uploads/hanefotograflari/{applicationPublicId:N}/02.png",
+            },
+            result.Records.Select(record => record.PhotoPath));
     }
 
     [Fact]
@@ -410,7 +422,8 @@ public sealed class CompanyApplicationCoreTests
         var storage = new StubPhotoStorage();
         var preparer = new CompanyApplicationPhotoPreparer(
             storage,
-            TimeProvider.System);
+            TimeProvider.System,
+            NullLogger<CompanyApplicationPhotoPreparer>.Instance);
         var photos = Enumerable.Range(1, 16)
             .Select(index => Photo(
                 checked((byte)index),
@@ -438,7 +451,8 @@ public sealed class CompanyApplicationCoreTests
         var storage = new StubPhotoStorage(failOnOrder: 2);
         var preparer = new CompanyApplicationPhotoPreparer(
             storage,
-            TimeProvider.System);
+            TimeProvider.System,
+            NullLogger<CompanyApplicationPhotoPreparer>.Instance);
 
         var result = await preparer.PrepareAsync(
             42,
@@ -457,7 +471,19 @@ public sealed class CompanyApplicationCoreTests
     }
 
     [Theory]
+    [InlineData("application/01-photo.jpg")]
+    [InlineData("application\\01-photo.jpg")]
+    [InlineData("/application/01-photo.jpg/")]
+    public void CompanyPhotoPathUsesHouseholdPhotoSubdirectory(string storageKey)
+    {
+        Assert.Equal(
+            "/uploads/hanefotograflari/application/01-photo.jpg",
+            CompanyApplicationPhotoPreparer.ToCompanyWebPath(storageKey));
+    }
+
+    [Theory]
     [InlineData("../photo.jpg")]
+    [InlineData("application\\..\\photo.jpg")]
     [InlineData("application/../photo.jpg")]
     [InlineData("/")]
     public void CompanyPhotoPathRejectsTraversalAndEmptyKeys(string storageKey)

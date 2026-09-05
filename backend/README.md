@@ -37,7 +37,7 @@ dotnet restore backend\SosyoBel.Backend.sln
 
 $env:ASPNETCORE_ENVIRONMENT="Development"
 $env:ConnectionStrings__SosyoBel="Server=localhost;Database=SirketDbTestKopyasi;Integrated Security=True;Encrypt=True;TrustServerCertificate=True"
-$env:ApplicationPhotos__RootPath="C:\sosyobel-test\uploads"
+$env:ApplicationPhotos__RootPath="C:\sosyobel-test\uploads\hanefotograflari"
 $env:Kps__BaseUrl="http://localhost:8090"
 
 $keyBytes = New-Object byte[] 32
@@ -70,6 +70,10 @@ JSON'daki iki nokta yerine çift alt çizgi kullanılır.
 | `Authentication__Jwt__AccessTokenMinutes` | Hayır | 5-60 dakika, varsayılan 15 |
 | `Authentication__Session__RefreshTokenDays` | Hayır | 1-90 gün, varsayılan 30 |
 | `ApplicationPhotos__RootPath` | Evet | Fotoğrafların fiziksel kök klasörü |
+| `FileErrorLogging__DirectoryPath` | Dosya logu için evet | Sunucudaki özel log klasörü; boşsa güvenli konsol çıktısı |
+| `FileErrorLogging__RetentionDays` | Hayır | Varsayılan 14 gün |
+| `FileErrorLogging__MaxFileSizeMB` | Hayır | Tek dosya sınırı; varsayılan 10 MB |
+| `FileErrorLogging__MaxTotalSizeMB` | Hayır | Bu API'nin loglarının toplam sınırı; varsayılan 200 MB |
 | `Kps__BaseUrl` | KPS için evet | Kurum KPS servisinin kök adresi |
 | `Kps__TimeoutSeconds` | Hayır | Varsayılan 30 saniye |
 | `OpenApi__Enabled` | Hayır | Swagger; Production'da varsayılan kapalı |
@@ -197,18 +201,36 @@ API migration çalıştırmaz; IIS kurulumu sırasında
 ### 6. Fotoğraf klasörü
 
 Şirket web uygulaması `dbo.HaneFotograflari.FotografYolu` değerini
-`/uploads/...` biçiminde kullanır. Bu nedenle
-`ApplicationPhotos__RootPath`, web uygulamasının `/uploads`
-olarak sunduğu fiziksel klasöre verilmelidir. Örnek:
+`/uploads/hanefotograflari/...` biçiminde kullanır. `ApplicationPhotos__RootPath`,
+doğrudan bu alt klasörün fiziksel yolu olmalıdır; yalnız `uploads` klasörünü
+göstermemelidir. Kurumun bildirdiği yol için IIS ortam ayarı:
 
 ```text
-D:\Sites\SosyalYardimWeb\wwwroot\uploads
+ApplicationPhotos__RootPath=C:\inetpub\wwwroot\sosyalyardim\wwwroot\uploads\hanefotograflari
 ```
 
-API Application Pool kimliğine bu klasörde **Modify** izni verin. Web
-uygulamasının Application Pool kimliği de dosyaları okuyabilmelidir. Klasör
-publish dizininin içinde tutulmamalı; yeni publish sırasında silinmemeli ve ayrı
-yedeklenmelidir.
+Bu değer sunucuda tanımlanır; uygulama koduna veya varsayılan `appsettings.json`
+dosyasına sabitlenmez. Ortam değişkeni adı `ApplicationPhotos__RootPath`, JSON
+ayar karşılığı ise `ApplicationPhotos:RootPath` şeklindedir.
+
+API, bu klasörün altında başvuru kimliğiyle bir alt klasör açar. Dosya adı
+`01-<sha256>.jpg` gibi sıra numarası, içerik özeti ve dosya uzantısından oluşur.
+Örneğin fiziksel dosya
+`C:\inetpub\wwwroot\sosyalyardim\wwwroot\uploads\hanefotograflari\<başvuru-kimliği>\01-<sha256>.jpg`
+ise veritabanına `/uploads/hanefotograflari/<başvuru-kimliği>/01-<sha256>.jpg`
+yazılır. Mevcut `dbo.HaneFotograflari` tablosu kullanılır; yeni tablo veya
+migration gerekmez. Mevcut fotoğraflar ve veritabanı yolları değiştirilmez.
+
+API Application Pool kimliğine bu klasör ve alt klasörlerinde **Modify** izni
+verin. Web uygulamasının Application Pool kimliği de dosyaları okuyabilmelidir.
+Bu izin dosya oluşturma, yeniden adlandırma ve başarısız bir gönderimin yeni
+dosyalarını temizleme için gerekir. Klasörü API publish çıktısıyla ezmeyin;
+web veya API güncellemelerinde silinmesini önleyin ve ayrıca yedekleyin.
+
+Yeni sürümü yayınlayıp ortam ayarını verdikten sonra API Application Pool'unu
+yeniden başlatın. Onaylı test vatandaşıyla tek fotoğraflı başvuru gönderip
+dosyanın bu klasörde oluştuğunu, `FotografYolu` kaydını ve fotoğrafın webde
+göründüğünü kontrol edin. `/health/ready` sonucu klasöre yazma yetkisini doğrulamaz.
 
 ### 7. İlk kontrol
 
@@ -225,6 +247,73 @@ Uygulama havuzunu recycle ettikten sonra:
 
 `health/live` çalışıp `health/ready` çalışmıyorsa bağlantı
 cümlesi, SQL ağ erişimi, tablo şeması ve SQL yetkileri kontrol edilir.
+
+## Hata kayıtları
+
+Warning/Error/Critical kayıtları güvenli JSON satırları olarak dosyaya yazılır.
+Normal istekler ve başarılı başvurular ayrıca loglanmaz. Konsolda sunucunun
+açılış/kapanış bilgileri kalır. Genel hata yakalayıcısına ulaşan exception'lar,
+fotoğraf yazım/temizlik hataları ve başvurunun veritabanı kayıt çakışmaları
+kaydedilir. Doğrulama hatası gibi her 400/409 cevabı otomatik log değildir.
+
+Log klasörünü IIS sunucusunu yöneten ekip belirler. Klasör webden erişilebilir
+olmamalı ve publish sırasında silinmemelidir. Ayrı bir klasör bunu kolaylaştırır.
+SosyalApi Application Pool hesabına klasör ve alt klasörlerinde **Modify**
+yetkisi verilmelidir; fotoğraf klasörü izni bunun yerine geçmez.
+
+Sunucuda tanımlanacak ayar (yol belirlenmediyse bu örneği uygulamayın):
+
+```text
+FileErrorLogging__DirectoryPath=<yetkilinin-verdiği-tam-fiziksel-yol>
+```
+
+Yeni sürümü yayınlayıp ayarı verdikten sonra API Application Pool'unu yeniden
+başlatın. Varsayılan `DirectoryPath` boştur; kaynak kodda gerçek sunucu yolu
+yoktur. Yerelde ayrı bir geçici klasörle denenebilir. `/health/ready`, log yazma
+yetkisini sınamaz.
+
+- Saat ve günlük dosya tarihi Türkiye saatidir (`Europe/Istanbul`, mevcut
+  ofset `+03:00`); sunucunun saat dilimine bağlı değildir.
+- Adlandırma: `sosyobel-20260904-0001.log`. Gün veya boyut değişince yeni dosya
+  açılır. Türkçe açıklamalar UTF-8 olarak okunabilir.
+- Varsayılan sınırlar 14 gün, dosya başına 10 MB ve toplam 200 MB'dır
+  (MB = 1024 × 1024 byte). Hangisi önce dolarsa eski kayıtlar silinir; yoğun
+  hata döneminde 14 günün tamamını saklama garantisi yoktur.
+- Temizlik yazımda ve yeni hata gelmese bile saatlik yapılır. Yalnız log
+  klasörünün doğrudan altındaki `sosyobel-YYYYMMDD-NNNN.log` dosyaları yönetilir.
+  Başka adlı dosyalara, alt klasörlere ve dosya bağlantılarına dokunulmaz.
+- Eksik/geçersiz yol, disk/izin sorunu, çok büyük tek kayıt veya başka worker'ın
+  dosya kilidi nedeniyle yazılamazsa arındırılmış kayıt konsola düşer.
+  Log sorunu API isteğinin sonucunu değiştirmez. Konsol çıktısının ayrıca kalıcı
+  tutulduğu varsayılmaz; `file_log_unavailable` uyarısının nedeni giderilmelidir.
+- Süre/boyutlar pozitif, toplam boyut en az tek dosya sınırı olmalıdır.
+  Geçersiz ayar uygulamayı durdurmaz, dosya yerine konsol kullanılır.
+  Ayar değişikliği sonrası API yeniden başlatılır.
+
+Kayıtta zaman, seviye, kaynak, event ID, sabit endpoint şablonu, `traceId`,
+başvuru aşaması, exception türü/HResult, metot adları ve varsa SQL hata
+numarası/state/severity bulunur. Ham exception mesajı/stack trace, SQL metni,
+HTTP query/body/header, kullanıcı bilgileri, T.C. kimlik numarası, parola,
+token, fotoğraf adı/yolu ve içeriği kaydedilmez. SQL teşhisinde hata numarası
+ve aşama kullanılır; ham mesajdaki veri değerleri dışarı verilmez.
+
+`stage` örnekleri: `InitializePhotoStorage` (fotoğraf deposunu açma),
+`ResolveCitizen` (vatandaş kaydı), `VerifyKps` (KPS doğrulama),
+`StorePhotos` (fotoğrafı yazma), `CreateApplication` (başvuru kaydı),
+`SaveFamilyAndPhotos` (aile/fotoğraf satırları), `CommitTransaction` (tamamlama).
+1001 fotoğraf yazma, 1002 veritabanı çakışması, 1003 dosya temizleme hatasının
+event ID'sidir. Bunlar HTTP veya kurum KPS hata kodu değildir.
+
+Beklenmeyen HTTP hatası aynı genel ProblemDetails cevabını döndürür; teknik
+ayrıntılar Swagger'a/mobile açılmaz. Hatalı isteği tekrar deneyip cevaptaki
+`traceId` ile kaydı bulun. Görünmüyorsa Türkiye saatiyle deneme zamanı ve
+endpoint kullanılabilir. Yalnız ilgili arındırılmış kaydı paylaşın.
+Log eklenmeden önceki hatalar geriye dönük kaydedilemez. Yeni veritabanı
+tablosu veya log okuma endpointi yoktur.
+
+Önceki commit ve IIS publish çıktısı geri dönüş için korunmalıdır. Veritabanı
+şeması değişmediğinden migration geri alma gerekmez. Saklama sınırıyla silinen
+loglar, kaynak kod eski sürüme döndürülerek geri getirilemez.
 
 ## Güvenli güncelleme ve geri dönüş
 

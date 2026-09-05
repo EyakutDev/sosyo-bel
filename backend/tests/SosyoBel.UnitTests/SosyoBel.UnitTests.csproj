@@ -16,5 +16,6 @@
   </ItemGroup>
   <ItemGroup>
     <ProjectReference Include="..\..\src\SosyoBel.Infrastructure\SosyoBel.Infrastructure.csproj" />
+    <ProjectReference Include="..\..\src\SosyoBel.Api\SosyoBel.Api.csproj" />
   </ItemGroup>
 </Project>

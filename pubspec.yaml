@@ -27,8 +27,10 @@ flutter:
   uses-material-design: true
   assets:
     - assets/images/sosyo_bel_logo.png
+    - assets/images/sosyo_bel_header_logo.png
     - assets/icons/down_arrow.svg
     - assets/images/municipality_avatar.png
+    - assets/images/battalgazi_municipality_logo.png
     - assets/icons/notification_bell.png
     - assets/images/activity/
     - assets/icons/activity/

@@ -36,6 +36,7 @@ void main() {
     VoidCallback? onBack,
     ApplicationCompletionAction? onSaveDraft,
     ApplicationCompletionAction? onSubmitToBoard,
+    VoidCallback? onSubmissionConfirmed,
     ValueChanged<String>? onNoteChanged,
     bool initiallySubmitted = false,
     double topSafeArea = 0,
@@ -58,6 +59,7 @@ void main() {
             onBack: onBack ?? () {},
             onSaveDraft: onSaveDraft ?? (_) async {},
             onSubmitToBoard: onSubmitToBoard ?? (_) async {},
+            onSubmissionConfirmed: onSubmissionConfirmed,
             onNoteChanged: onNoteChanged,
             initiallySubmitted: initiallySubmitted,
           ),
@@ -134,10 +136,12 @@ void main() {
   ) async {
     var submitCount = 0;
     var saveCount = 0;
+    var confirmationCount = 0;
     await pumpPage(
       tester,
       onSaveDraft: (_) async => saveCount++,
       onSubmitToBoard: (_) async => submitCount++,
+      onSubmissionConfirmed: () => confirmationCount++,
     );
 
     await tester.enterText(
@@ -145,7 +149,7 @@ void main() {
       'Gönderilecek not',
     );
     await tester.tap(find.byKey(const Key('completion-submit-board-button')));
-    await tester.pump();
+    await tester.pumpAndSettle();
 
     final noteField = tester.widget<TextField>(
       find.byKey(const Key('completion-note-field')),
@@ -161,11 +165,20 @@ void main() {
     expect(noteField.readOnly, isTrue);
     expect(saveButton.onTap, isNull);
     expect(submitButton.onTap, isNull);
-
-    await tester.tap(find.byKey(const Key('completion-save-draft-button')));
-    await tester.tap(find.byKey(const Key('completion-submit-board-button')));
+    expect(
+      find.byKey(const Key('completion-submission-success-dialog')),
+      findsOneWidget,
+    );
+    expect(find.text('Başvuru kurula gönderildi'), findsOneWidget);
+    expect(find.text('Görevlere Dön'), findsOneWidget);
     expect(saveCount, 0);
     expect(submitCount, 1);
+
+    await tester.tap(
+      find.byKey(const Key('completion-success-return-to-tasks-button')),
+    );
+    await tester.pumpAndSettle();
+    expect(confirmationCount, 1);
   });
 
   testWidgets(
@@ -181,22 +194,76 @@ void main() {
         },
       );
 
+      await tester.enterText(
+        find.byKey(const Key('completion-note-field')),
+        'Korunacak not',
+      );
       await tester.tap(find.byKey(const Key('completion-submit-board-button')));
       await tester.pumpAndSettle();
 
       expect(
-        find.byKey(const Key('completion-action-error-notice')),
+        find.byKey(const Key('completion-submission-error-dialog')),
         findsOneWidget,
       );
+      expect(find.text('Başvuru gönderilemedi'), findsOneWidget);
       expect(find.text('Sunucuya bağlanılamadı.'), findsOneWidget);
+      expect(
+        find.text('Bilgileriniz ve fotoğraflarınız korunuyor.'),
+        findsOneWidget,
+      );
+
+      await tester.tap(find.byKey(const Key('completion-error-close-button')));
+      await tester.pumpAndSettle();
+
       final noteField = tester.widget<TextField>(
         find.byKey(const Key('completion-note-field')),
       );
       final submitButton = tester.widget<InkWell>(
         find.byKey(const Key('completion-submit-board-button')),
       );
+      expect(noteField.controller?.text, 'Korunacak not');
       expect(noteField.readOnly, isFalse);
       expect(submitButton.onTap, isNotNull);
     },
   );
+
+  testWidgets('başarısız kurul gönderimini aynı verilerle tekrar dener', (
+    tester,
+  ) async {
+    var submitCount = 0;
+    await pumpPage(
+      tester,
+      onSubmitToBoard: (_) async {
+        submitCount++;
+        if (submitCount == 1) {
+          throw const ApiException(
+            kind: ApiErrorKind.server,
+            message: 'Geçici bir sunucu hatası oluştu.',
+          );
+        }
+      },
+    );
+
+    await tester.enterText(
+      find.byKey(const Key('completion-note-field')),
+      'Aynı kalacak not',
+    );
+    await tester.tap(find.byKey(const Key('completion-submit-board-button')));
+    await tester.pumpAndSettle();
+    await tester.tap(find.byKey(const Key('completion-error-retry-button')));
+    await tester.pumpAndSettle();
+
+    expect(submitCount, 2);
+    expect(
+      find.byKey(const Key('completion-submission-success-dialog')),
+      findsOneWidget,
+    );
+    expect(
+      tester
+          .widget<TextField>(find.byKey(const Key('completion-note-field')))
+          .controller
+          ?.text,
+      'Aynı kalacak not',
+    );
+  });
 }

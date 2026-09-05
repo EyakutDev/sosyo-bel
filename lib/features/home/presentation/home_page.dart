@@ -8,6 +8,7 @@ import 'package:sosyo_bel/core/constants/app_assets.dart';
 import 'package:sosyo_bel/core/network/api_exception.dart';
 import 'package:sosyo_bel/core/theme/app_colors.dart';
 import 'package:sosyo_bel/core/widgets/municipality_logo.dart';
+import 'package:sosyo_bel/features/application/presentation/widgets/application_exit_dialog.dart';
 import 'package:sosyo_bel/features/home/domain/work_item.dart';
 import 'package:sosyo_bel/features/home/domain/work_items_repository.dart';
 import 'package:sosyo_bel/features/home/presentation/mappers/work_item_card_mapper.dart';
@@ -25,6 +26,7 @@ class HomePage extends StatefulWidget {
     this.onBack,
     this.initialSuccessMessage,
     this.onOpenEditableDraft,
+    this.onDeleteLocalDraft,
     this.municipalityBranding = MunicipalityBranding.demo,
     super.key,
   });
@@ -34,6 +36,7 @@ class HomePage extends StatefulWidget {
   final VoidCallback? onBack;
   final String? initialSuccessMessage;
   final Future<void> Function(WorkItem item)? onOpenEditableDraft;
+  final Future<void> Function(WorkItem item)? onDeleteLocalDraft;
   final MunicipalityBranding municipalityBranding;
 
   @override
@@ -48,6 +51,7 @@ class _HomePageState extends State<HomePage> {
   bool _isLoading = true;
   String? _loadErrorMessage;
   String? _openingDraftId;
+  String? _deletingDraftId;
 
   Future<void> _openEditableDraft(WorkItem item) async {
     final callback = widget.onOpenEditableDraft;
@@ -75,6 +79,40 @@ class _HomePageState extends State<HomePage> {
     ScaffoldMessenger.of(context)
       ..hideCurrentSnackBar()
       ..showSnackBar(SnackBar(content: Text(message)));
+  }
+
+  Future<void> _deleteLocalDraft(WorkItem item) async {
+    final callback = widget.onDeleteLocalDraft;
+    final draftId = item.localDraftId;
+    if (callback == null ||
+        !item.isLocalDraft ||
+        draftId == null ||
+        _deletingDraftId != null) {
+      return;
+    }
+
+    final isConfirmed = await showLocalDraftDeleteDialog(context);
+    if (!mounted || !isConfirmed) return;
+
+    setState(() => _deletingDraftId = draftId);
+    try {
+      await callback(item);
+      if (!mounted) return;
+      setState(() {
+        _workItems = _workItems
+            .where((workItem) => workItem.localDraftId != draftId)
+            .toList(growable: false);
+      });
+      ScaffoldMessenger.of(context)
+        ..hideCurrentSnackBar()
+        ..showSnackBar(const SnackBar(content: Text('Yerel taslak silindi.')));
+    } on ApiException catch (error) {
+      _showOpenError(error.message);
+    } catch (_) {
+      _showOpenError('Yerel taslak silinemedi. Lütfen tekrar deneyin.');
+    } finally {
+      if (mounted) setState(() => _deletingDraftId = null);
+    }
   }
 
   @override
@@ -211,24 +249,42 @@ class _HomePageState extends State<HomePage> {
               top: 59 * scale,
               width: 87 * scale,
               height: 88 * scale,
-              child: MunicipalityLogo(
-                key: const Key('home-municipality-logo'),
-                branding: widget.municipalityBranding,
-                fit: BoxFit.contain,
-                filterQuality: FilterQuality.high,
+              child: ClipOval(
+                child: MunicipalityLogo(
+                  key: const Key('home-municipality-logo'),
+                  branding: widget.municipalityBranding,
+                  fit: BoxFit.contain,
+                  filterQuality: FilterQuality.high,
+                ),
               ),
             ),
             Positioned(
               left: 132 * scale,
-              top: 119 * scale,
-              child: Text(
-                'Hoşgeldiniz',
-                style: TextStyle(
-                  color: AppColors.white,
-                  fontSize: 16 * scale,
-                  fontWeight: FontWeight.w500,
-                  height: 24 / 16,
-                ),
+              right: 24 * scale,
+              top: 82 * scale,
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    'Hoş geldiniz',
+                    style: TextStyle(
+                      color: AppColors.white,
+                      fontSize: 17 * scale,
+                      fontWeight: FontWeight.w600,
+                      height: 23 / 17,
+                    ),
+                  ),
+                  SizedBox(height: 2 * scale),
+                  Text(
+                    'Görevlerinizi görüntüleyin',
+                    style: TextStyle(
+                      color: const Color(0xCCFFFFFF),
+                      fontSize: 12 * scale,
+                      fontWeight: FontWeight.w400,
+                      height: 18 / 12,
+                    ),
+                  ),
+                ],
               ),
             ),
             // Geri düğmesi logodan sonra çizilir; aşağı taşındığında şeffaf logo
@@ -341,12 +397,23 @@ class _HomePageState extends State<HomePage> {
         itemCount: applications.length,
         separatorBuilder: (context, index) => SizedBox(height: 20 * scale),
         itemBuilder: (context, index) {
+          final item = listedWorkItems[index];
+          final localDraftId = item.localDraftId;
+          final canDelete =
+              item.isLocalDraft &&
+              localDraftId != null &&
+              widget.onDeleteLocalDraft != null;
           return ApplicationSummaryCard(
             data: applications[index],
             scale: scale,
-            onTap: listedWorkItems[index].isEditable
-                ? () => _openEditableDraft(listedWorkItems[index])
+            onTap: item.isEditable && _deletingDraftId == null
+                ? () => _openEditableDraft(item)
                 : null,
+            onDelete: canDelete ? () => _deleteLocalDraft(item) : null,
+            isDeleting: localDraftId == _deletingDraftId,
+            deleteButtonKey: localDraftId == null
+                ? null
+                : ValueKey('delete-local-draft-$localDraftId'),
           );
         },
       ),

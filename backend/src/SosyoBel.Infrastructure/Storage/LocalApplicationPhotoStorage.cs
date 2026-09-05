@@ -2,12 +2,14 @@ using System.Security.Cryptography;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.Hosting;
 using SosyoBel.Application.Applications;
+using SosyoBel.Infrastructure.Logging;
 
 namespace SosyoBel.Infrastructure.Storage;
 
 /// <summary>
-/// Geliştirme ve tek IIS sunuculu kurulumlar için özel klasör deposudur.
-/// Klasör web kökünün dışında tutulur; dışarıya doğrudan statik dosya sunulmaz.
+/// Fotoğrafları yapılandırılan fiziksel klasörde saklar; bu sınıf URL üretmez.
+/// Şirket IIS kurulumunda kök, webin uploads/hanefotograflari klasörüdür.
+/// Geliştirme ortamında ayrı bir yerel test klasörü kullanılabilir.
 /// </summary>
 internal sealed class LocalApplicationPhotoStorage
     : IApplicationPhotoStorage
@@ -16,8 +18,11 @@ internal sealed class LocalApplicationPhotoStorage
 
     public LocalApplicationPhotoStorage(
         IConfiguration configuration,
-        IHostEnvironment environment)
+        IHostEnvironment environment,
+        RequestLogContext logContext)
     {
+        var previousStage = logContext.Stage;
+        logContext.Stage = RequestLogStage.InitializePhotoStorage;
         var configuredPath = configuration["ApplicationPhotos:RootPath"];
         if (string.IsNullOrWhiteSpace(configuredPath))
         {
@@ -30,6 +35,7 @@ internal sealed class LocalApplicationPhotoStorage
                 ? configuredPath
                 : Path.Combine(environment.ContentRootPath, configuredPath));
         Directory.CreateDirectory(rootPath);
+        logContext.Stage = previousStage;
     }
 
     public async Task<StoredApplicationPhoto> SaveAsync(

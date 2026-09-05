@@ -14,6 +14,7 @@ void main() {
     MunicipalityBranding branding = MunicipalityBranding.demo,
     WorkItemsRepository? repository,
     Future<void> Function(WorkItem item)? onOpenEditableDraft,
+    Future<void> Function(WorkItem item)? onDeleteLocalDraft,
   }) async {
     tester.view.physicalSize = const Size(375, 864);
     tester.view.devicePixelRatio = 1;
@@ -27,6 +28,7 @@ void main() {
           workItemsRepository:
               repository ?? _FakeWorkItemsRepository(() async => _workItems),
           onOpenEditableDraft: onOpenEditableDraft,
+          onDeleteLocalDraft: onDeleteLocalDraft,
         ),
       ),
     );
@@ -38,7 +40,22 @@ void main() {
     await pumpHome(tester);
     await tester.pumpAndSettle();
 
-    expect(find.text('Hoşgeldiniz'), findsOneWidget);
+    expect(find.text('Hoş geldiniz'), findsOneWidget);
+    expect(find.text('Görevlerinizi görüntüleyin'), findsOneWidget);
+    final defaultLogo = tester.widget<Image>(
+      find.descendant(
+        of: find.byKey(const Key('home-municipality-logo')),
+        matching: find.byType(Image),
+      ),
+    );
+    expect(
+      (defaultLogo.image as AssetImage).assetName,
+      AppAssets.battalgaziMunicipalityLogo,
+    );
+    expect(
+      find.bySemanticsLabel('Battalgazi Belediyesi logosu'),
+      findsOneWidget,
+    );
     expect(find.text('B-2026-150'), findsOneWidget);
     expect(find.text('Ahmet Yılmaz'), findsOneWidget);
     expect(find.text('Bahçelievler Mahallesi No: 4'), findsOneWidget);
@@ -51,13 +68,45 @@ void main() {
       findsNothing,
     );
 
-    await tester.tap(find.text('Tamamlanmış'));
+    await tester.tap(find.text('Tamamlanan'));
     await tester.pump();
 
     expect(find.text('B-2026-150'), findsNothing);
     expect(find.text('B-2026-151'), findsOneWidget);
     expect(find.text('Emel Seçen'), findsOneWidget);
     expect(find.text('Tamamlandı'), findsOneWidget);
+  });
+
+  testWidgets('sekme göstergesini sürükleyerek tamamlanan listeyi açar', (
+    tester,
+  ) async {
+    await pumpHome(tester);
+    await tester.pumpAndSettle();
+
+    await tester.drag(
+      find.byKey(const Key('home-list-tabs')),
+      const Offset(180, 0),
+    );
+    await tester.pumpAndSettle();
+
+    expect(find.text('B-2026-150'), findsNothing);
+    expect(find.text('B-2026-151'), findsOneWidget);
+  });
+
+  testWidgets('kısa sekme sürüklemesi mevcut listeye geri döner', (
+    tester,
+  ) async {
+    await pumpHome(tester);
+    await tester.pumpAndSettle();
+
+    await tester.drag(
+      find.byKey(const Key('home-list-tabs')),
+      const Offset(30, 0),
+    );
+    await tester.pumpAndSettle();
+
+    expect(find.text('B-2026-150'), findsOneWidget);
+    expect(find.text('B-2026-151'), findsNothing);
   });
 
   testWidgets('görev yüklenirken mevcut temada ilerleme göstergesi gösterir', (
@@ -142,6 +191,81 @@ void main() {
     await tester.pump();
 
     expect(openedItem, same(editableDraft));
+  });
+
+  testWidgets('yalnız yerel taslağı onay aldıktan sonra siler', (tester) async {
+    final localDraft = WorkItem(
+      localDraftId: 'draft-1',
+      applicationNumber: 'Yerel Taslak',
+      sourceCode: WorkItem.localDraftSourceCode,
+      statusCode: 'TASLAK',
+      isCompleted: false,
+      isEditable: true,
+      activityAtUtc: DateTime.utc(2026, 8, 11, 10),
+    );
+    final items = <WorkItem>[localDraft, _workItems.first];
+    WorkItem? deletedItem;
+    await pumpHome(
+      tester,
+      repository: _FakeWorkItemsRepository(() async => items),
+      onDeleteLocalDraft: (item) async => deletedItem = item,
+    );
+    await tester.pumpAndSettle();
+
+    expect(find.byTooltip('Yerel taslağı sil'), findsOneWidget);
+    await tester.tap(find.byKey(const ValueKey('delete-local-draft-draft-1')));
+    await tester.pumpAndSettle();
+
+    expect(find.byKey(const Key('local-draft-delete-dialog')), findsOneWidget);
+    expect(deletedItem, isNull);
+    await tester.tap(find.byKey(const Key('local-draft-delete-cancel-button')));
+    await tester.pumpAndSettle();
+    expect(find.text('Yerel Taslak'), findsOneWidget);
+
+    await tester.tap(find.byKey(const ValueKey('delete-local-draft-draft-1')));
+    await tester.pumpAndSettle();
+    await tester.tap(
+      find.byKey(const Key('local-draft-delete-confirm-button')),
+    );
+    await tester.pumpAndSettle();
+
+    expect(deletedItem, same(localDraft));
+    expect(find.text('Yerel Taslak'), findsNothing);
+    expect(find.text('B-2026-150'), findsOneWidget);
+    expect(find.text('Yerel taslak silindi.'), findsOneWidget);
+  });
+
+  testWidgets('silme başarısız olursa yerel taslağı listede korur', (
+    tester,
+  ) async {
+    final localDraft = WorkItem(
+      localDraftId: 'draft-2',
+      applicationNumber: 'Yerel Taslak',
+      sourceCode: WorkItem.localDraftSourceCode,
+      statusCode: 'TASLAK',
+      isCompleted: false,
+      isEditable: true,
+      activityAtUtc: DateTime.utc(2026, 8, 11, 10),
+    );
+    await pumpHome(
+      tester,
+      repository: _FakeWorkItemsRepository(() async => [localDraft]),
+      onDeleteLocalDraft: (_) async => throw Exception('disk'),
+    );
+    await tester.pumpAndSettle();
+
+    await tester.tap(find.byKey(const ValueKey('delete-local-draft-draft-2')));
+    await tester.pumpAndSettle();
+    await tester.tap(
+      find.byKey(const Key('local-draft-delete-confirm-button')),
+    );
+    await tester.pumpAndSettle();
+
+    expect(find.text('Yerel Taslak'), findsOneWidget);
+    expect(
+      find.text('Yerel taslak silinemedi. Lütfen tekrar deneyin.'),
+      findsOneWidget,
+    );
   });
 }
 

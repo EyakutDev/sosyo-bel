@@ -43,11 +43,6 @@ class _LoginPageState extends State<LoginPage> {
 
   bool get _isBusy => _isLoading || widget.isRestoringSession;
 
-  // Figma ekranının kaynak ölçüsü. Konumlar farklı telefon boyutlarına bu
-  // referans üzerinden ölçeklenir; böylece tasarım oranları korunur.
-  static const _referenceWidth = 375.0;
-  static const _referenceHeight = 812.0;
-
   @override
   void dispose() {
     _usernameController.dispose();
@@ -57,10 +52,6 @@ class _LoginPageState extends State<LoginPage> {
 
   @override
   Widget build(BuildContext context) {
-    final screenSize = MediaQuery.sizeOf(context);
-    final keyboardHeight = MediaQuery.viewInsetsOf(context).bottom;
-    final scaleX = screenSize.width / _referenceWidth;
-    final scaleY = screenSize.height / _referenceHeight;
     final visibleErrorMessage = _errorMessage ?? widget.externalErrorMessage;
 
     return AnnotatedRegion<SystemUiOverlayStyle>(
@@ -73,226 +64,179 @@ class _LoginPageState extends State<LoginPage> {
       ),
       child: Scaffold(
         backgroundColor: AppColors.primary,
-        resizeToAvoidBottomInset: false,
-        body: SingleChildScrollView(
-          keyboardDismissBehavior: ScrollViewKeyboardDismissBehavior.onDrag,
-          padding: EdgeInsets.only(bottom: keyboardHeight),
-          child: SizedBox(
-            width: screenSize.width,
-            height: screenSize.height,
-            child: Stack(
-              children: [
-                Positioned(
-                  left: 0,
-                  right: 0,
-                  top: 108 * scaleY,
-                  bottom: 0,
-                  child: const DecoratedBox(
-                    decoration: BoxDecoration(
-                      color: AppColors.white,
-                      borderRadius: BorderRadius.vertical(
-                        top: Radius.circular(30),
-                      ),
-                    ),
-                  ),
-                ),
-                Positioned(
-                  left: 164 * scaleX,
-                  top: 65 * scaleY,
-                  child: Text(
-                    'Giriş',
-                    style: TextStyle(
-                      color: AppColors.white,
-                      fontSize: 20 * scaleX,
-                      fontWeight: FontWeight.w600,
-                      height: 28 / 20,
-                    ),
-                  ),
-                ),
-                Positioned(
-                  left: 24 * scaleX,
-                  top: 128 * scaleY,
-                  child: Text(
-                    'Sosyo-Bel',
-                    style: TextStyle(
-                      color: AppColors.primary,
-                      fontSize: 24 * scaleX,
-                      fontWeight: FontWeight.w600,
-                      height: 28 / 24,
-                    ),
-                  ),
-                ),
-                Positioned(
-                  left: 25 * scaleX,
-                  top: 162 * scaleY,
-                  child: Text(
-                    'Saha Ekipleri Modülü',
-                    style: TextStyle(
-                      color: AppColors.neutralDark,
-                      fontSize: 12 * scaleX,
-                      fontWeight: FontWeight.w500,
-                      height: 16 / 12,
-                    ),
-                  ),
-                ),
-                Positioned(
-                  left: 116 * scaleX,
-                  top: 227 * scaleY,
-                  width: 150 * scaleX,
-                  height: 150 * scaleX,
-                  child: Image.asset(
-                    AppAssets.logo,
-                    fit: BoxFit.contain,
-                    filterQuality: FilterQuality.high,
-                  ),
-                ),
-                Positioned(
-                  left: 24 * scaleX,
-                  top: 409 * scaleY,
-                  width: 327 * scaleX,
-                  height: 44 * scaleX,
-                  child: _LoginTextField(
-                    fieldKey: const Key('login-username-field'),
-                    controller: _usernameController,
-                    hintText: 'Kullanıcı Adı',
-                    scale: scaleX,
-                    keyboardType: TextInputType.text,
-                    textInputAction: TextInputAction.next,
-                    autofillHints: const [AutofillHints.username],
-                    enabled: !_isBusy,
-                  ),
-                ),
-                Positioned(
-                  left: 24 * scaleX,
-                  top: 473 * scaleY,
-                  width: 327 * scaleX,
-                  height: 44 * scaleX,
-                  child: _LoginTextField(
-                    fieldKey: const Key('login-password-field'),
-                    controller: _passwordController,
-                    hintText: 'Parola',
-                    scale: scaleX,
-                    obscureText: _obscurePassword,
-                    textInputAction: TextInputAction.done,
-                    autofillHints: const [AutofillHints.password],
-                    onSubmitted: (_) => _submit(),
-                    enabled: !_isBusy,
-                    suffixIcon: IconButton(
-                      key: const Key('login-password-visibility-toggle'),
-                      tooltip: _obscurePassword
-                          ? 'Parolayı göster'
-                          : 'Parolayı gizle',
-                      onPressed: _isBusy
-                          ? null
-                          : () => setState(
-                              () => _obscurePassword = !_obscurePassword,
-                            ),
-                      icon: Icon(
-                        _obscurePassword
-                            ? Icons.visibility_off_outlined
-                            : Icons.visibility_outlined,
-                        color: AppColors.neutralPlaceholder,
-                        size: 18 * scaleX,
-                      ),
-                    ),
-                  ),
-                ),
-                if (visibleErrorMessage case final message?)
-                  Positioned(
-                    left: 24 * scaleX,
-                    top: 528 * scaleY,
-                    width: 327 * scaleX,
-                    child: Semantics(
-                      liveRegion: true,
+        resizeToAvoidBottomInset: true,
+        body: SafeArea(
+          bottom: false,
+          child: LayoutBuilder(
+            builder: (context, constraints) {
+              final scale = (constraints.maxWidth / 375)
+                  .clamp(0.88, 1.12)
+                  .toDouble();
+
+              return Column(
+                children: [
+                  SizedBox(
+                    height: 68 * scale,
+                    child: Center(
                       child: Text(
-                        message,
-                        key: const Key('login-error-message'),
-                        maxLines: 2,
-                        overflow: TextOverflow.ellipsis,
-                        textAlign: TextAlign.center,
+                        'Giriş',
                         style: TextStyle(
-                          color: AppColors.statusRejected,
-                          fontSize: 11 * scaleX,
-                          fontWeight: FontWeight.w500,
-                          height: 1.4,
+                          color: AppColors.white,
+                          fontSize: 20 * scale,
+                          fontWeight: FontWeight.w700,
                         ),
                       ),
                     ),
                   ),
-                Positioned(
-                  left: 24 * scaleX,
-                  top: 585 * scaleY,
-                  width: 327 * scaleX,
-                  height: 44 * scaleX,
-                  child: Semantics(
-                    button: true,
-                    enabled: !_isBusy,
-                    label: 'Giriş',
-                    child: Material(
-                      color: _isBusy
-                          ? AppColors.primaryMuted
-                          : AppColors.primarySecondary,
-                      borderRadius: BorderRadius.circular(15 * scaleX),
-                      child: InkWell(
-                        key: const Key('login-submit-button'),
-                        onTap: _isBusy ? null : _submit,
-                        borderRadius: BorderRadius.circular(15 * scaleX),
-                        child: Center(
-                          child: _isBusy
-                              ? SizedBox.square(
-                                  dimension: 20 * scaleX,
-                                  child: const CircularProgressIndicator(
-                                    key: Key('login-loading-indicator'),
-                                    color: AppColors.white,
-                                    strokeWidth: 2,
-                                  ),
-                                )
-                              : Text(
-                                  'Giriş',
-                                  style: TextStyle(
-                                    color: AppColors.white,
-                                    fontSize: 16 * scaleX,
-                                    fontWeight: FontWeight.w500,
-                                    height: 24 / 16,
+                  Expanded(
+                    child: DecoratedBox(
+                      decoration: const BoxDecoration(
+                        color: AppColors.white,
+                        borderRadius: BorderRadius.vertical(
+                          top: Radius.circular(30),
+                        ),
+                      ),
+                      child: LayoutBuilder(
+                        builder: (context, contentConstraints) {
+                          return SingleChildScrollView(
+                            keyboardDismissBehavior:
+                                ScrollViewKeyboardDismissBehavior.onDrag,
+                            padding: EdgeInsets.fromLTRB(
+                              24 * scale,
+                              24 * scale,
+                              24 * scale,
+                              16 * scale,
+                            ),
+                            child: ConstrainedBox(
+                              constraints: BoxConstraints(
+                                minHeight:
+                                    (contentConstraints.maxHeight - 40 * scale)
+                                        .clamp(0.0, double.infinity)
+                                        .toDouble(),
+                              ),
+                              child: IntrinsicHeight(
+                                child: AutofillGroup(
+                                  child: Column(
+                                    crossAxisAlignment:
+                                        CrossAxisAlignment.stretch,
+                                    children: [
+                                      _LoginBrand(scale: scale),
+                                      SizedBox(height: 34 * scale),
+                                      const _FormLabel('Kullanıcı Adı'),
+                                      SizedBox(height: 8 * scale),
+                                      SizedBox(
+                                        height: 52 * scale,
+                                        child: _LoginTextField(
+                                          fieldKey: const Key(
+                                            'login-username-field',
+                                          ),
+                                          controller: _usernameController,
+                                          hintText: 'Kullanıcı adınızı girin',
+                                          scale: scale,
+                                          prefixIcon:
+                                              Icons.person_outline_rounded,
+                                          keyboardType: TextInputType.text,
+                                          textInputAction: TextInputAction.next,
+                                          autofillHints: const [
+                                            AutofillHints.username,
+                                          ],
+                                          enabled: !_isBusy,
+                                        ),
+                                      ),
+                                      SizedBox(height: 18 * scale),
+                                      const _FormLabel('Parola'),
+                                      SizedBox(height: 8 * scale),
+                                      SizedBox(
+                                        height: 52 * scale,
+                                        child: _LoginTextField(
+                                          fieldKey: const Key(
+                                            'login-password-field',
+                                          ),
+                                          controller: _passwordController,
+                                          hintText: 'Parolanızı girin',
+                                          scale: scale,
+                                          prefixIcon:
+                                              Icons.lock_outline_rounded,
+                                          obscureText: _obscurePassword,
+                                          textInputAction: TextInputAction.done,
+                                          autofillHints: const [
+                                            AutofillHints.password,
+                                          ],
+                                          onSubmitted: (_) => _submit(),
+                                          enabled: !_isBusy,
+                                          suffixIcon: IconButton(
+                                            key: const Key(
+                                              'login-password-visibility-toggle',
+                                            ),
+                                            tooltip: _obscurePassword
+                                                ? 'Parolayı göster'
+                                                : 'Parolayı gizle',
+                                            onPressed: _isBusy
+                                                ? null
+                                                : () => setState(
+                                                    () => _obscurePassword =
+                                                        !_obscurePassword,
+                                                  ),
+                                            icon: Icon(
+                                              _obscurePassword
+                                                  ? Icons
+                                                        .visibility_off_outlined
+                                                  : Icons.visibility_outlined,
+                                              color: AppColors.neutralSecondary,
+                                              size: 20 * scale,
+                                            ),
+                                          ),
+                                        ),
+                                      ),
+                                      if (visibleErrorMessage
+                                          case final message?) ...[
+                                        SizedBox(height: 14 * scale),
+                                        _LoginErrorMessage(
+                                          message: message,
+                                          scale: scale,
+                                        ),
+                                      ],
+                                      SizedBox(height: 24 * scale),
+                                      _LoginButton(
+                                        isBusy: _isBusy,
+                                        scale: scale,
+                                        onPressed: _submit,
+                                      ),
+                                      const Spacer(),
+                                      SizedBox(height: 28 * scale),
+                                      Text(
+                                        'Cats Yazılım San. Tic. Ltd. Şti.',
+                                        textAlign: TextAlign.center,
+                                        style: TextStyle(
+                                          color: AppColors.neutralSecondary,
+                                          fontSize: 11 * scale,
+                                          fontWeight: FontWeight.w400,
+                                        ),
+                                      ),
+                                      SizedBox(height: 4 * scale),
+                                      Text(
+                                        'Sosyo-Bel App',
+                                        textAlign: TextAlign.center,
+                                        style: TextStyle(
+                                          color: AppColors.primary,
+                                          fontSize: 11 * scale,
+                                          fontWeight: FontWeight.w600,
+                                        ),
+                                      ),
+                                      SizedBox(height: 10 * scale),
+                                    ],
                                   ),
                                 ),
-                        ),
+                              ),
+                            ),
+                          );
+                        },
                       ),
                     ),
                   ),
-                ),
-                Positioned(
-                  left: 0,
-                  right: 0,
-                  top: 741 * scaleY,
-                  child: Text(
-                    'Cats Yazılım San. Tic. Ltd. Şti.',
-                    textAlign: TextAlign.center,
-                    style: TextStyle(
-                      color: AppColors.neutralDark,
-                      fontSize: 12 * scaleX,
-                      fontWeight: FontWeight.w400,
-                      height: 16 / 12,
-                    ),
-                  ),
-                ),
-                Positioned(
-                  left: 0,
-                  right: 0,
-                  top: 762 * scaleY,
-                  child: Text(
-                    'Sosyo-Bel App',
-                    textAlign: TextAlign.center,
-                    style: TextStyle(
-                      color: AppColors.primary,
-                      fontSize: 12 * scaleX,
-                      fontWeight: FontWeight.w600,
-                      height: 16 / 12,
-                    ),
-                  ),
-                ),
-              ],
-            ),
+                ],
+              );
+            },
           ),
         ),
       ),
@@ -344,11 +288,177 @@ class _LoginPageState extends State<LoginPage> {
   }
 }
 
+class _LoginBrand extends StatelessWidget {
+  const _LoginBrand({required this.scale});
+
+  final double scale;
+
+  @override
+  Widget build(BuildContext context) {
+    return Column(
+      children: [
+        SizedBox.square(
+          dimension: 84 * scale,
+          child: Image.asset(
+            AppAssets.splashLogo,
+            key: const Key('login-brand-logo'),
+            fit: BoxFit.contain,
+            filterQuality: FilterQuality.high,
+          ),
+        ),
+        SizedBox(height: 14 * scale),
+        Text(
+          'Sosyo-Bel',
+          textAlign: TextAlign.center,
+          style: TextStyle(
+            color: AppColors.primary,
+            fontSize: 24 * scale,
+            fontWeight: FontWeight.w700,
+            height: 1.15,
+          ),
+        ),
+        SizedBox(height: 5 * scale),
+        Text(
+          'Saha Ekipleri Modülü',
+          textAlign: TextAlign.center,
+          style: TextStyle(
+            color: AppColors.neutralSecondary,
+            fontSize: 12 * scale,
+            fontWeight: FontWeight.w500,
+            height: 1.35,
+          ),
+        ),
+      ],
+    );
+  }
+}
+
+class _FormLabel extends StatelessWidget {
+  const _FormLabel(this.text);
+
+  final String text;
+
+  @override
+  Widget build(BuildContext context) {
+    return Text(
+      text,
+      style: const TextStyle(
+        color: AppColors.neutralDark,
+        fontSize: 13,
+        fontWeight: FontWeight.w600,
+        height: 1.3,
+      ),
+    );
+  }
+}
+
+class _LoginErrorMessage extends StatelessWidget {
+  const _LoginErrorMessage({required this.message, required this.scale});
+
+  final String message;
+  final double scale;
+
+  @override
+  Widget build(BuildContext context) {
+    return Semantics(
+      liveRegion: true,
+      child: DecoratedBox(
+        decoration: BoxDecoration(
+          color: AppColors.statusRejected.withValues(alpha: 0.08),
+          borderRadius: BorderRadius.circular(12 * scale),
+        ),
+        child: Padding(
+          padding: EdgeInsets.symmetric(
+            horizontal: 12 * scale,
+            vertical: 10 * scale,
+          ),
+          child: Row(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Icon(
+                Icons.error_outline_rounded,
+                color: AppColors.statusRejected,
+                size: 18 * scale,
+              ),
+              SizedBox(width: 8 * scale),
+              Expanded(
+                child: Text(
+                  message,
+                  key: const Key('login-error-message'),
+                  style: TextStyle(
+                    color: AppColors.statusRejected,
+                    fontSize: 11 * scale,
+                    fontWeight: FontWeight.w500,
+                    height: 1.4,
+                  ),
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+class _LoginButton extends StatelessWidget {
+  const _LoginButton({
+    required this.isBusy,
+    required this.scale,
+    required this.onPressed,
+  });
+
+  final bool isBusy;
+  final double scale;
+  final VoidCallback onPressed;
+
+  @override
+  Widget build(BuildContext context) {
+    return SizedBox(
+      height: 50 * scale,
+      child: Semantics(
+        button: true,
+        enabled: !isBusy,
+        label: 'Giriş',
+        child: Material(
+          color: isBusy ? AppColors.primaryMuted : AppColors.primary,
+          borderRadius: BorderRadius.circular(14 * scale),
+          child: InkWell(
+            key: const Key('login-submit-button'),
+            onTap: isBusy ? null : onPressed,
+            borderRadius: BorderRadius.circular(14 * scale),
+            child: Center(
+              child: isBusy
+                  ? SizedBox.square(
+                      dimension: 20 * scale,
+                      child: const CircularProgressIndicator(
+                        key: Key('login-loading-indicator'),
+                        color: AppColors.white,
+                        strokeWidth: 2,
+                      ),
+                    )
+                  : Text(
+                      'Giriş',
+                      style: TextStyle(
+                        color: AppColors.white,
+                        fontSize: 16 * scale,
+                        fontWeight: FontWeight.w600,
+                      ),
+                    ),
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+}
+
 class _LoginTextField extends StatelessWidget {
   const _LoginTextField({
     required this.controller,
     required this.hintText,
     required this.scale,
+    required this.prefixIcon,
     this.keyboardType,
     this.textInputAction,
     this.obscureText = false,
@@ -362,6 +472,7 @@ class _LoginTextField extends StatelessWidget {
   final TextEditingController controller;
   final String hintText;
   final double scale;
+  final IconData prefixIcon;
   final TextInputType? keyboardType;
   final TextInputAction? textInputAction;
   final bool obscureText;
@@ -374,8 +485,8 @@ class _LoginTextField extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final border = OutlineInputBorder(
-      borderRadius: BorderRadius.circular(15 * scale),
-      borderSide: const BorderSide(color: AppColors.neutralBorder, width: 1),
+      borderRadius: BorderRadius.circular(14 * scale),
+      borderSide: const BorderSide(color: Color(0xFFE4E1EF), width: 1),
     );
 
     return TextField(
@@ -393,33 +504,41 @@ class _LoginTextField extends StatelessWidget {
         color: AppColors.neutralDark,
         fontSize: 14 * scale,
         fontWeight: FontWeight.w500,
-        height: 1.5,
+        height: 1.3,
       ),
       decoration: InputDecoration(
         hintText: hintText,
         hintStyle: TextStyle(
           color: AppColors.neutralPlaceholder,
           fontSize: 14 * scale,
-          fontWeight: FontWeight.w500,
-          height: 1.5,
+          fontWeight: FontWeight.w400,
+          height: 1.3,
         ),
         isDense: true,
         filled: true,
-        fillColor: AppColors.white,
+        fillColor: const Color(0xFFF8F7FC),
         contentPadding: EdgeInsets.symmetric(
-          horizontal: 12 * scale,
-          vertical: 10 * scale,
+          horizontal: 14 * scale,
+          vertical: 14 * scale,
         ),
         enabledBorder: border,
         focusedBorder: border.copyWith(
-          borderSide: const BorderSide(color: AppColors.primary, width: 1),
+          borderSide: const BorderSide(color: AppColors.primary, width: 1.4),
         ),
-        // Etkileşimli parola ikonu, alanın sağındaki 46x44 bölgenin tamamını
-        // dokunma hedefi olarak kullanır.
+        disabledBorder: border,
+        prefixIcon: Icon(
+          prefixIcon,
+          color: AppColors.neutralSecondary,
+          size: 20 * scale,
+        ),
+        prefixIconConstraints: BoxConstraints.tightFor(
+          width: 48 * scale,
+          height: 52 * scale,
+        ),
         suffixIcon: suffixIcon,
         suffixIconConstraints: BoxConstraints.tightFor(
-          width: 46 * scale,
-          height: 44 * scale,
+          width: 48 * scale,
+          height: 52 * scale,
         ),
       ),
     );

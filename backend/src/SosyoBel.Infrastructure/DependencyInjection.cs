@@ -1,12 +1,14 @@
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.DependencyInjection.Extensions;
 using SosyoBel.Application.Applications;
 using SosyoBel.Application.FieldTasks;
 using SosyoBel.Application.Kps;
 using SosyoBel.Application.References;
 using SosyoBel.Application.WorkItems;
 using SosyoBel.Infrastructure.Kps;
+using SosyoBel.Infrastructure.Logging;
 using SosyoBel.Infrastructure.Persistence;
 using SosyoBel.Infrastructure.Storage;
 
@@ -22,6 +24,8 @@ public static class DependencyInjection
         this IServiceCollection services,
         IConfiguration configuration)
     {
+        // Log sağlayıcısı kurulmasa da servislerin teşhis bağlamı çözülebilir.
+        services.TryAddScoped<RequestLogContext>();
         var connectionString = configuration.GetConnectionString("SosyoBel");
         if (string.IsNullOrWhiteSpace(connectionString))
         {

@@ -1,0 +1,8 @@
+<?xml version='1.0' encoding='utf-8'?>
+<!-- Android 12 sistem maskesinin oval kare logoyu daireye kırpmasını önler. -->
+<inset xmlns:android='http://schemas.android.com/apk/res/android'
+    android:inset='20dp'>
+    <bitmap
+        android:gravity='fill'
+        android:src='@mipmap/launch_image' />
+</inset>

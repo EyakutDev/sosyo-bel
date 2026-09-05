@@ -1,8 +1,11 @@
 /// Uygulama içinde kullanılan yerel görsel varlık yollarını tek noktada tutar.
 abstract final class AppAssets {
   static const logo = 'assets/images/sosyo_bel_logo.png';
+  static const splashLogo = 'assets/images/sosyo_bel_header_logo.png';
   static const downArrow = 'assets/icons/down_arrow.svg';
   static const municipalityAvatar = 'assets/images/municipality_avatar.png';
+  static const battalgaziMunicipalityLogo =
+      'assets/images/battalgazi_municipality_logo.png';
   static const notificationBell = 'assets/icons/notification_bell.png';
   static const activityMap = 'assets/images/activity/activity_map.png';
   static const activityMapMask = 'assets/images/activity/activity_map_mask.svg';

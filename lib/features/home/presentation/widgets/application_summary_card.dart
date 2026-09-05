@@ -8,12 +8,18 @@ class ApplicationSummaryCard extends StatelessWidget {
     required this.data,
     required this.scale,
     this.onTap,
+    this.onDelete,
+    this.isDeleting = false,
+    this.deleteButtonKey,
     super.key,
   });
 
   final ApplicationCardViewData data;
   final double scale;
   final VoidCallback? onTap;
+  final VoidCallback? onDelete;
+  final bool isDeleting;
+  final Key? deleteButtonKey;
 
   @override
   Widget build(BuildContext context) {
@@ -61,7 +67,7 @@ class ApplicationSummaryCard extends StatelessWidget {
                 ),
                 Positioned(
                   left: 120 * scale,
-                  right: 16 * scale,
+                  right: (onDelete == null ? 16 : 52) * scale,
                   top: 12 * scale,
                   child: Text(
                     data.fullName,
@@ -134,6 +140,36 @@ class ApplicationSummaryCard extends StatelessWidget {
                     ],
                   ),
                 ),
+                if (onDelete != null)
+                  Positioned(
+                    right: 6 * scale,
+                    top: 2 * scale,
+                    width: 40 * scale,
+                    height: 40 * scale,
+                    child: isDeleting
+                        ? Center(
+                            child: SizedBox(
+                              width: 18 * scale,
+                              height: 18 * scale,
+                              child: const CircularProgressIndicator(
+                                strokeWidth: 2,
+                                color: AppColors.statusRejected,
+                              ),
+                            ),
+                          )
+                        : IconButton(
+                            key: deleteButtonKey,
+                            tooltip: 'Yerel taslağı sil',
+                            padding: EdgeInsets.zero,
+                            visualDensity: VisualDensity.compact,
+                            onPressed: onDelete,
+                            icon: Icon(
+                              Icons.delete_outline_rounded,
+                              size: 22 * scale,
+                              color: AppColors.statusRejected,
+                            ),
+                          ),
+                  ),
               ],
             ),
           ),

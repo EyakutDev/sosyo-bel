@@ -6,6 +6,7 @@ using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Logging;
 using SosyoBel.Application.Applications;
 using SosyoBel.Application.Kps;
+using SosyoBel.Infrastructure.Logging;
 
 namespace SosyoBel.Infrastructure.Persistence;
 
@@ -18,7 +19,8 @@ internal sealed class CompletedApplicationSubmissionService(
     IKpsProfileQuery kpsProfileQuery,
     CompanyApplicationPhotoPreparer photoPreparer,
     TimeProvider timeProvider,
-    ILogger<CompletedApplicationSubmissionService> logger)
+    ILogger<CompletedApplicationSubmissionService> logger,
+    RequestLogContext logContext)
     : ICompletedApplicationSubmissionService
 {
     public async Task<ApplicationLifecycleResult<CompletedApplicationSubmission>>
@@ -27,6 +29,7 @@ internal sealed class CompletedApplicationSubmissionService(
             CancellationToken cancellationToken)
     {
         ArgumentNullException.ThrowIfNull(command);
+        logContext.Stage = RequestLogStage.ValidateSubmission;
         var validation = ValidateAndNormalize(
             command,
             DateOnly.FromDateTime(timeProvider.GetUtcNow().UtcDateTime));
@@ -40,6 +43,7 @@ internal sealed class CompletedApplicationSubmissionService(
             command.IdempotencyKey.Trim());
         var publicToken = publicId.ToString("N");
 
+        logContext.Stage = RequestLogStage.CheckReplay;
         await using var preflightContext =
             await contextFactory.CreateDbContextAsync(cancellationToken);
         var replay = await FindReplayAsync(
@@ -50,6 +54,7 @@ internal sealed class CompletedApplicationSubmissionService(
             cancellationToken);
         if (replay is not null) return replay;
 
+        logContext.Stage = RequestLogStage.ResolveCitizen;
         var citizenMatch = await CompanyCitizenResolver.ResolveAsync(
             preflightContext,
             normalizedDraft.IdentityNumber,
@@ -59,6 +64,7 @@ internal sealed class CompletedApplicationSubmissionService(
 
         // Kullanıcının ekranda gördüğü KPS verisine güvenilmez; kayıt öncesinde
         // kurum servisi aynı kimlik ve doğum tarihiyle sunucudan tekrar okunur.
+        logContext.Stage = RequestLogStage.VerifyKps;
         var kpsResult = await kpsProfileQuery.GetProfileAsync(
             new KpsProfileActor(command.Actor.ActorUserId.Trim()),
             new KpsLookupCriteria(
@@ -71,6 +77,7 @@ internal sealed class CompletedApplicationSubmissionService(
             return MapKpsError(kpsResult);
         }
 
+        logContext.Stage = RequestLogStage.StorePhotos;
         var photoPreparation = await photoPreparer.PrepareAsync(
             citizenMatch.CitizenId!.Value,
             publicId,
@@ -97,6 +104,7 @@ internal sealed class CompletedApplicationSubmissionService(
             var strategy = preflightContext.Database.CreateExecutionStrategy();
             var outcome = await strategy.ExecuteAsync(async () =>
             {
+                logContext.Stage = RequestLogStage.BeginTransaction;
                 await using var context =
                     await contextFactory.CreateDbContextAsync(cancellationToken);
                 await using var transaction =
@@ -106,6 +114,7 @@ internal sealed class CompletedApplicationSubmissionService(
 
                 // Aynı istek iki sunucu düğümüne eşzamanlı ulaşırsa transaction
                 // içinde tekrar kontrol edilir; ikinci dbo.Basvurular satırı açılmaz.
+                logContext.Stage = RequestLogStage.CheckTransactionReplay;
                 var transactionReplay = await FindReplayAsync(
                     context,
                     publicToken,
@@ -114,6 +123,7 @@ internal sealed class CompletedApplicationSubmissionService(
                     cancellationToken);
                 if (transactionReplay is not null)
                 {
+                    logContext.Stage = RequestLogStage.CommitTransaction;
                     await transaction.CommitAsync(cancellationToken);
                     return new SubmissionExecutionOutcome(
                         transactionReplay,
@@ -133,6 +143,7 @@ internal sealed class CompletedApplicationSubmissionService(
                 var coreWriter = new CompanyApplicationCoreWriter(
                     context,
                     timeProvider);
+                logContext.Stage = RequestLogStage.CreateApplication;
                 var coreResult = await coreWriter.CreatePendingAsync(
                     command.Actor.ActorUserId,
                     new CompanyApplicationCoreInput(
@@ -149,6 +160,7 @@ internal sealed class CompletedApplicationSubmissionService(
                         CreatedApplication: false);
                 }
 
+                logContext.Stage = RequestLogStage.PrepareFamily;
                 var familyResult =
                     await CompanyApplicationFamilyPreparer.PrepareAsync(
                         context,
@@ -163,6 +175,7 @@ internal sealed class CompletedApplicationSubmissionService(
                         CreatedApplication: false);
                 }
 
+                logContext.Stage = RequestLogStage.SaveFamilyAndPhotos;
                 context.AddRange(familyResult.Records ?? []);
                 var uploadedAt = timeProvider.GetLocalNow().DateTime;
                 var photoRecords = photoPreparation.Records?
@@ -174,6 +187,7 @@ internal sealed class CompletedApplicationSubmissionService(
                     .ToArray() ?? [];
                 context.AddRange(photoRecords);
                 await context.SaveChangesAsync(cancellationToken);
+                logContext.Stage = RequestLogStage.CommitTransaction;
                 await transaction.CommitAsync(cancellationToken);
 
                 return new SubmissionExecutionOutcome(
@@ -199,9 +213,9 @@ internal sealed class CompletedApplicationSubmissionService(
         {
             await photoPreparer.DiscardAsync(storedPhotos);
             logger.LogWarning(
+                new EventId(1002),
                 exception,
-                "Company application transaction conflicted for {PublicToken}.",
-                publicToken);
+                "Company application transaction conflicted.");
             return Conflict(
                 "company_application_database_conflict",
                 "Başvuru mevcut bir şirket kaydıyla çakıştı.");

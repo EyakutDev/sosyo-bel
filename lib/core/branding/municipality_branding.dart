@@ -13,10 +13,11 @@ final class MunicipalityBranding {
     this.localLogoAssetPath = AppAssets.municipalityAvatar,
   });
 
-  /// Backend bağlı değilken mevcut tasarımı koruyan varsayılan kimlik.
+  /// Backend bağlı değilken uygulamada kullanılan varsayılan belediye kimliği.
   static const demo = MunicipalityBranding(
-    id: 'demo-municipality',
-    displayName: 'Demolar Belediyesi',
+    id: 'battalgazi-municipality',
+    displayName: 'Battalgazi Belediyesi',
+    localLogoAssetPath: AppAssets.battalgaziMunicipalityLogo,
   );
 
   final String id;

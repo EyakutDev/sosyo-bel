@@ -28,6 +28,7 @@ import 'package:sosyo_bel/features/home/presentation/home_page.dart';
 import 'package:sosyo_bel/features/home/data/local_draft_aware_work_items_repository.dart';
 import 'package:sosyo_bel/features/home/domain/work_item.dart';
 import 'package:sosyo_bel/features/home/domain/work_items_repository.dart';
+import 'package:sosyo_bel/features/splash/presentation/splash_page.dart';
 
 /// Sosyo-Bel'in şu anda uygulanmış ekranları arasındaki geçişleri tek yerde
 /// birleştirir.
@@ -36,6 +37,8 @@ import 'package:sosyo_bel/features/home/domain/work_items_repository.dart';
 /// yeni akışlar geldiğinde ekran widget'larını değiştirmeden navigasyon
 /// güncellenebilir.
 class AppFlow extends StatefulWidget {
+  static const defaultMinimumSplashDuration = Duration(milliseconds: 2000);
+
   const AppFlow({
     required this.authRepository,
     required this.applicationRepository,
@@ -44,6 +47,7 @@ class AppFlow extends StatefulWidget {
     required this.localApplicationDraftRepository,
     required this.workItemsRepository,
     this.initialMunicipalityBranding = MunicipalityBranding.demo,
+    this.minimumSplashDuration = defaultMinimumSplashDuration,
     super.key,
   });
 
@@ -53,6 +57,7 @@ class AppFlow extends StatefulWidget {
   final KpsProfileRepository kpsProfileRepository;
   final LocalApplicationDraftRepository localApplicationDraftRepository;
   final WorkItemsRepository workItemsRepository;
+  final Duration minimumSplashDuration;
 
   /// Başarılı giriş cevabı gelene kadar tasarım önizlemesinde kullanılan kimlik.
   final MunicipalityBranding initialMunicipalityBranding;
@@ -85,10 +90,12 @@ class _AppFlowState extends State<AppFlow> {
 
   @override
   Widget build(BuildContext context) {
+    if (_isRestoringSession) return const SplashPage();
+
     return Builder(
       builder: (loginContext) {
         return LoginPage(
-          isRestoringSession: _isRestoringSession,
+          isRestoringSession: false,
           externalErrorMessage: _restoreErrorMessage,
           onLogin: (username, password) =>
               _login(loginContext, username: username, password: password),
@@ -98,8 +105,10 @@ class _AppFlowState extends State<AppFlow> {
   }
 
   Future<void> _restoreSession() async {
+    final stopwatch = Stopwatch()..start();
     try {
       final session = await widget.authRepository.restoreSession();
+      await _waitForMinimumSplashDuration(stopwatch.elapsed);
       if (!mounted) return;
 
       setState(() => _isRestoringSession = false);
@@ -109,14 +118,22 @@ class _AppFlowState extends State<AppFlow> {
         _openActionSelection(context);
       }
     } on ApiException catch (error) {
+      await _waitForMinimumSplashDuration(stopwatch.elapsed);
       _finishRestoreWithError(error.message);
     } on TokenStorageException catch (error) {
+      await _waitForMinimumSplashDuration(stopwatch.elapsed);
       _finishRestoreWithError(error.message);
     } catch (_) {
+      await _waitForMinimumSplashDuration(stopwatch.elapsed);
       _finishRestoreWithError(
         'Kayıtlı oturum kontrol edilemedi. Kullanıcı adı ve parolanızla giriş yapın.',
       );
     }
+  }
+
+  Future<void> _waitForMinimumSplashDuration(Duration elapsed) async {
+    final remaining = widget.minimumSplashDuration - elapsed;
+    if (remaining > Duration.zero) await Future<void>.delayed(remaining);
   }
 
   void _finishRestoreWithError(String message) {
@@ -221,6 +238,7 @@ class _AppFlowState extends State<AppFlow> {
           municipalityBranding: _municipalityBranding,
           workItemsRepository: _currentUserWorkItemsRepository(),
           onOpenEditableDraft: (item) => _openSavedDraft(tasksContext, item),
+          onDeleteLocalDraft: _deleteSavedDraft,
         ),
       ),
     );
@@ -254,6 +272,19 @@ class _AppFlowState extends State<AppFlow> {
     _resetApplicationOperationKeys();
     if (!mounted || !context.mounted) return;
     _pushDraftForm(context, references);
+  }
+
+  Future<void> _deleteSavedDraft(WorkItem item) async {
+    final localDraftId = item.localDraftId;
+    if (!item.isLocalDraft || localDraftId == null) {
+      throw StateError('Silinecek yerel taslak bulunamadı.');
+    }
+
+    await widget.localApplicationDraftRepository.delete(
+      ownerUserId: _requiredAuthenticatedUserId,
+      localDraftId: localDraftId,
+    );
+    if (_localDraftId == localDraftId) _resetApplicationDraft();
   }
 
   void _pushDraftForm(
@@ -357,8 +388,9 @@ class _AppFlowState extends State<AppFlow> {
           onBack: () => Navigator.of(completionContext).pop(),
           onSaveDraft: (payload) =>
               _saveDraftAndOpenPendingList(completionContext, payload),
-          onSubmitToBoard: (payload) =>
-              _submitAndOpenPendingList(completionContext, payload),
+          onSubmitToBoard: _submitApplication,
+          onSubmissionConfirmed: () =>
+              _openPendingListAfterSubmission(completionContext),
         ),
       ),
     );
@@ -388,10 +420,7 @@ class _AppFlowState extends State<AppFlow> {
     _replaceApplicationFlowWithPendingList(context);
   }
 
-  Future<void> _submitAndOpenPendingList(
-    BuildContext context,
-    ApplicationCompletionPayload payload,
-  ) async {
+  Future<void> _submitApplication(ApplicationCompletionPayload payload) async {
     _applicationDraft = payload.applicationDraft;
     await widget.applicationRepository.submitCompleted(
       draft: _applicationDraft,
@@ -407,13 +436,13 @@ class _AppFlowState extends State<AppFlow> {
       );
       _localDraftId = null;
     }
+  }
+
+  void _openPendingListAfterSubmission(BuildContext context) {
     if (!mounted || !context.mounted) return;
 
     _resetApplicationDraft();
-    _replaceApplicationFlowWithPendingList(
-      context,
-      successMessage: 'Başvuru başarıyla kurula gönderildi.',
-    );
+    _replaceApplicationFlowWithPendingList(context);
   }
 
   void _replaceApplicationFlowWithPendingList(
@@ -428,6 +457,7 @@ class _AppFlowState extends State<AppFlow> {
           municipalityBranding: _municipalityBranding,
           workItemsRepository: _currentUserWorkItemsRepository(),
           onOpenEditableDraft: (item) => _openSavedDraft(homeContext, item),
+          onDeleteLocalDraft: _deleteSavedDraft,
         ),
       ),
       _keepApplicationEntryRoute,

@@ -31,9 +31,25 @@ void main() {
     expect(find.text('Başvuru Yap'), findsOneWidget);
     expect(find.text('Görevler'), findsOneWidget);
     expect(
+      find.text('Yeni sosyal yardım başvurusu oluşturun.'),
+      findsOneWidget,
+    );
+    expect(find.text('Görevlerinizi görüntüleyin ve yönetin.'), findsOneWidget);
+    expect(
+      find.byKey(const Key('action-selection-brand-logo')),
+      findsOneWidget,
+    );
+    expect(find.text('Yapmak istediğiniz işlemi seçiniz'), findsOneWidget);
+    expect(
       find.byKey(const Key('action-selection-logout-button')),
       findsOneWidget,
     );
+
+    final logoutButton = find.byKey(
+      const Key('action-selection-logout-button'),
+    );
+    expect(tester.getSize(logoutButton), const Size(150, 44));
+    expect(tester.getCenter(logoutButton).dx, closeTo(187.5, 0.01));
   });
 
   testWidgets('seçilen işlemin callback fonksiyonunu çalıştırır', (

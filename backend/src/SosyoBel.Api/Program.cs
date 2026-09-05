@@ -4,6 +4,7 @@ using SosyoBel.Api;
 using SosyoBel.Api.Applications;
 using SosyoBel.Api.Authentication;
 using SosyoBel.Api.Kps;
+using SosyoBel.Api.Logging;
 using SosyoBel.Api.OpenApi;
 using SosyoBel.Api.References;
 using SosyoBel.Api.WorkItems;
@@ -12,6 +13,7 @@ using SosyoBel.Infrastructure.Health;
 using SosyoBel.Infrastructure.Identity;
 
 var builder = WebApplication.CreateBuilder(args);
+builder.AddSosyoBelErrorLogging();
 
 // Program.cs composition root olarak kalır: katmanların gerçek uygulamaları burada
 // bağlanır; başvuru, kimlik veya KPS iş kuralları bu dosyada uygulanmaz.
@@ -33,7 +35,13 @@ var app = builder.Build();
 
 // Sıra güvenlik davranışının parçasıdır: authentication kullanıcıyı oluşturur,
 // authorization ise endpoint çalışmadan önce şirketin mevcut Identity rollerini uygular.
-app.UseExceptionHandler();
+app.UseMiddleware<RequestLogScopeMiddleware>();
+app.UseExceptionHandler(new ExceptionHandlerOptions
+{
+    // .NET 10'da ele alınan exception'larda da güvenli hata kaydı üretilsin.
+    // HTTP hata cevabı mevcut ProblemDetails davranışında kalır.
+    SuppressDiagnosticsCallback = _ => false,
+});
 app.UseRateLimiter();
 app.UseAuthentication();
 app.UseAuthorization();

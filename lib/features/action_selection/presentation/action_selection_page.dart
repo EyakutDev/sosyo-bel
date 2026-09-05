@@ -31,6 +31,7 @@ class _ActionSelectionPageState extends State<ActionSelectionPage> {
   @override
   Widget build(BuildContext context) {
     final scale = MediaQuery.sizeOf(context).width / _referenceWidth;
+    final bottomSafeArea = MediaQuery.paddingOf(context).bottom;
 
     return AnnotatedRegion<SystemUiOverlayStyle>(
       value: const SystemUiOverlayStyle(
@@ -64,28 +65,48 @@ class _ActionSelectionPageState extends State<ActionSelectionPage> {
               ),
               Positioned(
                 left: 24 * scale,
-                top: 76 * scale,
-                child: Text(
-                  'Sosyo-Bel',
-                  style: TextStyle(
-                    color: AppColors.white,
-                    fontSize: 24 * scale,
-                    fontWeight: FontWeight.w600,
-                    height: 28 / 24,
-                  ),
-                ),
-              ),
-              Positioned(
-                left: 24 * scale,
-                top: 119 * scale,
-                child: Text(
-                  'Yapmak istediğiniz işlemi seçiniz',
-                  style: TextStyle(
-                    color: AppColors.white,
-                    fontSize: 14 * scale,
-                    fontWeight: FontWeight.w400,
-                    height: 21 / 14,
-                  ),
+                right: 24 * scale,
+                top: 70 * scale,
+                child: Row(
+                  children: [
+                    ClipRRect(
+                      borderRadius: BorderRadius.circular(12 * scale),
+                      child: Image.asset(
+                        'assets/images/sosyo_bel_header_logo.png',
+                        key: const Key('action-selection-brand-logo'),
+                        width: 48 * scale,
+                        height: 48 * scale,
+                        fit: BoxFit.cover,
+                      ),
+                    ),
+                    SizedBox(width: 12 * scale),
+                    Expanded(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text(
+                            'Sosyo-Bel',
+                            style: TextStyle(
+                              color: AppColors.white,
+                              fontSize: 24 * scale,
+                              fontWeight: FontWeight.w600,
+                              height: 28 / 24,
+                            ),
+                          ),
+                          SizedBox(height: 4 * scale),
+                          Text(
+                            'Yapmak istediğiniz işlemi seçiniz',
+                            style: TextStyle(
+                              color: AppColors.white,
+                              fontSize: 14 * scale,
+                              fontWeight: FontWeight.w400,
+                              height: 21 / 14,
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ],
                 ),
               ),
               Positioned(
@@ -117,28 +138,32 @@ class _ActionSelectionPageState extends State<ActionSelectionPage> {
                     SizedBox(height: 32 * scale),
                     _ActionCard(
                       title: 'Başvuru Yap',
-                      description:
-                          'Yeni bir sosyal yardım başvurusu oluşturun.',
+                      description: 'Yeni sosyal yardım başvurusu oluşturun.',
                       icon: Icons.description_outlined,
                       onTap: _isLoggingOut ? null : widget.onNewApplication,
                       scale: scale,
                     ),
-                    SizedBox(height: 20 * scale),
+                    SizedBox(height: 14 * scale),
                     _ActionCard(
                       title: 'Görevler',
-                      description:
-                          'Bekleyen ve tamamlanmış görevlerinizi görüntüleyin.',
+                      description: 'Görevlerinizi görüntüleyin ve yönetin.',
                       icon: Icons.assignment_outlined,
                       onTap: _isLoggingOut ? null : widget.onTasks,
                       scale: scale,
                     ),
-                    SizedBox(height: 32 * scale),
-                    _LogoutButton(
-                      isLoading: _isLoggingOut,
-                      scale: scale,
-                      onTap: _isLoggingOut ? null : _confirmAndLogout,
-                    ),
                   ],
+                ),
+              ),
+              Positioned(
+                left: 0,
+                right: 0,
+                bottom: (28 * scale) + bottomSafeArea,
+                child: Center(
+                  child: _LogoutButton(
+                    isLoading: _isLoggingOut,
+                    scale: scale,
+                    onTap: _isLoggingOut ? null : _confirmAndLogout,
+                  ),
                 ),
               ),
             ],
@@ -186,21 +211,26 @@ class _LogoutButton extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Material(
-      color: AppColors.statusRejected,
-      borderRadius: BorderRadius.circular(15 * scale),
+      color: AppColors.white,
+      shape: RoundedRectangleBorder(
+        borderRadius: BorderRadius.circular(13 * scale),
+        side: BorderSide(color: AppColors.statusRejected, width: 1.25 * scale),
+      ),
+      clipBehavior: Clip.antiAlias,
       child: InkWell(
         key: const Key('action-selection-logout-button'),
         onTap: onTap,
-        borderRadius: BorderRadius.circular(15 * scale),
+        borderRadius: BorderRadius.circular(13 * scale),
         child: SizedBox(
-          height: 48 * scale,
+          width: 150 * scale,
+          height: 44 * scale,
           child: Center(
             child: isLoading
                 ? SizedBox.square(
-                    dimension: 20 * scale,
+                    dimension: 18 * scale,
                     child: const CircularProgressIndicator(
                       key: Key('action-selection-logout-loading'),
-                      color: AppColors.white,
+                      color: AppColors.statusRejected,
                       strokeWidth: 2,
                     ),
                   )
@@ -209,17 +239,17 @@ class _LogoutButton extends StatelessWidget {
                     children: [
                       Icon(
                         Icons.logout_rounded,
-                        color: AppColors.white,
-                        size: 20 * scale,
+                        color: AppColors.statusRejected,
+                        size: 18 * scale,
                       ),
-                      SizedBox(width: 8 * scale),
+                      SizedBox(width: 7 * scale),
                       Text(
                         'Çıkış Yap',
                         style: TextStyle(
-                          color: AppColors.white,
-                          fontSize: 14 * scale,
+                          color: AppColors.statusRejected,
+                          fontSize: 13 * scale,
                           fontWeight: FontWeight.w600,
-                          height: 20 / 14,
+                          height: 20 / 13,
                         ),
                       ),
                     ],
@@ -251,27 +281,34 @@ class _ActionCard extends StatelessWidget {
   Widget build(BuildContext context) {
     return Material(
       color: AppColors.primarySurface,
-      borderRadius: BorderRadius.circular(15 * scale),
+      elevation: 1.5,
+      shadowColor: AppColors.primary.withValues(alpha: 0.10),
+      surfaceTintColor: Colors.transparent,
+      shape: RoundedRectangleBorder(
+        borderRadius: BorderRadius.circular(17 * scale),
+        side: const BorderSide(color: Color(0xFFE3E0F4)),
+      ),
+      clipBehavior: Clip.antiAlias,
       child: InkWell(
         onTap: onTap,
-        borderRadius: BorderRadius.circular(15 * scale),
+        borderRadius: BorderRadius.circular(17 * scale),
         child: Padding(
           padding: EdgeInsets.symmetric(
-            horizontal: 18 * scale,
-            vertical: 20 * scale,
+            horizontal: 16 * scale,
+            vertical: 14 * scale,
           ),
           child: Row(
             children: [
               Container(
-                width: 52 * scale,
-                height: 52 * scale,
+                width: 48 * scale,
+                height: 48 * scale,
                 decoration: BoxDecoration(
                   color: AppColors.primary,
-                  borderRadius: BorderRadius.circular(15 * scale),
+                  borderRadius: BorderRadius.circular(14 * scale),
                 ),
-                child: Icon(icon, color: AppColors.white, size: 26 * scale),
+                child: Icon(icon, color: AppColors.white, size: 24 * scale),
               ),
-              SizedBox(width: 16 * scale),
+              SizedBox(width: 14 * scale),
               Expanded(
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
@@ -299,10 +336,18 @@ class _ActionCard extends StatelessWidget {
                 ),
               ),
               SizedBox(width: 8 * scale),
-              Icon(
-                Icons.chevron_right_rounded,
-                color: AppColors.primary,
-                size: 24 * scale,
+              Container(
+                width: 30 * scale,
+                height: 30 * scale,
+                decoration: const BoxDecoration(
+                  color: AppColors.white,
+                  shape: BoxShape.circle,
+                ),
+                child: Icon(
+                  Icons.chevron_right_rounded,
+                  color: AppColors.primary,
+                  size: 21 * scale,
+                ),
               ),
             ],
           ),

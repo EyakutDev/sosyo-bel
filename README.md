@@ -79,7 +79,7 @@ Yerel test için önce bu PowerShell penceresine ayarları verin:
 ```powershell
 $env:ASPNETCORE_ENVIRONMENT="Development"
 $env:ConnectionStrings__SosyoBel="Server=localhost;Database=SirketDbTestKopyasi;Integrated Security=True;Encrypt=True;TrustServerCertificate=True"
-$env:ApplicationPhotos__RootPath="C:\sosyobel-test\uploads"
+$env:ApplicationPhotos__RootPath="C:\sosyobel-test\uploads\hanefotograflari"
 $env:Kps__BaseUrl="http://localhost:8090"
 
 # PowerShell 5.1 ve 7 ile uyumlu, en az 32 byte JWT anahtarı üretir.
@@ -183,8 +183,27 @@ Release sürümünde API adresi HTTPS olmalıdır.
 Development ortamında fotoğraf yolu
 `backend/src/SosyoBel.Api/appsettings.Development.json` içinden gelir.
 IIS'te `ApplicationPhotos__RootPath`, şirket web uygulamasının
-`/uploads` adresi olarak sunduğu fiziksel klasör olmalıdır. API veritabanına
-`/uploads/...` biçiminde yol yazar.
+`/uploads/hanefotograflari` adresi olarak sunduğu fiziksel klasör olmalıdır.
+Kurumun bildirdiği klasör için IIS ortam ayarı:
+
+```text
+ApplicationPhotos__RootPath=C:\inetpub\wwwroot\sosyalyardim\wwwroot\uploads\hanefotograflari
+```
+
+API mevcut `dbo.HaneFotograflari.FotografYolu` alanına
+`/uploads/hanefotograflari/<başvuru-kimliği>/<dosya>` biçiminde yol yazar.
+Yeni tablo oluşturulmaz. Application Pool hesabının bu klasörde **Modify**
+yetkisi olmalıdır. Ayrıntılar [backend kurulum notlarında](backend/README.md#6-fotoğraf-klasörü).
+
+## API hata kayıtları
+
+Sunucuda özel bir klasör belirlenip `FileErrorLogging__DirectoryPath` ayarına
+verilir. Boşsa dosya oluşturulmaz; arındırılmış hata bilgisi konsola düşer.
+Bu durum API'nin açılmasını engellemez, ancak konsol çıktısının kalıcı tutulduğu
+varsayılmaz. Kayıtlar Türkiye saatini kullanır. Varsayılan sınırlar 14 gün,
+dosya başına 10 MB ve toplam 200 MB'dır. Hassas istek bilgileri veya ham SQL
+hata mesajları yazılmaz; yeni tablo oluşturulmaz. Ayrıntılar
+[API kurulum belgesinde](backend/README.md#hata-kayıtları).
 
 ## KPS testi
 

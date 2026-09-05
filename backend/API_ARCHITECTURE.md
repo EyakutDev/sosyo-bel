@@ -144,12 +144,34 @@ başvuru oluşturulmaz.
 `LocalApplicationPhotoStorage` dosyayı
 `ApplicationPhotos:RootPath` altında saklar.
 `CompanyApplicationPhotoPreparer` şirket web uygulamasının beklediği
-`/uploads/...` yolunu `HaneFotograflari.FotografYolu` alanına
+`/uploads/hanefotograflari/...` yolunu `HaneFotograflari.FotografYolu` alanına
 yazar.
 
-Bu nedenle IIS'te fiziksel kök, şirket web uygulamasının `/uploads` olarak
-sunduğu klasörle aynı olmalıdır. Bir başvuru en fazla 15 fotoğraf içerir; her
-dosya en fazla 10 MB olabilir.
+Bu nedenle IIS'te fiziksel kök, şirket web uygulamasının
+`/uploads/hanefotograflari` olarak sunduğu klasörle aynı olmalıdır.
+`StorageKey` yalnız `<başvuru-kimliği>/<dosya>` kısmını taşır; dosya deposu
+fiziksel kökü, kayıt hazırlayıcı ise web yolunu bunun önüne ekler. Fiziksel
+disk yolu veritabanına yazılmaz. Bir başvuru en fazla 15 fotoğraf içerir; her
+dosya en fazla 10 MB olabilir. Tablo şeması ve mevcut fotoğraf kayıtları değişmez.
+
+## Hata kaydı
+
+`Api/Logging/ErrorLoggingSetup` güvenli sağlayıcıyı kaydeder.
+`RequestLogScopeMiddleware`, genel hata yakalayıcısından önce çalışır; DI
+hatalarında bile endpoint şablonu ve `traceId` korunur. İsteğe özel
+`RequestLogContext` yalnız aşamayı taşır; transaction ve iş kuralları değişmez.
+
+`SafeFileLoggerProvider` Warning ve üzerini `SafeErrorLogEntry` üzerinden
+arındırır. Ham formatter/mesaj parametreleri, exception mesajı/stack trace
+ve diğer scope'lar yazılmaz. SQL hata numarası, hata türü ve metotlar korunur.
+`RollingErrorFileWriter`, `FileErrorLogging` ayarlarıyla Türkiye saatini,
+günlük/boyut bazlı dosya değişimini ve toplam alan sınırını uygular.
+`FileLogMaintenanceService` yeni hata olmasa bile saatlik temizlik yapar.
+Dosya hatası asıl isteğin sonucunu değiştirmez. Yol boşsa güvenli konsol
+çıktısı kullanılır; kalıcı dosya için sunucuda yol ve yetki gerekir.
+
+Yeni tablo, migration veya log okuma endpointi yoktur. Kurulum/sınırlar
+API README'sinin “Hata kayıtları” bölümündedir.
 
 ## İş listesi
 

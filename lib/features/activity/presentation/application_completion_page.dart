@@ -22,6 +22,7 @@ class ApplicationCompletionPage extends StatefulWidget {
     required this.onBack,
     required this.onSaveDraft,
     required this.onSubmitToBoard,
+    this.onSubmissionConfirmed,
     this.onNoteChanged,
     this.initiallySubmitted = false,
     this.showSubmittedConfirmation = false,
@@ -35,6 +36,7 @@ class ApplicationCompletionPage extends StatefulWidget {
   final VoidCallback onBack;
   final ApplicationCompletionAction onSaveDraft;
   final ApplicationCompletionAction onSubmitToBoard;
+  final VoidCallback? onSubmissionConfirmed;
 
   /// Üst okla forma dönülürse yazılmış notun yeniden yüklenmesini sağlar.
   final ValueChanged<String>? onNoteChanged;
@@ -71,16 +73,12 @@ class _ApplicationCompletionPageState extends State<ApplicationCompletionPage> {
     _isSubmitted = widget.initiallySubmitted;
 
     if (widget.showSubmittedConfirmation) {
-      WidgetsBinding.instance.addPostFrameCallback((_) {
+      WidgetsBinding.instance.addPostFrameCallback((_) async {
         if (!mounted) return;
-        ScaffoldMessenger.of(context)
-          ..hideCurrentSnackBar()
-          ..showSnackBar(
-            const SnackBar(
-              content: Text('Başvuru kurula gönderildi. Artık düzenlenemez.'),
-              backgroundColor: AppColors.primary,
-            ),
-          );
+        final shouldReturnToTasks = await _showSubmissionSuccessDialog();
+        if (shouldReturnToTasks && mounted) {
+          widget.onSubmissionConfirmed?.call();
+        }
       });
     }
   }
@@ -120,12 +118,69 @@ class _ApplicationCompletionPageState extends State<ApplicationCompletionPage> {
 
     try {
       await widget.onSubmitToBoard(_payload());
-      if (mounted) setState(() => _isSubmitted = true);
     } catch (error) {
-      _showActionError(error);
-    } finally {
-      if (mounted) setState(() => _activeAction = null);
+      if (!mounted) return;
+      setState(() => _activeAction = null);
+      final shouldRetry = await _showSubmissionFailureDialog(error);
+      if (shouldRetry && mounted) await _submitToBoard();
+      return;
     }
+
+    if (!mounted) return;
+    setState(() {
+      _isSubmitted = true;
+      _activeAction = null;
+    });
+
+    // Dokunsal geri bildirim desteklenmiyorsa veya gecikirse başarılı sunucu
+    // işlemi ve onay kartı bundan etkilenmez.
+    HapticFeedback.mediumImpact().ignore();
+
+    if (!mounted) return;
+    final shouldReturnToTasks = await _showSubmissionSuccessDialog();
+    if (shouldReturnToTasks && mounted) {
+      widget.onSubmissionConfirmed?.call();
+    }
+  }
+
+  Future<bool> _showSubmissionSuccessDialog() async {
+    if (!mounted) return false;
+    return await showDialog<bool>(
+          context: context,
+          barrierDismissible: false,
+          builder: (dialogContext) => _SubmissionSuccessDialog(
+            onReturnToTasks: () => Navigator.of(dialogContext).pop(true),
+          ),
+        ) ??
+        false;
+  }
+
+  Future<bool> _showSubmissionFailureDialog(Object error) async {
+    if (!mounted) return false;
+    return await showDialog<bool>(
+          context: context,
+          barrierDismissible: false,
+          builder: (dialogContext) => _SubmissionFailureDialog(
+            message: _submissionErrorMessage(error),
+            onClose: () => Navigator.of(dialogContext).pop(false),
+            onRetry: () => Navigator.of(dialogContext).pop(true),
+          ),
+        ) ??
+        false;
+  }
+
+  String _submissionErrorMessage(Object error) {
+    if (error is! ApiException || error.message.trim().isEmpty) {
+      return 'Başvuru gönderilemedi. Lütfen tekrar deneyin.';
+    }
+
+    final message = error.message.trim();
+    if (message.toLowerCase().startsWith(
+      'an error occurred while processing your request',
+    )) {
+      return 'Başvuru gönderilemedi. Lütfen tekrar deneyin.';
+    }
+    return message;
   }
 
   void _showActionError(Object error) {
@@ -367,6 +422,249 @@ class _ApplicationCompletionPageState extends State<ApplicationCompletionPage> {
                   ),
                 ),
               ],
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+class _SubmissionSuccessDialog extends StatelessWidget {
+  const _SubmissionSuccessDialog({required this.onReturnToTasks});
+
+  final VoidCallback onReturnToTasks;
+
+  @override
+  Widget build(BuildContext context) {
+    return PopScope(
+      canPop: false,
+      child: Dialog(
+        key: const Key('completion-submission-success-dialog'),
+        backgroundColor: Colors.transparent,
+        elevation: 0,
+        insetPadding: const EdgeInsets.symmetric(horizontal: 30),
+        child: ConstrainedBox(
+          constraints: const BoxConstraints(maxWidth: 315),
+          child: DecoratedBox(
+            decoration: BoxDecoration(
+              color: AppColors.white,
+              borderRadius: BorderRadius.circular(26),
+              boxShadow: const [
+                BoxShadow(
+                  color: Color(0x383629B7),
+                  blurRadius: 32,
+                  offset: Offset(0, 14),
+                ),
+              ],
+            ),
+            child: Padding(
+              padding: const EdgeInsets.fromLTRB(24, 32, 24, 24),
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  TweenAnimationBuilder<double>(
+                    duration: const Duration(milliseconds: 480),
+                    curve: Curves.easeOutBack,
+                    tween: Tween(begin: 0, end: 1),
+                    builder: (context, value, child) =>
+                        Transform.scale(scale: value, child: child),
+                    child: Container(
+                      width: 84,
+                      height: 84,
+                      decoration: const BoxDecoration(
+                        color: AppColors.statusApproved,
+                        shape: BoxShape.circle,
+                        boxShadow: [
+                          BoxShadow(
+                            color: Color(0x4252D5BA),
+                            blurRadius: 24,
+                            offset: Offset(0, 10),
+                          ),
+                        ],
+                      ),
+                      child: const Icon(
+                        Icons.check_rounded,
+                        size: 46,
+                        color: AppColors.white,
+                      ),
+                    ),
+                  ),
+                  const SizedBox(height: 24),
+                  const Text(
+                    'Başvuru kurula gönderildi',
+                    textAlign: TextAlign.center,
+                    style: TextStyle(
+                      color: AppColors.neutralDark,
+                      fontSize: 20,
+                      fontWeight: FontWeight.w600,
+                      height: 1.35,
+                    ),
+                  ),
+                  const SizedBox(height: 28),
+                  SizedBox(
+                    width: double.infinity,
+                    height: 50,
+                    child: Material(
+                      color: AppColors.primary,
+                      borderRadius: BorderRadius.circular(15),
+                      child: InkWell(
+                        key: const Key(
+                          'completion-success-return-to-tasks-button',
+                        ),
+                        onTap: onReturnToTasks,
+                        borderRadius: BorderRadius.circular(15),
+                        child: const Center(
+                          child: Text(
+                            'Görevlere Dön',
+                            style: TextStyle(
+                              color: AppColors.white,
+                              fontSize: 14,
+                              fontWeight: FontWeight.w500,
+                            ),
+                          ),
+                        ),
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+class _SubmissionFailureDialog extends StatelessWidget {
+  const _SubmissionFailureDialog({
+    required this.message,
+    required this.onClose,
+    required this.onRetry,
+  });
+
+  final String message;
+  final VoidCallback onClose;
+  final VoidCallback onRetry;
+
+  @override
+  Widget build(BuildContext context) {
+    return PopScope(
+      canPop: false,
+      child: Dialog(
+        key: const Key('completion-submission-error-dialog'),
+        backgroundColor: Colors.transparent,
+        elevation: 0,
+        insetPadding: const EdgeInsets.symmetric(horizontal: 24),
+        child: ConstrainedBox(
+          constraints: const BoxConstraints(maxWidth: 340),
+          child: DecoratedBox(
+            decoration: BoxDecoration(
+              color: AppColors.white,
+              borderRadius: BorderRadius.circular(24),
+              boxShadow: const [
+                BoxShadow(
+                  color: Color(0x303629B7),
+                  blurRadius: 30,
+                  offset: Offset(0, 12),
+                ),
+              ],
+            ),
+            child: Padding(
+              padding: const EdgeInsets.fromLTRB(22, 26, 22, 22),
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Container(
+                    width: 64,
+                    height: 64,
+                    decoration: const BoxDecoration(
+                      color: Color(0x14FF4267),
+                      shape: BoxShape.circle,
+                    ),
+                    child: const Icon(
+                      Icons.error_outline_rounded,
+                      size: 36,
+                      color: AppColors.statusRejected,
+                    ),
+                  ),
+                  const SizedBox(height: 18),
+                  const Text(
+                    'Başvuru gönderilemedi',
+                    textAlign: TextAlign.center,
+                    style: TextStyle(
+                      color: AppColors.neutralDark,
+                      fontSize: 19,
+                      fontWeight: FontWeight.w600,
+                    ),
+                  ),
+                  const SizedBox(height: 10),
+                  Text(
+                    message,
+                    textAlign: TextAlign.center,
+                    style: const TextStyle(
+                      color: AppColors.neutralSecondary,
+                      fontSize: 13,
+                      fontWeight: FontWeight.w400,
+                      height: 1.45,
+                    ),
+                  ),
+                  const SizedBox(height: 8),
+                  const Text(
+                    'Bilgileriniz ve fotoğraflarınız korunuyor.',
+                    textAlign: TextAlign.center,
+                    style: TextStyle(
+                      color: AppColors.neutralDark,
+                      fontSize: 12,
+                      fontWeight: FontWeight.w500,
+                      height: 1.4,
+                    ),
+                  ),
+                  const SizedBox(height: 24),
+                  Row(
+                    children: [
+                      Expanded(
+                        child: SizedBox(
+                          height: 48,
+                          child: OutlinedButton(
+                            key: const Key('completion-error-close-button'),
+                            onPressed: onClose,
+                            style: OutlinedButton.styleFrom(
+                              foregroundColor: AppColors.neutralDark,
+                              side: const BorderSide(
+                                color: AppColors.neutralBorder,
+                              ),
+                              shape: RoundedRectangleBorder(
+                                borderRadius: BorderRadius.circular(14),
+                              ),
+                            ),
+                            child: const Text('Kapat'),
+                          ),
+                        ),
+                      ),
+                      const SizedBox(width: 12),
+                      Expanded(
+                        child: SizedBox(
+                          height: 48,
+                          child: FilledButton(
+                            key: const Key('completion-error-retry-button'),
+                            onPressed: onRetry,
+                            style: FilledButton.styleFrom(
+                              backgroundColor: AppColors.primary,
+                              foregroundColor: AppColors.white,
+                              shape: RoundedRectangleBorder(
+                                borderRadius: BorderRadius.circular(14),
+                              ),
+                            ),
+                            child: const Text('Tekrar Dene'),
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
+                ],
+              ),
             ),
           ),
         ),

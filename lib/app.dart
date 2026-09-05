@@ -26,6 +26,7 @@ class SosyoBelApp extends StatefulWidget {
     this.kpsProfileRepository,
     this.localApplicationDraftRepository,
     this.workItemsRepository,
+    this.minimumSplashDuration = AppFlow.defaultMinimumSplashDuration,
     super.key,
   });
 
@@ -36,6 +37,7 @@ class SosyoBelApp extends StatefulWidget {
   final KpsProfileRepository? kpsProfileRepository;
   final LocalApplicationDraftRepository? localApplicationDraftRepository;
   final WorkItemsRepository? workItemsRepository;
+  final Duration minimumSplashDuration;
 
   @override
   State<SosyoBelApp> createState() => _SosyoBelAppState();
@@ -90,6 +92,7 @@ class _SosyoBelAppState extends State<SosyoBelApp> {
         kpsProfileRepository: _kpsProfileRepository,
         localApplicationDraftRepository: _localApplicationDraftRepository,
         workItemsRepository: _workItemsRepository,
+        minimumSplashDuration: widget.minimumSplashDuration,
       ),
     );
   }

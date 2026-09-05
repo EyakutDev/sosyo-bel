@@ -3,6 +3,7 @@ using System.Security.Claims;
 using System.Text.Json;
 using SosyoBel.Application.Applications;
 using SosyoBel.Application.Authorization;
+using SosyoBel.Infrastructure.Logging;
 
 namespace SosyoBel.Api.Applications;
 
@@ -53,6 +54,8 @@ internal static class ApplicationEndpoints
         ICompletedApplicationSubmissionService service,
         CancellationToken cancellationToken)
     {
+        httpContext.RequestServices.GetRequiredService<RequestLogContext>().Stage =
+            RequestLogStage.ReadSubmission;
         var errors = new Dictionary<string, string[]>();
         var actor = ReadActor(httpContext.User, errors);
         var idempotencyKey = ReadIdempotencyKey(httpContext, errors);

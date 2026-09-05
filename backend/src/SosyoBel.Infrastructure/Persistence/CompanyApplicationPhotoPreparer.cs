@@ -1,4 +1,5 @@
 using SosyoBel.Application.Applications;
+using Microsoft.Extensions.Logging;
 
 namespace SosyoBel.Infrastructure.Persistence;
 
@@ -23,9 +24,10 @@ internal sealed record CompanyApplicationPhotoPreparationResult(
 /// </summary>
 internal sealed class CompanyApplicationPhotoPreparer(
     IApplicationPhotoStorage storage,
-    TimeProvider timeProvider)
+    TimeProvider timeProvider,
+    ILogger<CompanyApplicationPhotoPreparer> logger)
 {
-    private const string CompanyWebUploadPrefix = "/uploads/";
+    private const string CompanyWebUploadPrefix = "/uploads/hanefotograflari/";
     private const string CompanyPhotoDescription = "Başvuru Formundan Yüklendi";
 
     public async Task<CompanyApplicationPhotoPreparationResult> PrepareAsync(
@@ -78,15 +80,17 @@ internal sealed class CompanyApplicationPhotoPreparer(
             await DiscardAsync(storedPhotos);
             throw;
         }
-        catch (IOException)
+        catch (IOException exception)
         {
+            logger.LogWarning(new EventId(1001), exception, "Photo storage failed.");
             await DiscardAsync(storedPhotos);
             return new(
                 CompanyApplicationPhotoPreparationStatus.StorageFailure,
                 Code: "photo_storage_error");
         }
-        catch (InvalidDataException)
+        catch (InvalidDataException exception)
         {
+            logger.LogWarning(new EventId(1001), exception, "Photo storage failed.");
             await DiscardAsync(storedPhotos);
             return new(
                 CompanyApplicationPhotoPreparationStatus.StorageFailure,
@@ -113,8 +117,9 @@ internal sealed class CompanyApplicationPhotoPreparer(
             {
                 await storage.DeleteAsync(photo.StorageKey, CancellationToken.None);
             }
-            catch
+            catch (Exception exception)
             {
+                logger.LogWarning(new EventId(1003), exception, "Photo cleanup failed.");
                 // Asıl transaction hatasını gölgelememek için temizlik best-effort yapılır.
             }
         }
@@ -131,8 +136,9 @@ internal sealed class CompanyApplicationPhotoPreparer(
             throw new InvalidDataException("Geçersiz fotoğraf depolama anahtarı.");
         }
 
-        // Şirket web uygulaması HaneFotograflari.FotografYolu alanını doğrudan
-        // img src olarak kullanıyor ve mevcut sözleşmesi /uploads/... biçiminde.
+        // StorageKey, ApplicationPhotos:RootPath altındaki göreli dosya yoludur.
+        // IIS'te RootPath fiziksel uploads/hanefotograflari klasörünü göstermelidir;
+        // veritabanına fiziksel disk yolu değil, web uygulamasının URL yolu yazılır.
         return CompanyWebUploadPrefix + string.Join('/', segments);
     }
 }

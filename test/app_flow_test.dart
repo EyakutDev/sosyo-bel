@@ -44,6 +44,7 @@ void main() {
             localApplicationDraftRepository ??
             _FakeLocalApplicationDraftRepository(),
         workItemsRepository: workItemsRepository ?? _EmptyWorkItemsRepository(),
+        minimumSplashDuration: Duration.zero,
       ),
     );
     if (waitForRestore) {
@@ -95,25 +96,25 @@ void main() {
     expect(find.byKey(const Key('login-submit-button')), findsNothing);
   });
 
-  testWidgets(
-    'oturum kontrol edilirken mevcut giriş butonunda yüklenme gösterir',
-    (tester) async {
-      final completer = Completer<AuthenticationSession?>();
-      await pumpApp(
-        tester,
-        authRepository: _RestoreAuthRepository(() => completer.future),
-        waitForRestore: false,
-        enterCredentials: false,
-      );
+  testWidgets('oturum kontrol edilirken splash ekranını gösterir', (
+    tester,
+  ) async {
+    final completer = Completer<AuthenticationSession?>();
+    await pumpApp(
+      tester,
+      authRepository: _RestoreAuthRepository(() => completer.future),
+      waitForRestore: false,
+      enterCredentials: false,
+    );
 
-      expect(find.byKey(const Key('login-loading-indicator')), findsOneWidget);
+    expect(find.byKey(const Key('splash-page')), findsOneWidget);
+    expect(find.byKey(const Key('login-submit-button')), findsNothing);
 
-      completer.complete();
-      await tester.pumpAndSettle();
-      expect(find.byKey(const Key('login-loading-indicator')), findsNothing);
-      expect(find.byKey(const Key('login-submit-button')), findsOneWidget);
-    },
-  );
+    completer.complete();
+    await tester.pumpAndSettle();
+    expect(find.byKey(const Key('splash-page')), findsNothing);
+    expect(find.byKey(const Key('login-submit-button')), findsOneWidget);
+  });
 
   testWidgets('girişten sonra işlem seçim ekranını açar', (tester) async {
     await pumpApp(tester);
@@ -134,8 +135,8 @@ void main() {
     await tester.tap(find.text('Görevler'));
     await tester.pumpAndSettle();
 
-    expect(find.text('Bekleyen Liste'), findsOneWidget);
-    expect(find.text('Tamamlanmış'), findsOneWidget);
+    expect(find.text('Bekleyen'), findsOneWidget);
+    expect(find.text('Tamamlanan'), findsOneWidget);
   });
 
   testWidgets('Başvuru Yap yeni formu açar', (tester) async {
@@ -202,7 +203,7 @@ void main() {
     await tester.pumpAndSettle();
 
     expect(find.text('İşlem Seçimi'), findsOneWidget);
-    expect(find.text('Bekleyen Liste'), findsNothing);
+    expect(find.text('Bekleyen'), findsNothing);
   });
   testWidgets('başvuru taslağını Tamamla ekranından Bekleyen Listeye taşır', (
     tester,
@@ -355,8 +356,8 @@ void main() {
     await tester.tap(find.byKey(const Key('completion-save-draft-button')));
     await tester.pumpAndSettle();
 
-    expect(find.text('Bekleyen Liste'), findsOneWidget);
-    expect(find.text('Tamamlanmış'), findsOneWidget);
+    expect(find.text('Bekleyen'), findsOneWidget);
+    expect(find.text('Tamamlanan'), findsOneWidget);
     expect(find.text('Tamamla'), findsNothing);
     expect(find.text('Yerel Taslak'), findsOneWidget);
     expect(applicationRepository.submitCount, 0);
@@ -393,6 +394,16 @@ void main() {
     expect(localDraftRepository.createCount, 1);
     expect(localDraftRepository.updateCount, 1);
     expect(find.text('Yerel Taslak'), findsOneWidget);
+
+    await tester.tap(find.byTooltip('Yerel taslağı sil'));
+    await tester.pumpAndSettle();
+    await tester.tap(
+      find.byKey(const Key('local-draft-delete-confirm-button')),
+    );
+    await tester.pumpAndSettle();
+
+    expect(localDraftRepository.deleteCount, 1);
+    expect(find.text('Yerel Taslak'), findsNothing);
   });
 
   testWidgets('kurula gönderilen başvuruyu Bekleyen Listeye taşır', (
@@ -453,12 +464,23 @@ void main() {
     await tester.tap(find.byKey(const Key('completion-submit-board-button')));
     await tester.pumpAndSettle();
 
-    expect(find.text('Bekleyen Liste'), findsOneWidget);
-    expect(find.byKey(const Key('submission-success-notice')), findsOneWidget);
-    expect(find.text('Başvuru başarıyla kurula gönderildi.'), findsOneWidget);
-    expect(find.text('Tamamlanmış'), findsOneWidget);
-    expect(find.text('Tamamla'), findsNothing);
+    expect(
+      find.byKey(const Key('completion-submission-success-dialog')),
+      findsOneWidget,
+    );
+    expect(find.text('Başvuru kurula gönderildi'), findsOneWidget);
+    expect(find.text('Görevlere Dön'), findsOneWidget);
+    expect(find.text('Tamamla'), findsOneWidget);
     expect(applicationRepository.submitCount, 1);
+
+    await tester.tap(
+      find.byKey(const Key('completion-success-return-to-tasks-button')),
+    );
+    await tester.pumpAndSettle();
+
+    expect(find.text('Bekleyen'), findsOneWidget);
+    expect(find.text('Tamamlanan'), findsOneWidget);
+    expect(find.text('Tamamla'), findsNothing);
     expect(
       applicationRepository.lastSubmittedDraft?.completionNote,
       'Gönderilecek kurul notu',

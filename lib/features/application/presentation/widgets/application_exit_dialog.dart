@@ -33,6 +33,27 @@ Future<bool> showActivityReturnDialog(BuildContext context) {
   );
 }
 
+/// Kullanıcının yalnız bu cihazda saklanan bir taslağı yanlışlıkla silmesini
+/// önler. Onaylandığında çağıran katman taslağı ve yerel fotoğraf kopyalarını
+/// depodan kaldırır.
+Future<bool> showLocalDraftDeleteDialog(BuildContext context) {
+  return _showApplicationWarningDialog(
+    context,
+    dialogKey: const Key('local-draft-delete-dialog'),
+    title: 'Yerel taslak silinsin mi?',
+    message:
+        'Taslak ve taslağa eklenen fotoğrafların yerel kopyaları bu cihazdan '
+        'silinecek. Bu işlem geri alınamaz.',
+    stayButtonKey: const Key('local-draft-delete-cancel-button'),
+    confirmButtonKey: const Key('local-draft-delete-confirm-button'),
+    confirmLabel: 'Taslağı Sil',
+    icon: Icons.delete_outline_rounded,
+    iconBackgroundColor: const Color(0xFFFFEEF2),
+    iconColor: AppColors.statusRejected,
+    confirmBackgroundColor: AppColors.statusRejected,
+  );
+}
+
 Future<bool> _showApplicationWarningDialog(
   BuildContext context, {
   required Key dialogKey,
@@ -41,6 +62,10 @@ Future<bool> _showApplicationWarningDialog(
   required Key stayButtonKey,
   required Key confirmButtonKey,
   required String confirmLabel,
+  IconData icon = Icons.warning_amber_rounded,
+  Color iconBackgroundColor = const Color(0xFFFFF3EB),
+  Color iconColor = AppColors.statusBoard,
+  Color confirmBackgroundColor = AppColors.primary,
 }) async {
   final isConfirmed = await showDialog<bool>(
     context: context,
@@ -63,15 +88,11 @@ Future<bool> _showApplicationWarningDialog(
                 Container(
                   width: 52,
                   height: 52,
-                  decoration: const BoxDecoration(
-                    color: Color(0xFFFFF3EB),
+                  decoration: BoxDecoration(
+                    color: iconBackgroundColor,
                     shape: BoxShape.circle,
                   ),
-                  child: const Icon(
-                    Icons.warning_amber_rounded,
-                    color: AppColors.statusBoard,
-                    size: 30,
-                  ),
+                  child: Icon(icon, color: iconColor, size: 30),
                 ),
                 const SizedBox(height: 16),
                 Text(
@@ -112,7 +133,7 @@ Future<bool> _showApplicationWarningDialog(
                       child: _DialogActionButton(
                         buttonKey: confirmButtonKey,
                         label: confirmLabel,
-                        backgroundColor: AppColors.primary,
+                        backgroundColor: confirmBackgroundColor,
                         foregroundColor: AppColors.white,
                         onTap: () => Navigator.of(dialogContext).pop(true),
                       ),
