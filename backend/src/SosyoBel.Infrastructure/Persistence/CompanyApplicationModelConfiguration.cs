@@ -12,6 +12,7 @@ internal static class CompanyApplicationModelConfiguration
     {
         ConfigureCitizen(builder);
         ConfigureApplication(builder);
+        ConfigureHouseholdAnswer(builder);
         ConfigureFamilyMember(builder);
         ConfigureHouseholdPhoto(builder);
         ConfigureAddressReferences(builder);
@@ -228,6 +229,37 @@ internal static class CompanyApplicationModelConfiguration
             entity.HasOne<DisabilityTypeReference>()
                 .WithMany()
                 .HasForeignKey(value => value.DisabilityTypeId)
+                .OnDelete(DeleteBehavior.NoAction);
+        });
+    }
+
+    private static void ConfigureHouseholdAnswer(ModelBuilder builder)
+    {
+        builder.Entity<CompanyApplicationHouseholdAnswerRecord>(entity =>
+        {
+            entity.ToTable(
+                "BasvuruHaneCevaplari",
+                "dbo",
+                table => table.ExcludeFromMigrations());
+            entity.HasKey(value => value.Id);
+            entity.Property(value => value.Id).HasColumnName("Id");
+            entity.Property(value => value.ApplicationId).HasColumnName("BasvuruId");
+            entity.Property(value => value.QuestionCode)
+                .HasColumnName("SoruKodu")
+                .HasMaxLength(80)
+                .IsRequired();
+            entity.Property(value => value.OptionCode)
+                .HasColumnName("SecenekKodu")
+                .HasMaxLength(80)
+                .IsRequired();
+
+            entity.HasIndex(value => new { value.ApplicationId, value.QuestionCode })
+                .IsUnique()
+                .HasDatabaseName(
+                    "UQ_BasvuruHaneCevaplari_BasvuruId_SoruKodu");
+            entity.HasOne<CompanyApplicationRecord>()
+                .WithMany()
+                .HasForeignKey(value => value.ApplicationId)
                 .OnDelete(DeleteBehavior.NoAction);
         });
     }

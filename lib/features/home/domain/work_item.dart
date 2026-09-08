@@ -11,14 +11,17 @@ class WorkItem {
     required this.isCompleted,
     required this.isEditable,
     required this.activityAtUtc,
+    this.applicationId,
     this.applicationPublicId,
     this.localDraftId,
     this.taskId,
     this.applicantFullName,
     this.address,
     this.description,
+    this.isOwnedByCurrentUser = false,
   });
 
+  final int? applicationId;
   final String? applicationPublicId;
   final String? localDraftId;
   final int? taskId;
@@ -29,10 +32,14 @@ class WorkItem {
   final String statusCode;
   final bool isCompleted;
   final bool isEditable;
+  final bool isOwnedByCurrentUser;
   final String? description;
   final DateTime activityAtUtc;
 
   bool get isAssignedTask => sourceCode == 'ASSIGNED_TASK';
+
+  bool get isSubmittedApplication =>
+      sourceCode == 'APPLICATION' || sourceCode == 'OWN_APPLICATION';
 
   static const localDraftSourceCode = 'LOCAL_DRAFT';
 
@@ -40,11 +47,17 @@ class WorkItem {
 
   factory WorkItem.fromJson(Map<String, dynamic> json) {
     final sourceCode = _requiredString(json, 'sourceCode').toUpperCase();
-    if (sourceCode != 'ASSIGNED_TASK' && sourceCode != 'OWN_APPLICATION') {
+    if (sourceCode != 'ASSIGNED_TASK' &&
+        sourceCode != 'APPLICATION' &&
+        sourceCode != 'OWN_APPLICATION') {
       throw const FormatException('sourceCode alanı geçersiz.');
     }
+    final applicationId = _optionalPositiveInt(json, 'applicationId');
     final applicationPublicId = _optionalString(json, 'applicationPublicId');
     final taskId = _optionalPositiveInt(json, 'taskId');
+    if (sourceCode == 'APPLICATION' && applicationId == null) {
+      throw const FormatException('Başvuru kimliği eksik veya geçersiz.');
+    }
     if (sourceCode == 'OWN_APPLICATION' && applicationPublicId == null) {
       throw const FormatException('Başvuru kimliği eksik veya geçersiz.');
     }
@@ -53,6 +66,7 @@ class WorkItem {
     }
 
     return WorkItem(
+      applicationId: applicationId,
       applicationPublicId: applicationPublicId,
       taskId: taskId,
       applicationNumber: _requiredString(json, 'applicationNumber'),
@@ -62,6 +76,9 @@ class WorkItem {
       statusCode: _requiredString(json, 'statusCode').toUpperCase(),
       isCompleted: _requiredBool(json, 'isCompleted'),
       isEditable: _requiredBool(json, 'isEditable'),
+      isOwnedByCurrentUser: json.containsKey('isOwnedByCurrentUser')
+          ? _requiredBool(json, 'isOwnedByCurrentUser')
+          : sourceCode == 'OWN_APPLICATION',
       description: _optionalString(json, 'description'),
       activityAtUtc: _requiredDateTime(json, 'activityAtUtc'),
     );

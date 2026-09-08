@@ -22,6 +22,7 @@ class ApplicationCompletionPage extends StatefulWidget {
     required this.onBack,
     required this.onSaveDraft,
     required this.onSubmitToBoard,
+    this.onUpdateApplication,
     this.onSubmissionConfirmed,
     this.onNoteChanged,
     this.initiallySubmitted = false,
@@ -36,6 +37,7 @@ class ApplicationCompletionPage extends StatefulWidget {
   final VoidCallback onBack;
   final ApplicationCompletionAction onSaveDraft;
   final ApplicationCompletionAction onSubmitToBoard;
+  final ApplicationCompletionAction? onUpdateApplication;
   final VoidCallback? onSubmissionConfirmed;
 
   /// Üst okla forma dönülürse yazılmış notun yeniden yüklenmesini sağlar.
@@ -143,12 +145,43 @@ class _ApplicationCompletionPageState extends State<ApplicationCompletionPage> {
     }
   }
 
+  Future<void> _updateApplication() async {
+    final update = widget.onUpdateApplication;
+    if (update == null || _isSubmitted || _isBusy) return;
+    FocusScope.of(context).unfocus();
+    setState(() => _activeAction = _CompletionAction.updateApplication);
+
+    try {
+      await update(_payload());
+    } catch (error) {
+      _showActionError(error);
+      if (mounted) setState(() => _activeAction = null);
+      return;
+    }
+
+    if (!mounted) return;
+    setState(() {
+      _isSubmitted = true;
+      _activeAction = null;
+    });
+    HapticFeedback.mediumImpact().ignore();
+
+    final shouldReturn = await _showSubmissionSuccessDialog();
+    if (shouldReturn && mounted) widget.onSubmissionConfirmed?.call();
+  }
+
   Future<bool> _showSubmissionSuccessDialog() async {
     if (!mounted) return false;
     return await showDialog<bool>(
           context: context,
           barrierDismissible: false,
           builder: (dialogContext) => _SubmissionSuccessDialog(
+            title: widget.onUpdateApplication == null
+                ? 'Başvuru kurula gönderildi'
+                : 'Başvuru güncellendi',
+            actionLabel: widget.onUpdateApplication == null
+                ? 'Görevlere Dön'
+                : 'Detaya Dön',
             onReturnToTasks: () => Navigator.of(dialogContext).pop(true),
           ),
         ) ??
@@ -269,7 +302,9 @@ class _ApplicationCompletionPageState extends State<ApplicationCompletionPage> {
                   top: 375 * scale,
                   height: 24 * scale,
                   child: Text(
-                    'Haneye Ait Ekstra Notunuz',
+                    widget.onUpdateApplication == null
+                        ? 'Haneye Ait Ekstra Notunuz'
+                        : 'Saha Notu',
                     textAlign: TextAlign.center,
                     style: TextStyle(
                       color: AppColors.primarySecondary,
@@ -285,8 +320,11 @@ class _ApplicationCompletionPageState extends State<ApplicationCompletionPage> {
                   width: 327 * scale,
                   height: 63 * scale,
                   child: Text(
-                    'Girdiğiniz Bilgileri Kontrol Edin\n'
-                    'Ve İletmek İstediğiniz Not Varsa Paylaşın',
+                    widget.onUpdateApplication == null
+                        ? 'Girdiğiniz Bilgileri Kontrol Edin\n'
+                              'Ve İletmek İstediğiniz Not Varsa Paylaşın'
+                        : 'Değişikliklerinizi Kontrol Edin\n'
+                              'Ve Saha Notunu Güncelleyin',
                     textAlign: TextAlign.center,
                     style: TextStyle(
                       color: AppColors.neutralDark,
@@ -343,36 +381,56 @@ class _ApplicationCompletionPageState extends State<ApplicationCompletionPage> {
                     ),
                   ),
                 ),
-                Positioned(
-                  left: 34 * scale,
-                  top: 704 * scale,
-                  width: 153 * scale,
-                  height: 48 * scale,
-                  child: _CompletionActionButton(
-                    buttonKey: const Key('completion-save-draft-button'),
-                    label: 'Taslağı Kaydet',
-                    color: _draftColor,
-                    scale: scale,
-                    isEnabled: !_isSubmitted && !_isBusy,
-                    isLoading: _activeAction == _CompletionAction.saveDraft,
-                    onTap: _saveDraft,
+                if (widget.onUpdateApplication == null)
+                  Positioned(
+                    left: 34 * scale,
+                    top: 704 * scale,
+                    width: 153 * scale,
+                    height: 48 * scale,
+                    child: _CompletionActionButton(
+                      buttonKey: const Key('completion-save-draft-button'),
+                      label: 'Taslağı Kaydet',
+                      color: _draftColor,
+                      scale: scale,
+                      isEnabled: !_isSubmitted && !_isBusy,
+                      isLoading: _activeAction == _CompletionAction.saveDraft,
+                      onTap: _saveDraft,
+                    ),
                   ),
-                ),
-                Positioned(
-                  left: 199 * scale,
-                  top: 704 * scale,
-                  width: 152 * scale,
-                  height: 48 * scale,
-                  child: _CompletionActionButton(
-                    buttonKey: const Key('completion-submit-board-button'),
-                    label: 'Kurula Gönder',
-                    color: _submitColor,
-                    scale: scale,
-                    isEnabled: !_isSubmitted && !_isBusy,
-                    isLoading: _activeAction == _CompletionAction.submitToBoard,
-                    onTap: _submitToBoard,
+                if (widget.onUpdateApplication != null)
+                  Positioned(
+                    left: 34 * scale,
+                    right: 34 * scale,
+                    top: 704 * scale,
+                    height: 48 * scale,
+                    child: _CompletionActionButton(
+                      buttonKey: const Key('completion-update-button'),
+                      label: 'Değişiklikleri Kaydet',
+                      color: AppColors.primary,
+                      scale: scale,
+                      isEnabled: !_isSubmitted && !_isBusy,
+                      isLoading:
+                          _activeAction == _CompletionAction.updateApplication,
+                      onTap: _updateApplication,
+                    ),
                   ),
-                ),
+                if (widget.onUpdateApplication == null)
+                  Positioned(
+                    left: 199 * scale,
+                    top: 704 * scale,
+                    width: 152 * scale,
+                    height: 48 * scale,
+                    child: _CompletionActionButton(
+                      buttonKey: const Key('completion-submit-board-button'),
+                      label: 'Kurula Gönder',
+                      color: _submitColor,
+                      scale: scale,
+                      isEnabled: !_isSubmitted && !_isBusy,
+                      isLoading:
+                          _activeAction == _CompletionAction.submitToBoard,
+                      onTap: _submitToBoard,
+                    ),
+                  ),
                 Positioned(
                   left: 0,
                   right: 0,
@@ -408,7 +466,9 @@ class _ApplicationCompletionPageState extends State<ApplicationCompletionPage> {
                           left: 56 * scale,
                           top: 29 * scale,
                           child: Text(
-                            'Tamamla',
+                            widget.onUpdateApplication == null
+                                ? 'Tamamla'
+                                : 'Düzenlemeyi Tamamla',
                             style: TextStyle(
                               color: AppColors.neutralDark,
                               fontSize: 20 * scale,
@@ -431,8 +491,14 @@ class _ApplicationCompletionPageState extends State<ApplicationCompletionPage> {
 }
 
 class _SubmissionSuccessDialog extends StatelessWidget {
-  const _SubmissionSuccessDialog({required this.onReturnToTasks});
+  const _SubmissionSuccessDialog({
+    required this.title,
+    required this.actionLabel,
+    required this.onReturnToTasks,
+  });
 
+  final String title;
+  final String actionLabel;
   final VoidCallback onReturnToTasks;
 
   @override
@@ -491,8 +557,8 @@ class _SubmissionSuccessDialog extends StatelessWidget {
                     ),
                   ),
                   const SizedBox(height: 24),
-                  const Text(
-                    'Başvuru kurula gönderildi',
+                  Text(
+                    title,
                     textAlign: TextAlign.center,
                     style: TextStyle(
                       color: AppColors.neutralDark,
@@ -514,9 +580,9 @@ class _SubmissionSuccessDialog extends StatelessWidget {
                         ),
                         onTap: onReturnToTasks,
                         borderRadius: BorderRadius.circular(15),
-                        child: const Center(
+                        child: Center(
                           child: Text(
-                            'Görevlere Dön',
+                            actionLabel,
                             style: TextStyle(
                               color: AppColors.white,
                               fontSize: 14,
@@ -731,4 +797,4 @@ class _CompletionActionButton extends StatelessWidget {
   }
 }
 
-enum _CompletionAction { saveDraft, submitToBoard }
+enum _CompletionAction { saveDraft, submitToBoard, updateApplication }

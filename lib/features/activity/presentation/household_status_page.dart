@@ -33,8 +33,10 @@ class HouseholdStatusPage extends StatefulWidget {
     this.initialPhotos = const [],
     this.initialDraft,
     this.initialStage = HouseholdStatusStage.questions,
+    this.allowPhotoChanges = true,
+    this.existingPhotoCount = 0,
     super.key,
-  });
+  }) : assert(existingPhotoCount >= 0);
 
   /// Soru aşamasında alt `Geri Dön` düğmesinin açacağı önceki Aktivite adımı.
   final VoidCallback onBack;
@@ -49,6 +51,8 @@ class HouseholdStatusPage extends StatefulWidget {
   final List<HouseholdPhotoViewData> initialPhotos;
   final HouseholdStatusDraft? initialDraft;
   final HouseholdStatusStage initialStage;
+  final bool allowPhotoChanges;
+  final int existingPhotoCount;
 
   @override
   State<HouseholdStatusPage> createState() => _HouseholdStatusPageState();
@@ -78,7 +82,7 @@ class _HouseholdStatusPageState extends State<HouseholdStatusPage> {
     _replaceRemotePhotosOnSave =
         widget.initialDraft?.replaceRemotePhotosOnSave ?? false;
 
-    if (widget.onRecoverLostPhotos != null) {
+    if (widget.allowPhotoChanges && widget.onRecoverLostPhotos != null) {
       WidgetsBinding.instance.addPostFrameCallback((_) => _recoverLostPhotos());
     }
   }
@@ -144,6 +148,10 @@ class _HouseholdStatusPageState extends State<HouseholdStatusPage> {
         return;
       }
 
+      if (!widget.allowPhotoChanges) {
+        widget.onContinue(_currentDraft);
+        return;
+      }
       setState(() => _stage = HouseholdStatusStage.photos);
       return;
     }
@@ -152,6 +160,7 @@ class _HouseholdStatusPageState extends State<HouseholdStatusPage> {
   }
 
   Future<void> _capturePhoto() async {
+    if (!widget.allowPhotoChanges) return;
     // İş kuralı tek noktada uygulanır; kullanıcı arayüzü veya ilerideki API
     // yanlışlıkla on altıncı fotoğrafı ekleyemez.
     if (_photos.length >= HouseholdPhotoPolicy.maxPhotoCount) {
@@ -185,6 +194,7 @@ class _HouseholdStatusPageState extends State<HouseholdStatusPage> {
   }
 
   void _removePhoto(int index) {
+    if (!widget.allowPhotoChanges) return;
     if (index < 0 || index >= _photos.length) return;
 
     // Sınır liste uzunluğundan hesaplandığı için silinen fotoğraf yeni çekime
@@ -312,6 +322,8 @@ class _HouseholdStatusPageState extends State<HouseholdStatusPage> {
                       : _PhotosCard(
                           photos: _photos,
                           scale: scale,
+                          allowChanges: widget.allowPhotoChanges,
+                          existingPhotoCount: widget.existingPhotoCount,
                           isCapturing: _isCapturingPhoto,
                           saveToBeneficiaryDirectory:
                               _saveToBeneficiaryDirectory,
@@ -564,6 +576,8 @@ class _PhotosCard extends StatelessWidget {
   const _PhotosCard({
     required this.photos,
     required this.scale,
+    required this.allowChanges,
+    required this.existingPhotoCount,
     required this.isCapturing,
     required this.saveToBeneficiaryDirectory,
     required this.onCapture,
@@ -573,6 +587,8 @@ class _PhotosCard extends StatelessWidget {
 
   final List<HouseholdPhotoViewData> photos;
   final double scale;
+  final bool allowChanges;
+  final int existingPhotoCount;
   final bool isCapturing;
   final bool saveToBeneficiaryDirectory;
   final VoidCallback onCapture;
@@ -585,141 +601,183 @@ class _PhotosCard extends StatelessWidget {
       scale: scale,
       child: Stack(
         children: [
-          Positioned(
-            left: 8 * scale,
-            top: 22 * scale,
-            width: 312 * scale,
-            height: 217 * scale,
-            child: GridView.builder(
-              key: const Key('household-photo-grid'),
-              padding: EdgeInsets.zero,
-              physics: photos.length > 6
-                  ? const ClampingScrollPhysics()
-                  : const NeverScrollableScrollPhysics(),
-              itemCount: photos.length,
-              gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
-                crossAxisCount: 3,
-                crossAxisSpacing: 6 * scale,
-                mainAxisSpacing: 5 * scale,
-                mainAxisExtent: 106 * scale,
-              ),
-              itemBuilder: (context, index) {
-                return _PhotoTile(
-                  key: Key('household-photo-$index'),
-                  photo: photos[index],
-                  photoNumber: index + 1,
-                  scale: scale,
-                  onRemove: () => onRemovePhoto(index),
-                );
-              },
-            ),
-          ),
-          Positioned(
-            left: 246 * scale,
-            top: 272 * scale,
-            width: 54 * scale,
-            height: 78 * scale,
-            child: Semantics(
-              button: true,
-              label: 'Kamera ile fotoğraf ekle',
-              child: GestureDetector(
-                key: const Key('household-camera-button'),
-                behavior: HitTestBehavior.opaque,
-                onTap: isCapturing ? null : onCapture,
-                child: Stack(
+          if (!allowChanges)
+            Positioned.fill(
+              child: Padding(
+                padding: EdgeInsets.symmetric(horizontal: 28 * scale),
+                child: Column(
+                  mainAxisAlignment: MainAxisAlignment.center,
                   children: [
-                    Positioned(
-                      left: 0,
-                      top: 0,
-                      width: 54 * scale,
-                      height: 54 * scale,
-                      child: SvgPicture.asset(
-                        AppAssets.householdCameraCircle,
-                        fit: BoxFit.fill,
+                    Icon(
+                      Icons.photo_library_outlined,
+                      size: 46 * scale,
+                      color: AppColors.primary,
+                    ),
+                    SizedBox(height: 16 * scale),
+                    Text(
+                      existingPhotoCount == 0
+                          ? 'Bu başvuruda kayıtlı hane fotoğrafı bulunmuyor.'
+                          : '${existingPhotoCount.toString()} kayıtlı hane '
+                                'fotoğrafı korunacak.',
+                      textAlign: TextAlign.center,
+                      style: TextStyle(
+                        color: AppColors.neutralDark,
+                        fontSize: 14 * scale,
+                        fontWeight: FontWeight.w600,
+                        height: 1.45,
                       ),
                     ),
-                    Positioned(
-                      left: 15 * scale,
-                      top: 15 * scale,
-                      width: 24 * scale,
-                      height: 24 * scale,
-                      child: SvgPicture.asset(
-                        AppAssets.householdCamera,
-                        fit: BoxFit.contain,
-                      ),
-                    ),
-                    Positioned(
-                      left: 0,
-                      top: 54 * scale,
-                      width: 54 * scale,
-                      height: 24 * scale,
-                      child: Text(
-                        'Kamera',
-                        textAlign: TextAlign.center,
-                        style: TextStyle(
-                          color: const Color(0xFF525BCE),
-                          fontSize: 12 * scale,
-                          fontWeight: FontWeight.w500,
-                          height: 24 / 12,
-                        ),
+                    SizedBox(height: 8 * scale),
+                    Text(
+                      'Fotoğraflar bu düzenleme işleminde değiştirilemez.',
+                      textAlign: TextAlign.center,
+                      style: TextStyle(
+                        color: AppColors.neutralSecondary,
+                        fontSize: 12 * scale,
+                        height: 1.4,
                       ),
                     ),
                   ],
                 ),
               ),
             ),
-          ),
-          Positioned(
-            left: 16 * scale,
-            top: 363 * scale,
-            width: 270 * scale,
-            height: 24 * scale,
-            child: Semantics(
-              checked: saveToBeneficiaryDirectory,
-              label: 'Hak sahibinin klasörüne kaydet',
-              child: GestureDetector(
-                key: const Key('household-save-directory-checkbox'),
-                behavior: HitTestBehavior.opaque,
-                onTap: onToggleSave,
-                child: Row(
-                  children: [
-                    Container(
-                      width: 24 * scale,
-                      height: 24 * scale,
-                      decoration: BoxDecoration(
-                        color: saveToBeneficiaryDirectory
-                            ? AppColors.primary
-                            : AppColors.white,
-                        border: Border.all(color: const Color(0xFFBFBFBF)),
-                        borderRadius: BorderRadius.circular(4 * scale),
-                      ),
-                      child: saveToBeneficiaryDirectory
-                          ? Icon(
-                              Icons.check,
-                              size: 16 * scale,
-                              color: AppColors.white,
-                            )
-                          : null,
-                    ),
-                    SizedBox(width: 12 * scale),
-                    Expanded(
-                      child: Text(
-                        'Hak sahibinin klasörüne kaydet',
-                        maxLines: 1,
-                        overflow: TextOverflow.ellipsis,
-                        style: TextStyle(
-                          color: AppColors.neutralStatusLabel,
-                          fontSize: 14 * scale,
-                          fontWeight: FontWeight.w500,
-                          height: 1.5,
+          if (allowChanges) ...[
+            Positioned(
+              left: 8 * scale,
+              top: 22 * scale,
+              width: 312 * scale,
+              height: 217 * scale,
+              child: GridView.builder(
+                key: const Key('household-photo-grid'),
+                padding: EdgeInsets.zero,
+                physics: photos.length > 6
+                    ? const ClampingScrollPhysics()
+                    : const NeverScrollableScrollPhysics(),
+                itemCount: photos.length,
+                gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
+                  crossAxisCount: 3,
+                  crossAxisSpacing: 6 * scale,
+                  mainAxisSpacing: 5 * scale,
+                  mainAxisExtent: 106 * scale,
+                ),
+                itemBuilder: (context, index) {
+                  return _PhotoTile(
+                    key: Key('household-photo-$index'),
+                    photo: photos[index],
+                    photoNumber: index + 1,
+                    scale: scale,
+                    onRemove: () => onRemovePhoto(index),
+                  );
+                },
+              ),
+            ),
+            Positioned(
+              left: 246 * scale,
+              top: 272 * scale,
+              width: 54 * scale,
+              height: 78 * scale,
+              child: Semantics(
+                button: true,
+                label: 'Kamera ile fotoğraf ekle',
+                child: GestureDetector(
+                  key: const Key('household-camera-button'),
+                  behavior: HitTestBehavior.opaque,
+                  onTap: isCapturing ? null : onCapture,
+                  child: Stack(
+                    children: [
+                      Positioned(
+                        left: 0,
+                        top: 0,
+                        width: 54 * scale,
+                        height: 54 * scale,
+                        child: SvgPicture.asset(
+                          AppAssets.householdCameraCircle,
+                          fit: BoxFit.fill,
                         ),
                       ),
-                    ),
-                  ],
+                      Positioned(
+                        left: 15 * scale,
+                        top: 15 * scale,
+                        width: 24 * scale,
+                        height: 24 * scale,
+                        child: SvgPicture.asset(
+                          AppAssets.householdCamera,
+                          fit: BoxFit.contain,
+                        ),
+                      ),
+                      Positioned(
+                        left: 0,
+                        top: 54 * scale,
+                        width: 54 * scale,
+                        height: 24 * scale,
+                        child: Text(
+                          'Kamera',
+                          textAlign: TextAlign.center,
+                          style: TextStyle(
+                            color: const Color(0xFF525BCE),
+                            fontSize: 12 * scale,
+                            fontWeight: FontWeight.w500,
+                            height: 24 / 12,
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
                 ),
               ),
             ),
-          ),
+            Positioned(
+              left: 16 * scale,
+              top: 363 * scale,
+              width: 270 * scale,
+              height: 24 * scale,
+              child: Semantics(
+                checked: saveToBeneficiaryDirectory,
+                label: 'Hak sahibinin klasörüne kaydet',
+                child: GestureDetector(
+                  key: const Key('household-save-directory-checkbox'),
+                  behavior: HitTestBehavior.opaque,
+                  onTap: onToggleSave,
+                  child: Row(
+                    children: [
+                      Container(
+                        width: 24 * scale,
+                        height: 24 * scale,
+                        decoration: BoxDecoration(
+                          color: saveToBeneficiaryDirectory
+                              ? AppColors.primary
+                              : AppColors.white,
+                          border: Border.all(color: const Color(0xFFBFBFBF)),
+                          borderRadius: BorderRadius.circular(4 * scale),
+                        ),
+                        child: saveToBeneficiaryDirectory
+                            ? Icon(
+                                Icons.check,
+                                size: 16 * scale,
+                                color: AppColors.white,
+                              )
+                            : null,
+                      ),
+                      SizedBox(width: 12 * scale),
+                      Expanded(
+                        child: Text(
+                          'Hak sahibinin klasörüne kaydet',
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                          style: TextStyle(
+                            color: AppColors.neutralStatusLabel,
+                            fontSize: 14 * scale,
+                            fontWeight: FontWeight.w500,
+                            height: 1.5,
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+            ),
+          ],
         ],
       ),
     );

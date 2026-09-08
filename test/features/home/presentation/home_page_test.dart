@@ -14,6 +14,7 @@ void main() {
     MunicipalityBranding branding = MunicipalityBranding.demo,
     WorkItemsRepository? repository,
     Future<void> Function(WorkItem item)? onOpenEditableDraft,
+    Future<void> Function(WorkItem item)? onOpenSubmittedApplication,
     Future<void> Function(WorkItem item)? onDeleteLocalDraft,
   }) async {
     tester.view.physicalSize = const Size(375, 864);
@@ -28,6 +29,7 @@ void main() {
           workItemsRepository:
               repository ?? _FakeWorkItemsRepository(() async => _workItems),
           onOpenEditableDraft: onOpenEditableDraft,
+          onOpenSubmittedApplication: onOpenSubmittedApplication,
           onDeleteLocalDraft: onDeleteLocalDraft,
         ),
       ),
@@ -59,7 +61,7 @@ void main() {
     expect(find.text('B-2026-150'), findsOneWidget);
     expect(find.text('Ahmet Yılmaz'), findsOneWidget);
     expect(find.text('Bahçelievler Mahallesi No: 4'), findsOneWidget);
-    expect(find.text('Kurulda'), findsOneWidget);
+    expect(find.text('Beklemede'), findsOneWidget);
     expect(find.text('B-2026-151'), findsNothing);
     // Gerçek bildirim akışı kurulana kadar görev sayısı bildirim rozeti gibi gösterilmez.
     expect(find.byKey(const Key('home-pending-count')), findsNothing);
@@ -267,6 +269,37 @@ void main() {
       findsOneWidget,
     );
   });
+
+  testWidgets(
+    'sunucu basvurusunu duzenlenebilir olmasa da detay callbackine iletir',
+    (tester) async {
+      WorkItem? openedItem;
+      final submittedApplication = WorkItem(
+        applicationId: 3751,
+        applicationNumber: '#3751',
+        applicantFullName: 'Huriye Bucak',
+        sourceCode: 'APPLICATION',
+        statusCode: 'KURUL_BEKLIYOR',
+        isCompleted: false,
+        isEditable: false,
+        isOwnedByCurrentUser: false,
+        activityAtUtc: DateTime.utc(2026, 9, 7, 10),
+      );
+      await pumpHome(
+        tester,
+        repository: _FakeWorkItemsRepository(
+          () async => [submittedApplication],
+        ),
+        onOpenSubmittedApplication: (item) async => openedItem = item,
+      );
+      await tester.pumpAndSettle();
+
+      await tester.tap(find.text('#3751'));
+      await tester.pump();
+
+      expect(openedItem, same(submittedApplication));
+    },
+  );
 }
 
 final _workItems = <WorkItem>[

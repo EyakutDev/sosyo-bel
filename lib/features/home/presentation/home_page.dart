@@ -26,6 +26,7 @@ class HomePage extends StatefulWidget {
     this.onBack,
     this.initialSuccessMessage,
     this.onOpenEditableDraft,
+    this.onOpenSubmittedApplication,
     this.onDeleteLocalDraft,
     this.municipalityBranding = MunicipalityBranding.demo,
     super.key,
@@ -36,6 +37,7 @@ class HomePage extends StatefulWidget {
   final VoidCallback? onBack;
   final String? initialSuccessMessage;
   final Future<void> Function(WorkItem item)? onOpenEditableDraft;
+  final Future<void> Function(WorkItem item)? onOpenSubmittedApplication;
   final Future<void> Function(WorkItem item)? onDeleteLocalDraft;
   final MunicipalityBranding municipalityBranding;
 
@@ -51,7 +53,30 @@ class _HomePageState extends State<HomePage> {
   bool _isLoading = true;
   String? _loadErrorMessage;
   String? _openingDraftId;
+  int? _openingApplicationId;
   String? _deletingDraftId;
+
+  Future<void> _openSubmittedApplication(WorkItem item) async {
+    final callback = widget.onOpenSubmittedApplication;
+    final applicationId = item.applicationId;
+    if (callback == null ||
+        !item.isSubmittedApplication ||
+        applicationId == null ||
+        _openingApplicationId != null) {
+      return;
+    }
+    setState(() => _openingApplicationId = applicationId);
+    try {
+      await callback(item);
+      if (mounted) await _loadWorkItems();
+    } on ApiException catch (error) {
+      _showOpenError(error.message);
+    } catch (_) {
+      _showOpenError('Başvuru detayları açılamadı. Lütfen tekrar deneyin.');
+    } finally {
+      if (mounted) setState(() => _openingApplicationId = null);
+    }
+  }
 
   Future<void> _openEditableDraft(WorkItem item) async {
     final callback = widget.onOpenEditableDraft;
@@ -403,11 +428,28 @@ class _HomePageState extends State<HomePage> {
               item.isLocalDraft &&
               localDraftId != null &&
               widget.onDeleteLocalDraft != null;
+          final canOpenSubmittedApplication =
+              item.isSubmittedApplication &&
+              item.applicationId != null &&
+              widget.onOpenSubmittedApplication != null;
+          final canOpenEditableDraft =
+              item.isEditable &&
+              !canOpenSubmittedApplication &&
+              widget.onOpenEditableDraft != null;
           return ApplicationSummaryCard(
             data: applications[index],
             scale: scale,
-            onTap: item.isEditable && _deletingDraftId == null
-                ? () => _openEditableDraft(item)
+            onTap:
+                _deletingDraftId == null &&
+                    _openingApplicationId == null &&
+                    (canOpenSubmittedApplication || canOpenEditableDraft)
+                ? () {
+                    if (canOpenSubmittedApplication) {
+                      _openSubmittedApplication(item);
+                    } else {
+                      _openEditableDraft(item);
+                    }
+                  }
                 : null,
             onDelete: canDelete ? () => _deleteLocalDraft(item) : null,
             isDeleting: localDraftId == _deletingDraftId,

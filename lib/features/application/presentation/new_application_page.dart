@@ -19,6 +19,7 @@ class NewApplicationPage extends StatefulWidget {
     required this.onContinue,
     required this.referenceCatalog,
     this.initialData,
+    this.isEditingSubmittedApplication = false,
     super.key,
   });
 
@@ -28,6 +29,7 @@ class NewApplicationPage extends StatefulWidget {
 
   /// Aktivite adımlarından forma dönüldüğünde daha önce girilen veriyi yükler.
   final NewApplicationFormData? initialData;
+  final bool isEditingSubmittedApplication;
 
   @override
   State<NewApplicationPage> createState() => _NewApplicationPageState();
@@ -121,6 +123,8 @@ class _NewApplicationPageState extends State<NewApplicationPage> {
     if (!mounted) return;
     final message = error is ApiException
         ? error.message
+        : widget.isEditingSubmittedApplication
+        ? 'Başvuru bilgileri açılamadı. Lütfen tekrar deneyin.'
         : 'KPS bilgileri alınamadı. Lütfen tekrar deneyin.';
 
     // Başarısız sorguda form kapatılmaz ve personelin girdiği alanlar korunur.
@@ -233,9 +237,11 @@ class _NewApplicationPageState extends State<NewApplicationPage> {
             tooltip: 'Geri',
           ),
           titleSpacing: 0,
-          title: const Text(
-            'Yeni Başvuru',
-            style: TextStyle(
+          title: Text(
+            widget.isEditingSubmittedApplication
+                ? 'Başvuruyu Düzenle'
+                : 'Yeni Başvuru',
+            style: const TextStyle(
               color: AppColors.neutralDark,
               fontSize: 16,
               fontWeight: FontWeight.w500,
@@ -288,6 +294,7 @@ class _NewApplicationPageState extends State<NewApplicationPage> {
                               LengthLimitingTextInputFormatter(11),
                             ],
                             validator: _identityNumberValidator,
+                            readOnly: widget.isEditingSubmittedApplication,
                           ),
                           const SizedBox(height: 20),
                           ApplicationFormField(
@@ -303,6 +310,7 @@ class _NewApplicationPageState extends State<NewApplicationPage> {
                               DayMonthYearInputFormatter(),
                             ],
                             validator: _birthDateValidator,
+                            readOnly: widget.isEditingSubmittedApplication,
                           ),
                           const SizedBox(height: 20),
                           _buildDropdown(

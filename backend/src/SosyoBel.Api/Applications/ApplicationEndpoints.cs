@@ -25,12 +25,41 @@ internal static class ApplicationEndpoints
             .WithTags("Başvurular")
             .RequireAuthorization(AuthorizationPolicyNames.MobileFieldOperations);
 
+        group.MapGet("/{applicationId:int}", GetSubmittedApplicationDetailAsync)
+            .WithSummary("Başvuru detayını getirir")
+            .WithDescription(
+                "Yetkili personelin kendi başvurusunu veya başka kullanıcıya ait Beklemede başvuruyu; " +
+                "aile fertleri, hane cevapları ve mobil fotoğraf yollarıyla getirir. Başkasına ait " +
+                "sonuçlanmış kayıt açılmaz ve KPS servisine istek gönderilmez. " +
+                "Başvuruyu oluşturan kullanıcı yalnız Beklemede durumunda düzenleme yetkisi alır.")
+            .Produces<SubmittedApplicationDetails>(StatusCodes.Status200OK)
+            .ProducesValidationProblem(StatusCodes.Status400BadRequest)
+            .ProducesProblem(StatusCodes.Status401Unauthorized)
+            .ProducesProblem(StatusCodes.Status403Forbidden)
+            .ProducesProblem(StatusCodes.Status404NotFound)
+            .ProducesProblem(StatusCodes.Status500InternalServerError);
+
+        group.MapPut("/{applicationId:int}", UpdateSubmittedApplicationAsync)
+            .WithSummary("Bekleyen başvuruyu günceller")
+            .WithDescription(
+                "Başvuruyu yalnız oluşturan kullanıcı ve yalnız Beklemede durumundayken güncelleyebilir. " +
+                "Telefon, yardım/engel bilgileri, açıklamalar, aile fertleri ve hane cevapları tek SQL " +
+                "transactionında değiştirilir. KPS kimlik/adres alanları ve fotoğraflar korunur.")
+            .Produces<UpdatedSubmittedApplication>(StatusCodes.Status200OK)
+            .ProducesValidationProblem(StatusCodes.Status400BadRequest)
+            .ProducesProblem(StatusCodes.Status401Unauthorized)
+            .ProducesProblem(StatusCodes.Status403Forbidden)
+            .ProducesProblem(StatusCodes.Status404NotFound)
+            .ProducesProblem(StatusCodes.Status409Conflict)
+            .ProducesProblem(StatusCodes.Status500InternalServerError);
+
         group.MapPost("/submit", SubmitCompletedAsync)
             .WithSummary("Tamamlanmış mobil başvuruyu tek işlemde kurula gönderir")
             .WithDescription(
                 "multipart/form-data içindeki payload JSON alanından kişi/talep, aile ve hane verilerini; " +
                 "photos alanlarından en fazla 15 fotoğrafı alır. KPS sunucuda yeniden doğrulanır. " +
-                "dbo.Basvurular, dbo.BasvuruAileFertleri ve dbo.HaneFotograflari kayıtları tek SQL transactionında yazılır. " +
+                "dbo.Basvurular, dbo.BasvuruAileFertleri, dbo.BasvuruHaneCevaplari ve " +
+                "dbo.HaneFotograflari kayıtları tek SQL transactionında yazılır. " +
                 "Herhangi bir adım başarısız olursa veritabanı kayıtları geri alınır ve yeni dosyalar temizlenir.")
             .WithMetadata(new Microsoft.AspNetCore.Mvc.RequestSizeLimitAttribute(
                 160L * 1024 * 1024))
@@ -46,6 +75,70 @@ internal static class ApplicationEndpoints
             .DisableAntiforgery();
 
         return endpoints;
+    }
+
+    private static async Task<IResult> GetSubmittedApplicationDetailAsync(
+        int applicationId,
+        ClaimsPrincipal principal,
+        ISubmittedApplicationDetailQuery query,
+        CancellationToken cancellationToken)
+    {
+        var errors = new Dictionary<string, string[]>();
+        var actor = ReadActor(principal, errors);
+        if (applicationId <= 0)
+        {
+            errors["applicationId"] =
+                ["Başvuru kimliği sıfırdan büyük olmalıdır."];
+        }
+        if (errors.Count > 0) return Results.ValidationProblem(errors);
+
+        return ToHttpResult(await query.GetAsync(
+            actor!,
+            applicationId,
+            cancellationToken));
+    }
+
+    private static async Task<IResult> UpdateSubmittedApplicationAsync(
+        int applicationId,
+        UpdateSubmittedApplicationRequest request,
+        ClaimsPrincipal principal,
+        IUpdateSubmittedApplicationService service,
+        CancellationToken cancellationToken)
+    {
+        var errors = new Dictionary<string, string[]>();
+        var actor = ReadActor(principal, errors);
+        if (applicationId <= 0)
+        {
+            errors["applicationId"] =
+                ["Başvuru kimliği sıfırdan büyük olmalıdır."];
+        }
+        var editable = ReadSubmittedApplicationEditable(
+            request.Application,
+            errors);
+        if (request.FamilyMembers is null)
+        {
+            errors["familyMembers"] =
+                ["Aile fertleri alanı zorunludur; kayıt yoksa boş dizi gönderilmelidir."];
+        }
+        if (request.HouseholdAnswers is null)
+        {
+            errors["householdAnswers"] =
+                ["Hane cevapları alanı zorunludur."];
+        }
+        var familyMembers = ReadFamilyMembers(request.FamilyMembers, errors);
+        var householdAnswers = ReadHouseholdAnswers(
+            request.HouseholdAnswers,
+            errors);
+        if (errors.Count > 0) return Results.ValidationProblem(errors);
+
+        return ToHttpResult(await service.UpdateAsync(
+            new UpdateSubmittedApplicationCommand(
+                actor!,
+                applicationId,
+                editable!,
+                familyMembers,
+                householdAnswers),
+            cancellationToken));
     }
 
     private static async Task<IResult> SubmitCompletedAsync(
@@ -355,6 +448,10 @@ internal static class ApplicationEndpoints
                 StatusCodes.Status404NotFound,
                 result.Code ?? "application_not_found",
                 result.Detail ?? "Başvuru bulunamadı."),
+            ApplicationLifecycleStatus.Forbidden => Problem(
+                StatusCodes.Status403Forbidden,
+                result.Code ?? "application_forbidden",
+                result.Detail ?? "Bu işlem için yetkiniz bulunmuyor."),
             ApplicationLifecycleStatus.Conflict => Problem(
                 StatusCodes.Status409Conflict,
                 result.Code ?? "application_conflict",
@@ -448,6 +545,34 @@ internal static class ApplicationEndpoints
             request.FieldInspectionNote);
     }
 
+    private static SubmittedApplicationEditableData?
+        ReadSubmittedApplicationEditable(
+            SubmittedApplicationEditableRequest? request,
+            IDictionary<string, string[]> errors)
+    {
+        if (request is null)
+        {
+            errors["application"] =
+                ["Güncellenecek başvuru bilgileri zorunludur."];
+            return null;
+        }
+        if (request.HasDisability is null)
+        {
+            errors["application.hasDisability"] =
+                ["Engel durumu zorunludur."];
+            return null;
+        }
+
+        return new SubmittedApplicationEditableData(
+            request.PhoneNumber ?? string.Empty,
+            request.HelpTypeCode ?? string.Empty,
+            request.HasDisability.Value,
+            request.DisabilityTypeCode,
+            request.DisabilityRate,
+            request.Description,
+            request.FieldInspectionNote);
+    }
+
     private static IReadOnlyCollection<ApplicationFamilyMemberData> ReadFamilyMembers(
         IReadOnlyCollection<ApplicationFamilyMemberRequest>? requests,
         IDictionary<string, string[]> errors)
@@ -504,6 +629,20 @@ internal static class ApplicationEndpoints
         ApplicationDraftRequest? Draft,
         IReadOnlyCollection<ApplicationFamilyMemberRequest>? FamilyMembers,
         IReadOnlyCollection<ApplicationHouseholdAnswerRequest>? HouseholdAnswers);
+
+    private sealed record UpdateSubmittedApplicationRequest(
+        SubmittedApplicationEditableRequest? Application,
+        IReadOnlyCollection<ApplicationFamilyMemberRequest>? FamilyMembers,
+        IReadOnlyCollection<ApplicationHouseholdAnswerRequest>? HouseholdAnswers);
+
+    private sealed record SubmittedApplicationEditableRequest(
+        string? PhoneNumber,
+        string? HelpTypeCode,
+        bool? HasDisability,
+        string? DisabilityTypeCode,
+        byte? DisabilityRate,
+        string? Description,
+        string? FieldInspectionNote);
 
     private sealed record SaveApplicationFieldDataRequest(
         string? ExpectedRowVersion,

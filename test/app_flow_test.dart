@@ -11,6 +11,7 @@ import 'package:sosyo_bel/features/application/domain/application_reference_cata
 import 'package:sosyo_bel/features/application/domain/application_repository.dart';
 import 'package:sosyo_bel/features/application/domain/kps_profile.dart';
 import 'package:sosyo_bel/features/application/domain/local_application_draft_repository.dart';
+import 'package:sosyo_bel/features/application/domain/submitted_application_details.dart';
 import 'package:sosyo_bel/features/application/presentation/models/application_draft.dart';
 import 'package:sosyo_bel/features/home/domain/work_item.dart';
 import 'package:sosyo_bel/features/home/domain/work_items_repository.dart';
@@ -137,6 +138,93 @@ void main() {
 
     expect(find.text('Bekleyen'), findsOneWidget);
     expect(find.text('Tamamlanan'), findsOneWidget);
+  });
+
+  testWidgets('kendi bekleyen başvurusunu detaydan günceller', (tester) async {
+    final applicationRepository = _FakeApplicationRepository();
+    final kpsProfileRepository = _SuccessfulKpsProfileRepository();
+    await pumpApp(
+      tester,
+      applicationRepository: applicationRepository,
+      kpsProfileRepository: kpsProfileRepository,
+      workItemsRepository: _SubmittedApplicationWorkItemsRepository(),
+    );
+
+    await tester.tap(find.byKey(const Key('login-submit-button')));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Görevler'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('#3751').first);
+    await tester.pumpAndSettle();
+
+    expect(find.text('Başvuru Detayı'), findsOneWidget);
+    final editButton = find.byKey(const Key('application-detail-edit-button'));
+    await tester.scrollUntilVisible(
+      editButton,
+      300,
+      scrollable: find.byType(Scrollable),
+    );
+    await tester.tap(editButton);
+    await tester.pumpAndSettle();
+
+    expect(find.text('Başvuruyu Düzenle'), findsOneWidget);
+    expect(find.text('17611268484'), findsOneWidget);
+    await tester.enterText(
+      find.byKey(const Key('new-application-phone-field')),
+      '(555)-999-8877',
+    );
+    await tester.enterText(
+      find.byKey(const Key('new-application-description-field')),
+      'Güncellenmiş talep açıklaması',
+    );
+    final formContinue = find.byKey(
+      const Key('new-application-continue-button'),
+    );
+    await tester.ensureVisible(formContinue);
+    await tester.tap(formContinue);
+    await tester.pumpAndSettle();
+
+    await tester.tap(find.byKey(const Key('citizen-profile-continue-button')));
+    await tester.pumpAndSettle();
+    await tester.tap(
+      find.byKey(const Key('family-information-continue-button')),
+    );
+    await tester.pumpAndSettle();
+
+    await tester.tap(find.byKey(const Key('household-continue-button')));
+    await tester.pumpAndSettle();
+
+    expect(find.text('Düzenlemeyi Tamamla'), findsOneWidget);
+    await tester.enterText(
+      find.byKey(const Key('completion-note-field')),
+      'Güncel saha notu',
+    );
+    await tester.tap(find.byKey(const Key('completion-update-button')));
+    await tester.pumpAndSettle();
+
+    expect(applicationRepository.updateCount, 1);
+    expect(applicationRepository.lastUpdatedApplicationId, 3751);
+    expect(
+      applicationRepository.lastUpdatedDraft?.applicationForm?.phoneNumber,
+      '(555)-999-8877',
+    );
+    expect(
+      applicationRepository.lastUpdatedDraft?.applicationForm?.description,
+      'Güncellenmiş talep açıklaması',
+    );
+    expect(
+      applicationRepository.lastUpdatedDraft?.completionNote,
+      'Güncel saha notu',
+    );
+    expect(kpsProfileRepository.lookupCount, 0);
+
+    await tester.tap(
+      find.byKey(const Key('completion-success-return-to-tasks-button')),
+    );
+    await tester.pumpAndSettle();
+
+    expect(find.text('Başvuru Detayı'), findsOneWidget);
+    expect(applicationRepository.detailsLoadCount, 2);
   });
 
   testWidgets('Başvuru Yap yeni formu açar', (tester) async {
@@ -523,6 +611,28 @@ class _EmptyWorkItemsRepository implements WorkItemsRepository {
   Future<List<WorkItem>> getMyWorkItems({int limit = 100}) async => const [];
 }
 
+class _SubmittedApplicationWorkItemsRepository implements WorkItemsRepository {
+  @override
+  Future<List<WorkItem>> getMyWorkItems({int limit = 100}) async {
+    return [
+      WorkItem(
+        applicationId: 3751,
+        applicationPublicId: '22222222-2222-2222-2222-222222222222',
+        applicationNumber: '#3751',
+        applicantFullName: 'HÜRİYE BUCAK',
+        address: 'ORDUZU MAH. KATMER SK. NO: 7',
+        sourceCode: 'APPLICATION',
+        statusCode: 'KURUL_BEKLIYOR',
+        isCompleted: false,
+        isEditable: true,
+        isOwnedByCurrentUser: true,
+        description: 'Deneme başvurusudur.',
+        activityAtUtc: DateTime.utc(2026, 9, 7, 10, 30),
+      ),
+    ];
+  }
+}
+
 class _FakeApplicationReferenceRepository
     implements ApplicationReferenceRepository {
   @override
@@ -639,7 +749,19 @@ class _FakeLocalApplicationDraftRepository
 
 class _FakeApplicationRepository implements ApplicationRepository {
   int submitCount = 0;
+  int detailsLoadCount = 0;
+  int updateCount = 0;
+  int? lastUpdatedApplicationId;
   ApplicationDraft? lastSubmittedDraft;
+  ApplicationDraft? lastUpdatedDraft;
+
+  @override
+  Future<SubmittedApplicationDetails> getSubmittedDetails({
+    required int applicationId,
+  }) async {
+    detailsLoadCount += 1;
+    return _editableSubmittedApplicationDetails();
+  }
 
   @override
   Future<ApplicationLifecycleEntry> submitCompleted({
@@ -657,6 +779,92 @@ class _FakeApplicationRepository implements ApplicationRepository {
       rowVersion: '',
     );
   }
+
+  @override
+  Future<SubmittedApplicationUpdateResult> updateSubmitted({
+    required int applicationId,
+    required ApplicationDraft draft,
+  }) async {
+    updateCount += 1;
+    lastUpdatedApplicationId = applicationId;
+    lastUpdatedDraft = draft;
+    return const SubmittedApplicationUpdateResult(
+      applicationId: 3751,
+      applicationPublicId: '22222222-2222-2222-2222-222222222222',
+      applicationNumber: '#3751',
+      statusCode: 'KURUL_BEKLIYOR',
+      isEditable: true,
+    );
+  }
+}
+
+SubmittedApplicationDetails _editableSubmittedApplicationDetails() {
+  return SubmittedApplicationDetails(
+    applicationId: 3751,
+    applicationPublicId: '22222222-2222-2222-2222-222222222222',
+    applicationNumber: '#3751',
+    statusCode: 'KURUL_BEKLIYOR',
+    isOwnedByCurrentUser: true,
+    isEditable: true,
+    applicationDate: DateTime.utc(2026, 9, 7, 10, 30),
+    identityNumber: '17611268484',
+    firstName: 'HÜRİYE',
+    lastName: 'BUCAK',
+    birthDate: DateTime(1982, 1, 1),
+    phoneNumber: '5345512873',
+    helpTypeCode: 'GIDA',
+    hasDisability: true,
+    disabilityTypeCode: 'ORTOPEDIK',
+    description: 'Deneme başvurusudur.',
+    fieldInspectionNote: 'Saha notu',
+    address: 'ORDUZU MAH. KATMER SK. NO: 7',
+    gender: 'Kadın',
+    birthPlace: 'KAHTA',
+    maritalStatus: 'Evli',
+    familyMembers: const [
+      SubmittedApplicationFamilyMember(
+        fullName: 'Ayşe Yılmaz',
+        age: 42,
+        relationshipCode: 'DIGER',
+        otherRelationshipDescription: 'Teyze',
+        hasDisability: false,
+        employmentStatusCode: 'CALISIYOR',
+        educationStatusCode: 'LISE',
+        vitalStatusCode: 'SAG',
+      ),
+    ],
+    householdAnswers: const [
+      SubmittedApplicationHouseholdAnswer(
+        questionCode: 'MULKIYET_DURUMU',
+        optionCode: 'KIRACI',
+      ),
+      SubmittedApplicationHouseholdAnswer(
+        questionCode: 'MULK_TIPI',
+        optionCode: 'APARTMAN_DAIRESI',
+      ),
+      SubmittedApplicationHouseholdAnswer(
+        questionCode: 'EV_TEMIZLIGI',
+        optionCode: 'EVET',
+      ),
+      SubmittedApplicationHouseholdAnswer(
+        questionCode: 'BARINMA_DURUMU',
+        optionCode: 'IYI',
+      ),
+      SubmittedApplicationHouseholdAnswer(
+        questionCode: 'EV_ESYALARI',
+        optionCode: 'YETERLI',
+      ),
+    ],
+    photos: [
+      SubmittedApplicationPhoto(
+        photoId: 91,
+        urlPath:
+            '/uploads/hanefotograflari/22222222222222222222222222222222/salon.jpg',
+        description: 'Salon fotoğrafı',
+        uploadedAt: DateTime.utc(2026, 9, 7, 10, 31),
+      ),
+    ],
+  );
 }
 
 AuthenticationSession _testSession() => AuthenticationSession(

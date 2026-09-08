@@ -18,8 +18,11 @@ import 'package:sosyo_bel/features/application/domain/application_reference_cata
 import 'package:sosyo_bel/features/application/domain/application_repository.dart';
 import 'package:sosyo_bel/features/application/domain/kps_profile.dart';
 import 'package:sosyo_bel/features/application/domain/local_application_draft_repository.dart';
+import 'package:sosyo_bel/features/application/domain/submitted_application_details.dart';
+import 'package:sosyo_bel/features/application/presentation/mappers/submitted_application_draft_mapper.dart';
 import 'package:sosyo_bel/features/application/presentation/new_application_page.dart';
 import 'package:sosyo_bel/features/application/presentation/models/application_draft.dart';
+import 'package:sosyo_bel/features/application/presentation/submitted_application_detail_page.dart';
 import 'package:sosyo_bel/features/application/presentation/widgets/application_exit_dialog.dart';
 import 'package:sosyo_bel/features/auth/presentation/login_page.dart';
 import 'package:sosyo_bel/features/auth/domain/auth_repository.dart';
@@ -69,11 +72,14 @@ class AppFlow extends StatefulWidget {
 class _AppFlowState extends State<AppFlow> {
   static const _actionSelectionRouteName = '/action-selection';
   static const _newApplicationRouteName = '/new-application';
+  static const _editApplicationRouteName = '/edit-application';
   static final _householdPhotoPicker = DeviceHouseholdPhotoPicker();
 
   late ApplicationDraft _applicationDraft;
   late String _submitIdempotencyKey;
   String? _localDraftId;
+  int? _editingSubmittedApplicationId;
+  int _editingSubmittedPhotoCount = 0;
   ApplicationReferenceCatalog? _applicationReferences;
   String? _authenticatedUserId;
   late MunicipalityBranding _municipalityBranding;
@@ -228,6 +234,24 @@ class _AppFlowState extends State<AppFlow> {
     _openCitizenProfile(context);
   }
 
+  Future<void> _continueFromSubmittedApplicationEdit(
+    BuildContext context,
+    NewApplicationFormData formData,
+  ) async {
+    if (_editingSubmittedApplicationId == null) {
+      throw StateError('Düzenlenecek başvuru bulunamadı.');
+    }
+    _applicationDraft = _applicationDraft.copyWith(
+      applicationForm: formData,
+      citizenProfile: _applicationDraft.citizenProfile.copyWith(
+        phoneNumber: formData.phoneNumber,
+        disabilityStatus: formData.disabilityStatus,
+      ),
+    );
+    if (!mounted || !context.mounted) return;
+    _openCitizenProfile(context);
+  }
+
   void _openTasks(BuildContext context) {
     // Proje müdürü, Görevler seçeneğinin mevcut bekleyen/tamamlanmış liste
     // ekranını açacağını doğruladı.
@@ -238,6 +262,8 @@ class _AppFlowState extends State<AppFlow> {
           municipalityBranding: _municipalityBranding,
           workItemsRepository: _currentUserWorkItemsRepository(),
           onOpenEditableDraft: (item) => _openSavedDraft(tasksContext, item),
+          onOpenSubmittedApplication: (item) =>
+              _openSubmittedApplicationDetails(tasksContext, item),
           onDeleteLocalDraft: _deleteSavedDraft,
         ),
       ),
@@ -272,6 +298,76 @@ class _AppFlowState extends State<AppFlow> {
     _resetApplicationOperationKeys();
     if (!mounted || !context.mounted) return;
     _pushDraftForm(context, references);
+  }
+
+  Future<void> _openSubmittedApplicationDetails(
+    BuildContext context,
+    WorkItem item,
+  ) async {
+    final applicationId = item.applicationId;
+    if (!item.isSubmittedApplication || applicationId == null) return;
+
+    final references = await _loadApplicationReferences(context);
+    if (references == null || !context.mounted) return;
+
+    await Navigator.of(context).push(
+      _pageRoute(
+        (detailContext) => SubmittedApplicationDetailPage(
+          applicationNumber: item.applicationNumber,
+          referenceCatalog: references,
+          loadDetails: () => widget.applicationRepository.getSubmittedDetails(
+            applicationId: applicationId,
+          ),
+          onEdit: (details) => _openSubmittedApplicationEditor(
+            detailContext,
+            details,
+            references,
+          ),
+          onBack: () => Navigator.of(detailContext).pop(),
+        ),
+      ),
+    );
+  }
+
+  Future<bool> _openSubmittedApplicationEditor(
+    BuildContext context,
+    SubmittedApplicationDetails details,
+    ApplicationReferenceCatalog references,
+  ) async {
+    if (!details.isOwnedByCurrentUser || !details.isEditable) return false;
+
+    try {
+      _applicationDraft = SubmittedApplicationDraftMapper.toDraft(
+        details,
+        references,
+      );
+    } on FormatException catch (error) {
+      throw ApiException(
+        kind: ApiErrorKind.invalidResponse,
+        message: error.message,
+      );
+    }
+    _localDraftId = null;
+    _editingSubmittedApplicationId = details.applicationId;
+    _editingSubmittedPhotoCount = details.photos.length;
+
+    try {
+      final wasUpdated = await Navigator.of(context).push<bool>(
+        MaterialPageRoute<bool>(
+          settings: const RouteSettings(name: _editApplicationRouteName),
+          builder: (formContext) => NewApplicationPage(
+            referenceCatalog: references,
+            initialData: _applicationDraft.applicationForm,
+            isEditingSubmittedApplication: true,
+            onContinue: (formData) =>
+                _continueFromSubmittedApplicationEdit(formContext, formData),
+          ),
+        ),
+      );
+      return wasUpdated ?? false;
+    } finally {
+      _resetApplicationDraft();
+    }
   }
 
   Future<void> _deleteSavedDraft(WorkItem item) async {
@@ -353,6 +449,8 @@ class _AppFlowState extends State<AppFlow> {
           onBack: () => Navigator.of(householdContext).pop(),
           questions: _householdQuestions(_requiredApplicationReferences),
           initialDraft: _applicationDraft.householdStatus,
+          allowPhotoChanges: _editingSubmittedApplicationId == null,
+          existingPhotoCount: _editingSubmittedPhotoCount,
           onDraftChanged: (draft) {
             _applicationDraft = _applicationDraft.copyWith(
               householdStatus: draft,
@@ -389,8 +487,12 @@ class _AppFlowState extends State<AppFlow> {
           onSaveDraft: (payload) =>
               _saveDraftAndOpenPendingList(completionContext, payload),
           onSubmitToBoard: _submitApplication,
-          onSubmissionConfirmed: () =>
-              _openPendingListAfterSubmission(completionContext),
+          onUpdateApplication: _editingSubmittedApplicationId == null
+              ? null
+              : _updateSubmittedApplication,
+          onSubmissionConfirmed: _editingSubmittedApplicationId == null
+              ? () => _openPendingListAfterSubmission(completionContext)
+              : () => _finishSubmittedApplicationUpdate(completionContext),
         ),
       ),
     );
@@ -438,6 +540,29 @@ class _AppFlowState extends State<AppFlow> {
     }
   }
 
+  Future<void> _updateSubmittedApplication(
+    ApplicationCompletionPayload payload,
+  ) async {
+    final applicationId = _editingSubmittedApplicationId;
+    if (applicationId == null) {
+      throw StateError('Güncellenecek başvuru bulunamadı.');
+    }
+    _applicationDraft = payload.applicationDraft;
+    await widget.applicationRepository.updateSubmitted(
+      applicationId: applicationId,
+      draft: _applicationDraft,
+    );
+  }
+
+  void _finishSubmittedApplicationUpdate(BuildContext context) {
+    if (!mounted || !context.mounted) return;
+    final navigator = Navigator.of(context);
+    navigator.popUntil(
+      (route) => route.settings.name == _editApplicationRouteName,
+    );
+    navigator.pop(true);
+  }
+
   void _openPendingListAfterSubmission(BuildContext context) {
     if (!mounted || !context.mounted) return;
 
@@ -457,6 +582,8 @@ class _AppFlowState extends State<AppFlow> {
           municipalityBranding: _municipalityBranding,
           workItemsRepository: _currentUserWorkItemsRepository(),
           onOpenEditableDraft: (item) => _openSavedDraft(homeContext, item),
+          onOpenSubmittedApplication: (item) =>
+              _openSubmittedApplicationDetails(homeContext, item),
           onDeleteLocalDraft: _deleteSavedDraft,
         ),
       ),
@@ -579,9 +706,12 @@ class _AppFlowState extends State<AppFlow> {
     // İlk form rotası geçmişte tutulduğu için yeni, boş bir form oluşturulmaz.
     // Hane taslağı da akış durumunda saklanır ve Aktiviteye yeniden girildiğinde
     // aynı cevaplar ile fotoğraflar tekrar yüklenir.
+    final targetRouteName = _editingSubmittedApplicationId == null
+        ? _newApplicationRouteName
+        : _editApplicationRouteName;
     Navigator.of(
       context,
-    ).popUntil((route) => route.settings.name == _newApplicationRouteName);
+    ).popUntil((route) => route.settings.name == targetRouteName);
   }
 
   Future<void> _confirmAndCloseApplication(BuildContext context) async {
@@ -604,6 +734,8 @@ class _AppFlowState extends State<AppFlow> {
   void _resetApplicationDraft() {
     _applicationDraft = _createInitialApplicationDraft();
     _localDraftId = null;
+    _editingSubmittedApplicationId = null;
+    _editingSubmittedPhotoCount = 0;
     _resetApplicationOperationKeys();
   }
 

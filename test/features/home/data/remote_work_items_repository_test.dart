@@ -16,8 +16,7 @@ void main() {
       'birleşik iş listesini ayrıştırıp yetkili endpointi çağırır',
       () async {
         final adapter = _RecordingAdapter(
-          (_) =>
-              _jsonResponse(200, [_assignedWorkItemJson, _ownApplicationJson]),
+          (_) => _jsonResponse(200, [_assignedWorkItemJson, _applicationJson]),
         );
         final repository = _repository(adapter);
 
@@ -29,11 +28,10 @@ void main() {
         expect(items.first.taskId, 42);
         expect(items.first.applicationPublicId, isNull);
         expect(items.last.taskId, isNull);
+        expect(items.last.applicationId, 151);
+        expect(items.last.isOwnedByCurrentUser, isTrue);
         expect(items.last.isEditable, isTrue);
-        expect(
-          adapter.lastRequest?.uri.path,
-          '/sosyo-bel/api/v1/work-items/mine',
-        );
+        expect(adapter.lastRequest?.uri.path, '/sosyo-bel/api/v1/work-items');
         expect(adapter.lastRequest?.uri.queryParameters['limit'], '25');
         expect(
           adapter.lastRequest?.headers[ApiClient.authorizationHeader],
@@ -47,7 +45,7 @@ void main() {
       () async {
         final adapter = _RecordingAdapter(
           (_) => _jsonResponse(200, [
-            {..._ownApplicationJson, 'isCompleted': 'false'},
+            {..._applicationJson, 'isCompleted': 'false'},
           ]),
         );
         final repository = _repository(adapter);
@@ -95,6 +93,7 @@ RemoteWorkItemsRepository _repository(HttpClientAdapter adapter) {
 }
 
 final _assignedWorkItemJson = <String, dynamic>{
+  'applicationId': null,
   'applicationPublicId': null,
   'taskId': 42,
   'applicationNumber': 'B-2026-150',
@@ -103,20 +102,23 @@ final _assignedWorkItemJson = <String, dynamic>{
   'sourceCode': 'ASSIGNED_TASK',
   'statusCode': 'ATANDI',
   'isCompleted': false,
+  'isOwnedByCurrentUser': false,
   'isEditable': false,
   'description': 'Saha incelemesi',
   'activityAtUtc': '2026-08-10T09:00:00Z',
 };
 
-final _ownApplicationJson = <String, dynamic>{
+final _applicationJson = <String, dynamic>{
+  'applicationId': 151,
   'applicationPublicId': '33333333-3333-3333-3333-333333333333',
   'taskId': null,
   'applicationNumber': 'B-2026-151',
   'applicantFullName': null,
   'address': null,
-  'sourceCode': 'OWN_APPLICATION',
-  'statusCode': 'TASLAK',
+  'sourceCode': 'APPLICATION',
+  'statusCode': 'KURUL_BEKLIYOR',
   'isCompleted': false,
+  'isOwnedByCurrentUser': true,
   'isEditable': true,
   'description': null,
   'activityAtUtc': '2026-08-10T10:00:00Z',

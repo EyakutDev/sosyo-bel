@@ -158,6 +158,66 @@ internal sealed class CompanyApplicationRecord
             CancellationDate = null,
         };
     }
+
+    public void UpdateEditableFields(
+        string phoneNumber,
+        int helpTypeId,
+        bool hasDisability,
+        int? disabilityTypeId,
+        int? disabilityRate,
+        string? description)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(phoneNumber);
+        if (helpTypeId <= 0)
+            throw new ArgumentOutOfRangeException(nameof(helpTypeId));
+        if (hasDisability && disabilityTypeId is not > 0)
+        {
+            throw new ArgumentOutOfRangeException(nameof(disabilityTypeId));
+        }
+
+        ApplicantPhone = phoneNumber.Trim();
+        HelpTypeId = helpTypeId;
+        HasDisability = hasDisability;
+        DisabilityTypeId = hasDisability ? disabilityTypeId : null;
+        DisabilityRate = hasDisability ? disabilityRate : null;
+        Description = string.IsNullOrWhiteSpace(description)
+            ? null
+            : description.Trim();
+    }
+}
+
+/// <summary>
+/// Şirketin dbo.BasvuruHaneCevaplari tablosundaki başvuruya bağlı tek bir
+/// hane sorusu cevabının persistence modelidir.
+/// </summary>
+internal sealed class CompanyApplicationHouseholdAnswerRecord
+{
+    private CompanyApplicationHouseholdAnswerRecord()
+    {
+    }
+
+    public int Id { get; private set; }
+    public int ApplicationId { get; private set; }
+    public string QuestionCode { get; private set; } = string.Empty;
+    public string OptionCode { get; private set; } = string.Empty;
+
+    public static CompanyApplicationHouseholdAnswerRecord Create(
+        int applicationId,
+        ApplicationHouseholdAnswerData answer)
+    {
+        if (applicationId <= 0)
+            throw new ArgumentOutOfRangeException(nameof(applicationId));
+        ArgumentNullException.ThrowIfNull(answer);
+        ArgumentException.ThrowIfNullOrWhiteSpace(answer.QuestionCode);
+        ArgumentException.ThrowIfNullOrWhiteSpace(answer.OptionCode);
+
+        return new CompanyApplicationHouseholdAnswerRecord
+        {
+            ApplicationId = applicationId,
+            QuestionCode = answer.QuestionCode.Trim(),
+            OptionCode = answer.OptionCode.Trim(),
+        };
+    }
 }
 
 /// <summary>

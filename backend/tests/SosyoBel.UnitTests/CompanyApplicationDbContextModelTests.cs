@@ -20,6 +20,7 @@ public sealed class CompanyApplicationDbContextModelTests
             [
                 "BasvuruAileFertleri",
                 "BasvuruDurumlari",
+                "BasvuruHaneCevaplari",
                 "Basvurular",
                 "CalismaDurumlari",
                 "EgitimDurumlari",
@@ -87,6 +88,18 @@ public sealed class CompanyApplicationDbContextModelTests
     }
 
     [Fact]
+    public void ApplicationHouseholdAnswerColumnsMatchCompanySnapshotExactly()
+    {
+        using var context = CreateContext();
+
+        AssertColumns(
+            context,
+            typeof(CompanyApplicationHouseholdAnswerRecord),
+            "BasvuruHaneCevaplari",
+            ["BasvuruId", "Id", "SecenekKodu", "SoruKodu"]);
+    }
+
+    [Fact]
     public void ApplicationFamilyColumnsMatchCompanySnapshotExactly()
     {
         using var context = CreateContext();
@@ -121,6 +134,8 @@ public sealed class CompanyApplicationDbContextModelTests
         var application = context.Model.FindEntityType(typeof(CompanyApplicationRecord))!;
         var family = context.Model.FindEntityType(
             typeof(CompanyApplicationFamilyMemberRecord))!;
+        var householdAnswer = context.Model.FindEntityType(
+            typeof(CompanyApplicationHouseholdAnswerRecord))!;
         var photo = context.Model.FindEntityType(
             typeof(CompanyHouseholdPhotoRecord))!;
 
@@ -138,6 +153,16 @@ public sealed class CompanyApplicationDbContextModelTests
             nameof(CompanyApplicationRecord.PublicToken))!.IsNullable);
         Assert.False(family.FindProperty(
             nameof(CompanyApplicationFamilyMemberRecord.ApplicationId))!.IsNullable);
+        Assert.False(householdAnswer.FindProperty(
+            nameof(CompanyApplicationHouseholdAnswerRecord.ApplicationId))!.IsNullable);
+        Assert.Equal(80, householdAnswer.FindProperty(
+            nameof(CompanyApplicationHouseholdAnswerRecord.QuestionCode))!.GetMaxLength());
+        Assert.False(householdAnswer.FindProperty(
+            nameof(CompanyApplicationHouseholdAnswerRecord.QuestionCode))!.IsNullable);
+        Assert.Equal(80, householdAnswer.FindProperty(
+            nameof(CompanyApplicationHouseholdAnswerRecord.OptionCode))!.GetMaxLength());
+        Assert.False(householdAnswer.FindProperty(
+            nameof(CompanyApplicationHouseholdAnswerRecord.OptionCode))!.IsNullable);
         Assert.False(photo.FindProperty(
             nameof(CompanyHouseholdPhotoRecord.CitizenId))!.IsNullable);
         Assert.False(photo.FindProperty(
@@ -155,6 +180,9 @@ public sealed class CompanyApplicationDbContextModelTests
         AssertForeignKey<CompanyApplicationFamilyMemberRecord, CompanyApplicationRecord>(
             context,
             nameof(CompanyApplicationFamilyMemberRecord.ApplicationId));
+        AssertForeignKey<CompanyApplicationHouseholdAnswerRecord, CompanyApplicationRecord>(
+            context,
+            nameof(CompanyApplicationHouseholdAnswerRecord.ApplicationId));
         AssertForeignKey<CompanyApplicationFamilyMemberRecord, RelationshipReference>(
             context,
             nameof(CompanyApplicationFamilyMemberRecord.RelationshipId));
@@ -162,6 +190,26 @@ public sealed class CompanyApplicationDbContextModelTests
             context,
             nameof(CompanyHouseholdPhotoRecord.CitizenId),
             DeleteBehavior.Cascade);
+    }
+
+    [Fact]
+    public void HouseholdAnswerHasUniqueApplicationQuestionIndex()
+    {
+        using var context = CreateContext();
+        var householdAnswer = context.Model.FindEntityType(
+            typeof(CompanyApplicationHouseholdAnswerRecord))!;
+        var index = Assert.Single(
+            householdAnswer.GetIndexes(),
+            value => value.Properties.Select(property => property.Name).SequenceEqual(
+                [
+                    nameof(CompanyApplicationHouseholdAnswerRecord.ApplicationId),
+                    nameof(CompanyApplicationHouseholdAnswerRecord.QuestionCode),
+                ]));
+
+        Assert.True(index.IsUnique);
+        Assert.Equal(
+            "UQ_BasvuruHaneCevaplari_BasvuruId_SoruKodu",
+            index.GetDatabaseName());
     }
 
     private static CompanyApplicationDbContext CreateContext()

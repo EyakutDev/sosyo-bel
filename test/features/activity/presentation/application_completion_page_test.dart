@@ -36,6 +36,7 @@ void main() {
     VoidCallback? onBack,
     ApplicationCompletionAction? onSaveDraft,
     ApplicationCompletionAction? onSubmitToBoard,
+    ApplicationCompletionAction? onUpdateApplication,
     VoidCallback? onSubmissionConfirmed,
     ValueChanged<String>? onNoteChanged,
     bool initiallySubmitted = false,
@@ -59,6 +60,7 @@ void main() {
             onBack: onBack ?? () {},
             onSaveDraft: onSaveDraft ?? (_) async {},
             onSubmitToBoard: onSubmitToBoard ?? (_) async {},
+            onUpdateApplication: onUpdateApplication,
             onSubmissionConfirmed: onSubmissionConfirmed,
             onNoteChanged: onNoteChanged,
             initiallySubmitted: initiallySubmitted,
@@ -265,5 +267,43 @@ void main() {
           ?.text,
       'Aynı kalacak not',
     );
+  });
+
+  testWidgets('duzenleme modunda yalniz degisiklikleri kaydeder', (
+    tester,
+  ) async {
+    ApplicationCompletionPayload? updatedPayload;
+    var confirmationCount = 0;
+    await pumpPage(
+      tester,
+      onUpdateApplication: (payload) async => updatedPayload = payload,
+      onSubmissionConfirmed: () => confirmationCount += 1,
+    );
+
+    expect(find.text('Düzenlemeyi Tamamla'), findsOneWidget);
+    expect(find.text('Saha Notu'), findsOneWidget);
+    expect(find.byKey(const Key('completion-save-draft-button')), findsNothing);
+    expect(
+      find.byKey(const Key('completion-submit-board-button')),
+      findsNothing,
+    );
+    expect(find.byKey(const Key('completion-update-button')), findsOneWidget);
+
+    await tester.enterText(
+      find.byKey(const Key('completion-note-field')),
+      'Güncel saha notu',
+    );
+    await tester.tap(find.byKey(const Key('completion-update-button')));
+    await tester.pumpAndSettle();
+
+    expect(updatedPayload?.note, 'Güncel saha notu');
+    expect(find.text('Başvuru güncellendi'), findsOneWidget);
+    expect(find.text('Detaya Dön'), findsOneWidget);
+
+    await tester.tap(
+      find.byKey(const Key('completion-success-return-to-tasks-button')),
+    );
+    await tester.pumpAndSettle();
+    expect(confirmationCount, 1);
   });
 }

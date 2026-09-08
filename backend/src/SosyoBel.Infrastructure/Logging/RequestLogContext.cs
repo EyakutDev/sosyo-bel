@@ -28,4 +28,8 @@ public enum RequestLogStage
     PrepareFamily,
     SaveFamilyAndPhotos,
     CommitTransaction,
+    ValidateApplicationUpdate,
+    LoadApplicationForUpdate,
+    ResolveApplicationUpdateReferences,
+    SaveApplicationUpdate,
 }

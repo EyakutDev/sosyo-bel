@@ -9,6 +9,7 @@ import 'package:sosyo_bel/features/activity/presentation/models/household_status
 import 'package:sosyo_bel/features/application/data/application_draft_api_mapper.dart';
 import 'package:sosyo_bel/features/application/domain/application_lifecycle_entry.dart';
 import 'package:sosyo_bel/features/application/domain/application_repository.dart';
+import 'package:sosyo_bel/features/application/domain/submitted_application_details.dart';
 import 'package:sosyo_bel/features/application/presentation/models/application_draft.dart';
 
 /// Telefonda tamamlanan başvuruyu tek atomik HTTP isteğiyle API'ye gönderir.
@@ -18,6 +19,32 @@ class RemoteApplicationRepository implements ApplicationRepository {
   static const _idempotencyHeader = 'Idempotency-Key';
 
   final ApiClient _apiClient;
+
+  @override
+  Future<SubmittedApplicationDetails> getSubmittedDetails({
+    required int applicationId,
+  }) async {
+    _validateApplicationId(applicationId);
+    final response = await _apiClient.get<Map<String, dynamic>>(
+      'api/v1/applications/$applicationId',
+    );
+    final data = response.data;
+    if (data == null) {
+      throw const ApiException(
+        kind: ApiErrorKind.invalidResponse,
+        message: 'Sunucunun başvuru detay cevabı boş.',
+      );
+    }
+
+    try {
+      return SubmittedApplicationDetails.fromJson(data);
+    } on FormatException {
+      throw const ApiException(
+        kind: ApiErrorKind.invalidResponse,
+        message: 'Sunucunun başvuru detay cevabı geçersiz.',
+      );
+    }
+  }
 
   @override
   Future<ApplicationLifecycleEntry> submitCompleted({
@@ -66,6 +93,52 @@ class RemoteApplicationRepository implements ApplicationRepository {
       return ApplicationLifecycleEntry.fromCompletedSubmissionJson(data);
     } on FormatException catch (error) {
       throw ApiException(kind: ApiErrorKind.validation, message: error.message);
+    }
+  }
+
+  @override
+  Future<SubmittedApplicationUpdateResult> updateSubmitted({
+    required int applicationId,
+    required ApplicationDraft draft,
+  }) async {
+    _validateApplicationId(applicationId);
+    late final Map<String, dynamic> payload;
+    try {
+      payload = ApplicationDraftApiMapper.toSubmittedApplicationUpdateRequest(
+        draft,
+      );
+    } on FormatException catch (error) {
+      throw ApiException(kind: ApiErrorKind.validation, message: error.message);
+    }
+
+    final response = await _apiClient.put<Map<String, dynamic>>(
+      'api/v1/applications/$applicationId',
+      data: payload,
+    );
+    final data = response.data;
+    if (data == null) {
+      throw const ApiException(
+        kind: ApiErrorKind.invalidResponse,
+        message: 'Sunucunun başvuru güncelleme cevabı boş.',
+      );
+    }
+    try {
+      return SubmittedApplicationUpdateResult.fromJson(data);
+    } on FormatException {
+      throw const ApiException(
+        kind: ApiErrorKind.invalidResponse,
+        message: 'Sunucunun başvuru güncelleme cevabı geçersiz.',
+      );
+    }
+  }
+
+  void _validateApplicationId(int value) {
+    if (value <= 0) {
+      throw ArgumentError.value(
+        value,
+        'applicationId',
+        'Başvuru kimliği sıfırdan büyük olmalıdır.',
+      );
     }
   }
 

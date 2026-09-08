@@ -252,7 +252,6 @@ public sealed class CompanyApplicationCoreTests
         var result = CompanyApplicationDescriptionComposer.Compose(
             "Talep açıklaması",
             [],
-            [],
             "  Evde düzenli sıcak su bulunmuyor.  ");
 
         Assert.NotNull(result);
@@ -263,6 +262,32 @@ public sealed class CompanyApplicationCoreTests
             "Evde düzenli sıcak su bulunmuyor.",
             result,
             StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void CompanyDescriptionCanBeSplitForEditingWithoutDuplicatingSections()
+    {
+        var members = new[]
+        {
+            FamilyMember(
+                relationshipCode: "DIGER",
+                vitalStatusCode: "OLU",
+                otherRelationship: "Teyze"),
+        };
+        var composed = CompanyApplicationDescriptionComposer.Compose(
+            "Talep açıklaması",
+            members,
+            "Evde düzenli sıcak su bulunmuyor.");
+
+        var parsed = CompanyApplicationDescriptionComposer.Parse(composed);
+
+        Assert.Equal("Talep açıklaması", parsed.RequestDescription);
+        Assert.Equal(
+            "Evde düzenli sıcak su bulunmuyor.",
+            parsed.ExtraNote);
+        var family = Assert.Single(parsed.FamilyMembers);
+        Assert.Equal("OLU", family.VitalStatusCode);
+        Assert.Equal("Teyze", family.OtherRelationshipDescription);
     }
 
     [Fact]
@@ -309,7 +334,7 @@ public sealed class CompanyApplicationCoreTests
     }
 
     [Fact]
-    public void HouseholdAnswersAreValidatedOrderedAndAddedToDescription()
+    public void HouseholdAnswersAreValidatedOrderedAndPreparedForDboTable()
     {
         ApplicationHouseholdAnswerData[] unorderedAnswers =
         [
@@ -331,24 +356,32 @@ public sealed class CompanyApplicationCoreTests
             HouseholdFormContract.Questions.Select(value => value.Code),
             preparation.Answers.Select(value => value.QuestionCode));
 
+        var records = preparation.Answers
+            .Select(answer =>
+                CompanyApplicationHouseholdAnswerRecord.Create(42, answer))
+            .ToArray();
+
+        Assert.Equal(5, records.Length);
+        Assert.All(records, record => Assert.Equal(42, record.ApplicationId));
+        Assert.Equal(
+            HouseholdFormContract.Questions.Select(value => value.Code),
+            records.Select(value => value.QuestionCode));
+        Assert.Equal(
+            unorderedAnswers.ToDictionary(
+                value => value.QuestionCode,
+                value => value.OptionCode,
+                StringComparer.Ordinal),
+            records.ToDictionary(
+                value => value.QuestionCode,
+                value => value.OptionCode,
+                StringComparer.Ordinal));
+
         var description = CompanyApplicationDescriptionComposer.Compose(
             "Talep açıklaması",
-            [],
-            preparation.Answers);
-        Assert.NotNull(description);
-        Assert.Contains("Hane durumu bilgileri", description, StringComparison.Ordinal);
-        Assert.Contains("Mülkiyet Durumu: Kiracı", description, StringComparison.Ordinal);
-        Assert.Contains(
-            "Mülkün Tipi: Apartman Dairesi",
-            description,
-            StringComparison.Ordinal);
-        Assert.Contains("Ev Temiz mi: Hayır", description, StringComparison.Ordinal);
-        Assert.Contains(
-            "Barınılan Yerin Durumu: Orta",
-            description,
-            StringComparison.Ordinal);
-        Assert.Contains(
-            "Evdeki Eşyalar: Kısmen Yeterli",
+            []);
+        Assert.Equal("Talep açıklaması", description);
+        Assert.DoesNotContain(
+            "Hane durumu bilgileri",
             description,
             StringComparison.Ordinal);
     }

@@ -31,7 +31,7 @@ abstract final class WorkItemCardMapper {
     return switch (item.statusCode) {
       'TASLAK' => const _WorkItemStatusView('Taslak', AppColors.statusDraft),
       'KURUL_BEKLIYOR' => const _WorkItemStatusView(
-        'Kurulda',
+        'Beklemede',
         AppColors.statusBoard,
       ),
       'BASLADI' ||

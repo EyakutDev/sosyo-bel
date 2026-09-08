@@ -5,6 +5,7 @@ public enum ApplicationLifecycleStatus
     Succeeded,
     InvalidInput,
     NotFound,
+    Forbidden,
     Conflict,
     IdempotencyConflict,
 }

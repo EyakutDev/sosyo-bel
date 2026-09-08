@@ -133,7 +133,6 @@ internal sealed class CompletedApplicationSubmissionService(
                 var description = CompanyApplicationDescriptionComposer.Compose(
                     normalizedDraft.Description,
                     normalizedFamily,
-                    householdAnswers,
                     normalizedDraft.FieldInspectionNote);
                 var coreDraft = normalizedDraft with
                 {
@@ -177,6 +176,13 @@ internal sealed class CompletedApplicationSubmissionService(
 
                 logContext.Stage = RequestLogStage.SaveFamilyAndPhotos;
                 context.AddRange(familyResult.Records ?? []);
+                var householdRecords = householdAnswers
+                    .Select(answer =>
+                        CompanyApplicationHouseholdAnswerRecord.Create(
+                            coreResult.ApplicationId.Value,
+                            answer))
+                    .ToArray();
+                context.AddRange(householdRecords);
                 var uploadedAt = timeProvider.GetLocalNow().DateTime;
                 var photoRecords = photoPreparation.Records?
                     .Select(photo => CompanyHouseholdPhotoRecord.Create(

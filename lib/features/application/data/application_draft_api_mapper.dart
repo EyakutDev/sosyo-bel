@@ -19,6 +19,38 @@ abstract final class ApplicationDraftApiMapper {
     };
   }
 
+  /// KPS alanlarını güncelleme isteğine eklemeden yalnız personelin
+  /// değiştirebildiği alanları ve tam aile/hane listesini üretir.
+  static Map<String, dynamic> toSubmittedApplicationUpdateRequest(
+    ApplicationDraft draft,
+  ) {
+    final form = draft.applicationForm;
+    if (form == null) {
+      throw const FormatException('Başvuru formu tamamlanmamış.');
+    }
+    final helpTypeCode = form.helpTypeCode.trim();
+    final disabilityStatusCode = form.disabilityStatusCode.trim();
+    if (helpTypeCode.isEmpty || disabilityStatusCode.isEmpty) {
+      throw const FormatException('Başvuru referans kodları eksik.');
+    }
+    final hasDisability = disabilityStatusCode != 'YOK';
+    final fieldData = _toFieldData(draft);
+
+    return {
+      'application': {
+        'phoneNumber': _normalizePhone(form.phoneNumber),
+        'helpTypeCode': helpTypeCode,
+        'hasDisability': hasDisability,
+        'disabilityTypeCode': hasDisability ? disabilityStatusCode : null,
+        'disabilityRate': null,
+        'description': _optionalText(form.description),
+        'fieldInspectionNote': _optionalText(draft.completionNote),
+      },
+      'familyMembers': fieldData['familyMembers'],
+      'householdAnswers': fieldData['householdAnswers'],
+    };
+  }
+
   static Map<String, dynamic> _toDraftEnvelope(ApplicationDraft draft) {
     final form = draft.applicationForm;
     if (form == null) {

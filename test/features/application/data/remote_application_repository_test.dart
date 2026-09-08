@@ -127,8 +127,175 @@ void main() {
       );
       expect(adapter.fetchCount, 0);
     });
+
+    test('gonderilmis basvurunun detaylarini getirir', () async {
+      final adapter = _RecordingAdapter(
+        (_) => _jsonResponse(200, _submittedApplicationDetailsJson),
+      );
+      final repository = _repository(adapter);
+
+      final details = await repository.getSubmittedDetails(applicationId: 3751);
+
+      expect(details.applicationId, 3751);
+      expect(details.applicationNumber, '#3751');
+      expect(details.isOwnedByCurrentUser, isTrue);
+      expect(details.isEditable, isTrue);
+      expect(details.firstName, 'HURIYE');
+      expect(details.fieldInspectionNote, 'Saha notu');
+      expect(details.familyMembers.single.relationshipCode, 'DIGER');
+      expect(details.householdAnswers.single.optionCode, 'KIRACI');
+      expect(details.photos.single.urlPath, contains('/hanefotograflari/'));
+      expect(adapter.lastRequest?.method, 'GET');
+      expect(
+        adapter.lastRequest?.uri.path,
+        '/sosyo-bel/api/v1/applications/3751',
+      );
+      expect(
+        adapter.lastRequest?.headers[ApiClient.authorizationHeader],
+        'Bearer access-token',
+      );
+    });
+
+    test('yalniz duzenlenebilir alanlari put istegiyle gunceller', () async {
+      final adapter = _RecordingAdapter(
+        (_) => _jsonResponse(200, {
+          'applicationId': 3751,
+          'applicationPublicId': '22222222-2222-2222-2222-222222222222',
+          'applicationNumber': '#3751',
+          'statusCode': 'KURUL_BEKLIYOR',
+          'isEditable': true,
+        }),
+      );
+      final repository = _repository(adapter);
+      final draft = _fieldDraft.copyWith(completionNote: 'Guncel saha notu');
+
+      final result = await repository.updateSubmitted(
+        applicationId: 3751,
+        draft: draft,
+      );
+
+      expect(result.applicationId, 3751);
+      expect(result.statusCode, 'KURUL_BEKLIYOR');
+      expect(result.isEditable, isTrue);
+      expect(adapter.lastRequest?.method, 'PUT');
+      expect(
+        adapter.lastRequest?.uri.path,
+        '/sosyo-bel/api/v1/applications/3751',
+      );
+      final payload = adapter.lastRequest?.data as Map<String, dynamic>;
+      expect(payload.keys, {
+        'application',
+        'familyMembers',
+        'householdAnswers',
+      });
+      final application = payload['application'] as Map<String, dynamic>;
+      expect(application['phoneNumber'], '5345512872');
+      expect(application['helpTypeCode'], 'GIDA');
+      expect(application['hasDisability'], isTrue);
+      expect(application['disabilityTypeCode'], 'ORTOPEDIK');
+      expect(application['fieldInspectionNote'], 'Guncel saha notu');
+      expect(application, isNot(contains('identityNumber')));
+      expect(application, isNot(contains('birthDate')));
+      expect(application, isNot(contains('applicantFirstName')));
+      expect(application, isNot(contains('applicantLastName')));
+      expect(application, isNot(contains('address')));
+      expect(application, isNot(contains('photos')));
+      expect(payload['familyMembers'], hasLength(1));
+      expect(payload['householdAnswers'], hasLength(2));
+    });
+
+    test('bozuk detay cevabini gecersiz sunucu cevabina cevirir', () async {
+      final adapter = _RecordingAdapter(
+        (_) => _jsonResponse(200, {
+          ..._submittedApplicationDetailsJson,
+          'isEditable': 'true',
+        }),
+      );
+      final repository = _repository(adapter);
+
+      await expectLater(
+        repository.getSubmittedDetails(applicationId: 3751),
+        throwsA(
+          isA<ApiException>().having(
+            (error) => error.kind,
+            'kind',
+            ApiErrorKind.invalidResponse,
+          ),
+        ),
+      );
+    });
+
+    test('gecersiz basvuru kimliginde ag cagrisi yapmaz', () async {
+      final adapter = _RecordingAdapter(
+        (_) => throw StateError('API cagrilmamali.'),
+      );
+      final repository = _repository(adapter);
+
+      await expectLater(
+        repository.getSubmittedDetails(applicationId: 0),
+        throwsArgumentError,
+      );
+      await expectLater(
+        repository.updateSubmitted(applicationId: -1, draft: _fieldDraft),
+        throwsArgumentError,
+      );
+      expect(adapter.fetchCount, 0);
+    });
   });
 }
+
+final _submittedApplicationDetailsJson = <String, dynamic>{
+  'applicationId': 3751,
+  'applicationPublicId': '22222222-2222-2222-2222-222222222222',
+  'applicationNumber': '#3751',
+  'statusCode': 'KURUL_BEKLIYOR',
+  'isOwnedByCurrentUser': true,
+  'isEditable': true,
+  'applicationDate': '2026-09-07T10:30:00Z',
+  'identityNumber': '17611268484',
+  'firstName': 'HURIYE',
+  'lastName': 'BUCAK',
+  'birthDate': '1982-01-01',
+  'phoneNumber': '5345512873',
+  'helpTypeCode': 'EV_ESYASI',
+  'hasDisability': true,
+  'disabilityTypeCode': 'SUREGEN_HASTALIK',
+  'disabilityRate': null,
+  'description': 'Basvuru aciklamasi',
+  'fieldInspectionNote': 'Saha notu',
+  'address': 'ORDUZU MAH. KATMER SK.',
+  'gender': 'Kadin',
+  'birthPlace': 'KAHTA',
+  'maritalStatus': 'Evli',
+  'cancellationDescription': null,
+  'cancellationDate': null,
+  'familyMembers': [
+    {
+      'fullName': 'Ayse Yilmaz',
+      'age': 42,
+      'relationshipCode': 'DIGER',
+      'otherRelationshipDescription': 'Teyze',
+      'hasDisability': true,
+      'disabilityTypeCode': 'SUREGEN_HASTALIK',
+      'disabilityDescription': null,
+      'employmentStatusCode': 'CALISIYOR',
+      'educationStatusCode': 'LISE',
+      'vitalStatusCode': 'SAG',
+    },
+  ],
+  'householdAnswers': [
+    {'questionCode': 'MULKIYET_DURUMU', 'optionCode': 'KIRACI'},
+  ],
+  'photos': [
+    {
+      'photoId': 91,
+      'urlPath':
+          '/uploads/hanefotograflari/22222222222222222222222222222222/hane.jpg',
+      'description': null,
+      'uploadedAt': '2026-09-07T10:31:00Z',
+    },
+  ],
+};
 
 const _fieldDraft = ApplicationDraft(
   applicationForm: NewApplicationFormData(

@@ -4,6 +4,7 @@ public static class WorkItemSourceCodes
 {
     public const string AssignedTask = "ASSIGNED_TASK";
     public const string OwnApplication = "OWN_APPLICATION";
+    public const string Application = "APPLICATION";
 }
 
 public static class WorkItemStatusCodes
@@ -21,6 +22,7 @@ public static class WorkItemStatusCodes
 /// oluşturulmuş hem de aynı kullanıcıya görev olarak atanmışsa sorgu tek kayıt döndürür.
 /// </summary>
 public sealed record UserWorkItemSummary(
+    int? ApplicationId,
     Guid? ApplicationPublicId,
     int? TaskId,
     string ApplicationNumber,
@@ -29,6 +31,7 @@ public sealed record UserWorkItemSummary(
     string SourceCode,
     string StatusCode,
     bool IsCompleted,
+    bool IsOwnedByCurrentUser,
     bool IsEditable,
     string? Description,
     DateTime ActivityAtUtc);

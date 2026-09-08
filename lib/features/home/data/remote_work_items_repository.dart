@@ -3,7 +3,8 @@ import 'package:sosyo_bel/core/network/api_exception.dart';
 import 'package:sosyo_bel/features/home/domain/work_item.dart';
 import 'package:sosyo_bel/features/home/domain/work_items_repository.dart';
 
-/// Oturumdaki personelin kendi başvurularını ve atanmış görevlerini getirir.
+/// Personelin kendi başvurularını, diğer bekleyen başvuruları ve atanmış
+/// görevlerini yetkili birleşik liste endpointinden getirir.
 class RemoteWorkItemsRepository implements WorkItemsRepository {
   const RemoteWorkItemsRepository(this._apiClient);
 
@@ -20,7 +21,7 @@ class RemoteWorkItemsRepository implements WorkItemsRepository {
     }
 
     final response = await _apiClient.get<List<dynamic>>(
-      'api/v1/work-items/mine',
+      'api/v1/work-items',
       queryParameters: {'limit': limit},
     );
     final data = response.data;

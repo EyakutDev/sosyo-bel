@@ -16,8 +16,8 @@ internal sealed record CompanyApplicationHouseholdPreparationResult(
     IReadOnlyDictionary<string, string[]>? Errors = null);
 
 /// <summary>
-/// Hane cevaplarını sabit mobil form sözleşmesine göre doğrular. Ayrı bir tabloya
-/// yazmaz; doğrulanmış cevaplar TalepAciklamasi metnine eklenecektir.
+/// Hane cevaplarını dbo.BasvuruHaneCevaplari tablosuna yazılmadan önce sabit
+/// mobil form sözleşmesine göre doğrular ve soru sırasına dizer.
 /// </summary>
 internal static class CompanyApplicationHouseholdPreparer
 {

@@ -20,6 +20,8 @@ void main() {
     HouseholdStatusStage initialStage = HouseholdStatusStage.questions,
     List<HouseholdPhotoViewData> initialPhotos = const [],
     List<HouseholdQuestionViewData> questions = householdQuestionTestViewData,
+    bool allowPhotoChanges = true,
+    int existingPhotoCount = 0,
     double topSafeArea = 0,
   }) async {
     tester.view.physicalSize = const Size(375, 812);
@@ -39,6 +41,8 @@ void main() {
             questions: questions,
             initialStage: initialStage,
             initialPhotos: initialPhotos,
+            allowPhotoChanges: allowPhotoChanges,
+            existingPhotoCount: existingPhotoCount,
             onBack: onBack ?? () {},
             onHeaderBack: onHeaderBack,
             onContinue: onContinue ?? (_) {},
@@ -219,5 +223,34 @@ void main() {
 
     expect(captureCount, 1);
     expect(submittedDraft?.photos, hasLength(15));
+  });
+
+  testWidgets('duzenlemede mevcut fotograflari koruyup degistirmez', (
+    tester,
+  ) async {
+    HouseholdStatusDraft? submittedDraft;
+    await pumpPage(
+      tester,
+      allowPhotoChanges: false,
+      existingPhotoCount: 2,
+      onContinue: (draft) => submittedDraft = draft,
+    );
+
+    await tester.tap(find.byKey(const Key('household-photos-tab')));
+    await tester.pump();
+
+    expect(find.text('2 kayıtlı hane fotoğrafı korunacak.'), findsOneWidget);
+    expect(find.byKey(const Key('household-camera-button')), findsNothing);
+    expect(
+      find.byKey(const Key('household-save-directory-checkbox')),
+      findsNothing,
+    );
+
+    await tester.tap(find.byKey(const Key('household-questions-tab')));
+    await tester.tap(find.byKey(const Key('household-continue-button')));
+    await tester.pump();
+
+    expect(submittedDraft, isNotNull);
+    expect(submittedDraft?.photos, isEmpty);
   });
 }

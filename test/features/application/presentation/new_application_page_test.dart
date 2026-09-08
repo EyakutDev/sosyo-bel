@@ -52,6 +52,7 @@ void main() {
     WidgetTester tester, {
     required Future<void> Function(NewApplicationFormData) onContinue,
     NewApplicationFormData? initialData,
+    bool isEditingSubmittedApplication = false,
   }) async {
     tester.view.physicalSize = const Size(390, 844);
     tester.view.devicePixelRatio = 1;
@@ -64,6 +65,7 @@ void main() {
         home: NewApplicationPage(
           referenceCatalog: _referenceCatalog,
           initialData: initialData,
+          isEditingSubmittedApplication: isEditingSubmittedApplication,
           onContinue: onContinue,
         ),
       ),
@@ -311,6 +313,42 @@ void main() {
     expect(find.text('KPS sorgulama yetkisi bulunmuyor.'), findsOneWidget);
     expect(find.text('Yeni Başvuru'), findsOneWidget);
     expect(find.text('12345678901'), findsOneWidget);
+  });
+
+  testWidgets('duzenleme modunda KPS kimlik alanlarini kilitler', (
+    tester,
+  ) async {
+    const initialData = NewApplicationFormData(
+      identityNumber: '12345678901',
+      birthDate: '03/11/2002',
+      disabilityStatusCode: 'YOK',
+      disabilityStatus: 'Yok',
+      phoneNumber: '(534)-551-2872',
+      helpTypeCode: 'GIDA',
+      helpType: 'Gıda Yardımı',
+      description: 'Mevcut açıklama',
+    );
+    await pumpPage(
+      tester,
+      initialData: initialData,
+      isEditingSubmittedApplication: true,
+      onContinue: (_) async {},
+    );
+
+    EditableText field(String key) {
+      return tester.widget<EditableText>(
+        find.descendant(
+          of: find.byKey(Key(key)),
+          matching: find.byType(EditableText),
+        ),
+      );
+    }
+
+    expect(find.text('Başvuruyu Düzenle'), findsOneWidget);
+    expect(field('new-application-tckn-field').readOnly, isTrue);
+    expect(field('new-application-birth-date-field').readOnly, isTrue);
+    expect(field('new-application-phone-field').readOnly, isFalse);
+    expect(field('new-application-description-field').readOnly, isFalse);
   });
 }
 

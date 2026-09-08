@@ -15,6 +15,7 @@ class ApplicationFormField extends StatelessWidget {
     this.inputFormatters,
     this.maxLines = 1,
     this.validator,
+    this.readOnly = false,
     super.key,
   });
 
@@ -28,6 +29,7 @@ class ApplicationFormField extends StatelessWidget {
   final List<TextInputFormatter>? inputFormatters;
   final int maxLines;
   final FormFieldValidator<String>? validator;
+  final bool readOnly;
 
   @override
   Widget build(BuildContext context) {
@@ -38,6 +40,7 @@ class ApplicationFormField extends StatelessWidget {
         const SizedBox(height: 8),
         TextFormField(
           controller: controller,
+          readOnly: readOnly,
           keyboardType: keyboardType,
           textInputAction: textInputAction,
           inputFormatters: inputFormatters,
@@ -55,6 +58,7 @@ class ApplicationFormField extends StatelessWidget {
             hintText: hintText,
             prefixIcon: prefixIcon,
             alignIconToTop: maxLines > 1,
+            readOnly: readOnly,
           ),
           validator: validator,
         ),
@@ -69,6 +73,7 @@ InputDecoration applicationFormInputDecoration({
   required String hintText,
   required IconData prefixIcon,
   bool alignIconToTop = false,
+  bool readOnly = false,
 }) {
   const borderSide = BorderSide(color: AppColors.neutralBorder, width: 1);
   const borderRadius = BorderRadius.all(Radius.circular(15));
@@ -81,7 +86,7 @@ InputDecoration applicationFormInputDecoration({
       fontWeight: FontWeight.w400,
     ),
     filled: true,
-    fillColor: AppColors.white,
+    fillColor: readOnly ? AppColors.primarySurface : AppColors.white,
     isDense: true,
     contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 12),
     prefixIcon: Padding(
