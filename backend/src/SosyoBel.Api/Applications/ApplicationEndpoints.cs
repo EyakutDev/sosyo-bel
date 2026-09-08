@@ -39,13 +39,44 @@ internal static class ApplicationEndpoints
             .ProducesProblem(StatusCodes.Status404NotFound)
             .ProducesProblem(StatusCodes.Status500InternalServerError);
 
+        group.MapGet(
+                "/{applicationId:int}/photos/{photoId:int}",
+                GetSubmittedApplicationPhotoAsync)
+            .WithSummary("Başvuru fotoğrafını getirir")
+            .WithDescription(
+                "Detay erişimi bulunan kullanıcının dbo.HaneFotograflari kaydındaki " +
+                "fotoğrafı yetkili olarak indirir.")
+            .Produces(StatusCodes.Status200OK)
+            .ProducesValidationProblem(StatusCodes.Status400BadRequest)
+            .ProducesProblem(StatusCodes.Status403Forbidden)
+            .ProducesProblem(StatusCodes.Status404NotFound);
+
         group.MapPut("/{applicationId:int}", UpdateSubmittedApplicationAsync)
             .WithSummary("Bekleyen başvuruyu günceller")
             .WithDescription(
                 "Başvuruyu yalnız oluşturan kullanıcı ve yalnız Beklemede durumundayken güncelleyebilir. " +
                 "Telefon, yardım/engel bilgileri, açıklamalar, aile fertleri ve hane cevapları tek SQL " +
-                "transactionında değiştirilir. KPS kimlik/adres alanları ve fotoğraflar korunur.")
+                "transactionında değiştirilir. JSON isteği fotoğrafları korur; multipart isteği " +
+                "korunacak fotoğraf kimliklerini ve yeni fotoğrafları birlikte günceller.")
+            .WithMetadata(new Microsoft.AspNetCore.Mvc.RequestSizeLimitAttribute(
+                160L * 1024 * 1024))
+            .Accepts<UpdateSubmittedApplicationRequest>("application/json")
             .Produces<UpdatedSubmittedApplication>(StatusCodes.Status200OK)
+            .ProducesValidationProblem(StatusCodes.Status400BadRequest)
+            .ProducesProblem(StatusCodes.Status401Unauthorized)
+            .ProducesProblem(StatusCodes.Status403Forbidden)
+            .ProducesProblem(StatusCodes.Status404NotFound)
+            .ProducesProblem(StatusCodes.Status409Conflict)
+            .ProducesProblem(StatusCodes.Status500InternalServerError)
+            .DisableAntiforgery();
+
+        group.MapDelete("/{applicationId:int}", DeleteSubmittedApplicationAsync)
+            .WithSummary("Bekleyen başvuruyu siler")
+            .WithDescription(
+                "Başvuruyu yalnız oluşturan kullanıcı ve yalnız Beklemede durumundayken fiziksel olarak silebilir. " +
+                "Başvuru, aile fertleri, hane cevapları ve bu başvuruya ait mobil fotoğraflar tek SQL " +
+                "transaction içinde kaldırılır.")
+            .Produces<DeletedSubmittedApplication>(StatusCodes.Status200OK)
             .ProducesValidationProblem(StatusCodes.Status400BadRequest)
             .ProducesProblem(StatusCodes.Status401Unauthorized)
             .ProducesProblem(StatusCodes.Status403Forbidden)
@@ -98,9 +129,39 @@ internal static class ApplicationEndpoints
             cancellationToken));
     }
 
+    private static async Task<IResult> GetSubmittedApplicationPhotoAsync(
+        int applicationId,
+        int photoId,
+        ClaimsPrincipal principal,
+        ISubmittedApplicationPhotoQuery query,
+        CancellationToken cancellationToken)
+    {
+        var errors = new Dictionary<string, string[]>();
+        var actor = ReadActor(principal, errors);
+        if (applicationId <= 0)
+            errors["applicationId"] = ["Başvuru kimliği sıfırdan büyük olmalıdır."];
+        if (photoId <= 0)
+            errors["photoId"] = ["Fotoğraf kimliği sıfırdan büyük olmalıdır."];
+        if (errors.Count > 0) return Results.ValidationProblem(errors);
+
+        var result = await query.OpenReadAsync(
+            actor!,
+            applicationId,
+            photoId,
+            cancellationToken);
+        return result.Status == ApplicationLifecycleStatus.Succeeded &&
+               result.Value is not null
+            ? Results.Stream(
+                result.Value.Content,
+                result.Value.ContentType,
+                result.Value.DownloadFileName,
+                enableRangeProcessing: false)
+            : ToHttpResult(result);
+    }
+
     private static async Task<IResult> UpdateSubmittedApplicationAsync(
         int applicationId,
-        UpdateSubmittedApplicationRequest request,
+        HttpRequest httpRequest,
         ClaimsPrincipal principal,
         IUpdateSubmittedApplicationService service,
         CancellationToken cancellationToken)
@@ -112,32 +173,143 @@ internal static class ApplicationEndpoints
             errors["applicationId"] =
                 ["Başvuru kimliği sıfırdan büyük olmalıdır."];
         }
-        var editable = ReadSubmittedApplicationEditable(
-            request.Application,
-            errors);
-        if (request.FamilyMembers is null)
+        UpdateSubmittedApplicationRequest? request = null;
+        SubmittedApplicationPhotoUpdateData? photoUpdate = null;
+        var streams = new List<Stream>();
+        try
         {
-            errors["familyMembers"] =
-                ["Aile fertleri alanı zorunludur; kayıt yoksa boş dizi gönderilmelidir."];
+            if (httpRequest.HasFormContentType)
+            {
+                var form = await httpRequest.ReadFormAsync(cancellationToken);
+                var payloadText = form["payload"].Count == 1
+                    ? form["payload"][0]
+                    : null;
+                if (string.IsNullOrWhiteSpace(payloadText))
+                {
+                    errors["payload"] = ["Tek bir payload JSON alanı zorunludur."];
+                }
+                else
+                {
+                    try
+                    {
+                        request = JsonSerializer.Deserialize<
+                            UpdateSubmittedApplicationRequest>(
+                            payloadText,
+                            JsonOptions);
+                    }
+                    catch (JsonException)
+                    {
+                        errors["payload"] = ["Payload geçerli JSON biçiminde olmalıdır."];
+                    }
+                }
+
+                if (request?.RetainedPhotoIds is null)
+                {
+                    errors["retainedPhotoIds"] =
+                        ["Korunacak fotoğraf kimlikleri alanı zorunludur."];
+                }
+                else
+                {
+                    var files = form.Files.GetFiles("photos");
+                    var newPhotos = new List<ApplicationPhotoUpload>(files.Count);
+                    if (request.RetainedPhotoIds.Count + files.Count <=
+                        ApplicationPhotoPolicy.MaximumPhotoCount)
+                    {
+                        for (var index = 0; index < files.Count; index++)
+                        {
+                            var file = files[index];
+                            var stream = file.OpenReadStream();
+                            streams.Add(stream);
+                            newPhotos.Add(new(
+                                file.FileName,
+                                file.ContentType,
+                                file.Length,
+                                checked((byte)(
+                                    request.RetainedPhotoIds.Count + index + 1)),
+                                stream));
+                        }
+                    }
+                    else
+                    {
+                        errors["photos"] =
+                            [$"Toplam en fazla {ApplicationPhotoPolicy.MaximumPhotoCount} fotoğraf bulunabilir."];
+                    }
+                    photoUpdate = new(
+                        request.RetainedPhotoIds,
+                        newPhotos);
+                }
+            }
+            else
+            {
+                try
+                {
+                    request = await httpRequest.ReadFromJsonAsync<
+                        UpdateSubmittedApplicationRequest>(
+                        JsonOptions,
+                        cancellationToken);
+                }
+                catch (JsonException)
+                {
+                    errors["request"] = ["İstek geçerli JSON biçiminde olmalıdır."];
+                }
+            }
+
+            if (request is null)
+                errors["request"] = ["Başvuru güncelleme içeriği zorunludur."];
+            if (errors.Count > 0) return Results.ValidationProblem(errors);
+
+            var editable = ReadSubmittedApplicationEditable(
+                request!.Application,
+                errors);
+            if (request.FamilyMembers is null)
+            {
+                errors["familyMembers"] =
+                    ["Aile fertleri alanı zorunludur; kayıt yoksa boş dizi gönderilmelidir."];
+            }
+            if (request.HouseholdAnswers is null)
+            {
+                errors["householdAnswers"] =
+                    ["Hane cevapları alanı zorunludur."];
+            }
+            var familyMembers = ReadFamilyMembers(request.FamilyMembers, errors);
+            var householdAnswers = ReadHouseholdAnswers(
+                request.HouseholdAnswers,
+                errors);
+            if (errors.Count > 0) return Results.ValidationProblem(errors);
+
+            return ToHttpResult(await service.UpdateAsync(
+                new UpdateSubmittedApplicationCommand(
+                    actor!,
+                    applicationId,
+                    editable!,
+                    familyMembers,
+                    householdAnswers,
+                    photoUpdate),
+                cancellationToken));
         }
-        if (request.HouseholdAnswers is null)
+        finally
         {
-            errors["householdAnswers"] =
-                ["Hane cevapları alanı zorunludur."];
+            foreach (var stream in streams) await stream.DisposeAsync();
         }
-        var familyMembers = ReadFamilyMembers(request.FamilyMembers, errors);
-        var householdAnswers = ReadHouseholdAnswers(
-            request.HouseholdAnswers,
-            errors);
+    }
+
+    private static async Task<IResult> DeleteSubmittedApplicationAsync(
+        int applicationId,
+        ClaimsPrincipal principal,
+        IDeleteSubmittedApplicationService service,
+        CancellationToken cancellationToken)
+    {
+        var errors = new Dictionary<string, string[]>();
+        var actor = ReadActor(principal, errors);
+        if (applicationId <= 0)
+        {
+            errors["applicationId"] =
+                ["Başvuru kimliği sıfırdan büyük olmalıdır."];
+        }
         if (errors.Count > 0) return Results.ValidationProblem(errors);
 
-        return ToHttpResult(await service.UpdateAsync(
-            new UpdateSubmittedApplicationCommand(
-                actor!,
-                applicationId,
-                editable!,
-                familyMembers,
-                householdAnswers),
+        return ToHttpResult(await service.DeleteAsync(
+            new DeleteSubmittedApplicationCommand(actor!, applicationId),
             cancellationToken));
     }
 
@@ -633,7 +805,8 @@ internal static class ApplicationEndpoints
     private sealed record UpdateSubmittedApplicationRequest(
         SubmittedApplicationEditableRequest? Application,
         IReadOnlyCollection<ApplicationFamilyMemberRequest>? FamilyMembers,
-        IReadOnlyCollection<ApplicationHouseholdAnswerRequest>? HouseholdAnswers);
+        IReadOnlyCollection<ApplicationHouseholdAnswerRequest>? HouseholdAnswers,
+        IReadOnlyCollection<int>? RetainedPhotoIds = null);
 
     private sealed record SubmittedApplicationEditableRequest(
         string? PhoneNumber,

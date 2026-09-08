@@ -9,6 +9,8 @@ typedef SubmittedApplicationDetailsLoader =
     Future<SubmittedApplicationDetails> Function();
 typedef SubmittedApplicationEditor =
     Future<bool> Function(SubmittedApplicationDetails details);
+typedef SubmittedApplicationDeleter =
+    Future<void> Function(SubmittedApplicationDetails details);
 
 /// Kurula gönderilmiş bir başvuruyu değiştirmeden görüntüler.
 class SubmittedApplicationDetailPage extends StatefulWidget {
@@ -18,6 +20,7 @@ class SubmittedApplicationDetailPage extends StatefulWidget {
     required this.loadDetails,
     required this.onBack,
     this.onEdit,
+    this.onDelete,
     super.key,
   });
 
@@ -26,6 +29,7 @@ class SubmittedApplicationDetailPage extends StatefulWidget {
   final SubmittedApplicationDetailsLoader loadDetails;
   final VoidCallback onBack;
   final SubmittedApplicationEditor? onEdit;
+  final SubmittedApplicationDeleter? onDelete;
 
   @override
   State<SubmittedApplicationDetailPage> createState() =>
@@ -38,6 +42,7 @@ class _SubmittedApplicationDetailPageState
   String? _errorMessage;
   bool _isLoading = true;
   bool _isOpeningEditor = false;
+  bool _isDeleting = false;
 
   @override
   void initState() {
@@ -79,7 +84,8 @@ class _SubmittedApplicationDetailPageState
         editor == null ||
         !details.isOwnedByCurrentUser ||
         !details.isEditable ||
-        _isOpeningEditor) {
+        _isOpeningEditor ||
+        _isDeleting) {
       return;
     }
     setState(() => _isOpeningEditor = true);
@@ -94,6 +100,65 @@ class _SubmittedApplicationDetailPageState
       );
     } finally {
       if (mounted) setState(() => _isOpeningEditor = false);
+    }
+  }
+
+  Future<void> _deleteApplication() async {
+    final details = _details;
+    final deleter = widget.onDelete;
+    if (details == null ||
+        deleter == null ||
+        !details.isOwnedByCurrentUser ||
+        !details.isEditable ||
+        _isOpeningEditor ||
+        _isDeleting) {
+      return;
+    }
+
+    final confirmed = await showDialog<bool>(
+      context: context,
+      barrierDismissible: false,
+      builder: (dialogContext) => AlertDialog(
+        key: const Key('application-delete-dialog'),
+        title: const Text('Başvuruyu sil'),
+        content: const Text(
+          'Bu başvuru kalıcı olarak silinecek. Bu işlem geri alınamaz.',
+        ),
+        actions: [
+          TextButton(
+            key: const Key('application-delete-cancel-button'),
+            onPressed: () => Navigator.of(dialogContext).pop(false),
+            child: const Text('Vazgeç'),
+          ),
+          FilledButton(
+            key: const Key('application-delete-confirm-button'),
+            onPressed: () => Navigator.of(dialogContext).pop(true),
+            style: FilledButton.styleFrom(
+              backgroundColor: AppColors.statusRejected,
+              foregroundColor: AppColors.white,
+            ),
+            child: const Text('Sil'),
+          ),
+        ],
+      ),
+    );
+    if (!mounted || confirmed != true) return;
+
+    setState(() => _isDeleting = true);
+    try {
+      await deleter(details);
+      if (!mounted) return;
+      final messenger = ScaffoldMessenger.of(context);
+      messenger
+        ..hideCurrentSnackBar()
+        ..showSnackBar(const SnackBar(content: Text('Başvuru silindi.')));
+      widget.onBack();
+    } on ApiException catch (error) {
+      _showEditError(error.message);
+    } catch (_) {
+      _showEditError('Başvuru silinemedi. Lütfen tekrar deneyin.');
+    } finally {
+      if (mounted) setState(() => _isDeleting = false);
     }
   }
 
@@ -166,7 +231,14 @@ class _SubmittedApplicationDetailPageState
               _details!.isEditable
           ? _openEditor
           : null,
+      onDelete:
+          widget.onDelete != null &&
+              _details!.isOwnedByCurrentUser &&
+              _details!.isEditable
+          ? _deleteApplication
+          : null,
       isOpeningEditor: _isOpeningEditor,
+      isDeleting: _isDeleting,
     );
   }
 }
@@ -228,26 +300,58 @@ class _DetailHeader extends StatelessWidget {
   }
 }
 
-class _DetailContent extends StatelessWidget {
+enum _DetailSectionType {
+  citizen,
+  request,
+  family,
+  household,
+  photos,
+  cancellation,
+}
+
+class _DetailContent extends StatefulWidget {
   const _DetailContent({
     required this.details,
     required this.catalog,
     required this.onRefresh,
     required this.onEdit,
+    required this.onDelete,
     required this.isOpeningEditor,
+    required this.isDeleting,
   });
 
   final SubmittedApplicationDetails details;
   final ApplicationReferenceCatalog catalog;
   final Future<void> Function() onRefresh;
   final VoidCallback? onEdit;
+  final VoidCallback? onDelete;
   final bool isOpeningEditor;
+  final bool isDeleting;
+
+  @override
+  State<_DetailContent> createState() => _DetailContentState();
+}
+
+class _DetailContentState extends State<_DetailContent> {
+  final Set<_DetailSectionType> _expandedSections = {
+    _DetailSectionType.citizen,
+  };
+
+  void _toggleSection(_DetailSectionType section) {
+    setState(() {
+      if (!_expandedSections.remove(section)) {
+        _expandedSections.add(section);
+      }
+    });
+  }
 
   @override
   Widget build(BuildContext context) {
+    final details = widget.details;
+    final catalog = widget.catalog;
     return RefreshIndicator(
       color: AppColors.primary,
-      onRefresh: onRefresh,
+      onRefresh: widget.onRefresh,
       child: ListView(
         key: const Key('application-detail-content'),
         physics: const AlwaysScrollableScrollPhysics(),
@@ -256,8 +360,11 @@ class _DetailContent extends StatelessWidget {
           _ApplicationSummary(details: details),
           const SizedBox(height: 18),
           _Section(
+            toggleKey: const Key('application-detail-section-citizen'),
             icon: Icons.person_outline_rounded,
             title: 'Vatandaş Bilgileri',
+            isExpanded: _expandedSections.contains(_DetailSectionType.citizen),
+            onToggle: () => _toggleSection(_DetailSectionType.citizen),
             children: [
               _Row('Ad Soyad', '${details.firstName} ${details.lastName}'),
               _Row('T.C. Kimlik Numarası', details.identityNumber),
@@ -271,8 +378,11 @@ class _DetailContent extends StatelessWidget {
           ),
           const SizedBox(height: 14),
           _Section(
+            toggleKey: const Key('application-detail-section-request'),
             icon: Icons.volunteer_activism_outlined,
             title: 'Talep Bilgileri',
+            isExpanded: _expandedSections.contains(_DetailSectionType.request),
+            onToggle: () => _toggleSection(_DetailSectionType.request),
             children: [
               _Row(
                 'Yardım Türü',
@@ -294,54 +404,125 @@ class _DetailContent extends StatelessWidget {
             ],
           ),
           const SizedBox(height: 14),
-          _FamilySection(members: details.familyMembers, catalog: catalog),
+          _FamilySection(
+            members: details.familyMembers,
+            catalog: catalog,
+            isExpanded: _expandedSections.contains(_DetailSectionType.family),
+            onToggle: () => _toggleSection(_DetailSectionType.family),
+          ),
           const SizedBox(height: 14),
           _HouseholdSection(
             answers: details.householdAnswers,
             catalog: catalog,
+            isExpanded: _expandedSections.contains(
+              _DetailSectionType.household,
+            ),
+            onToggle: () => _toggleSection(_DetailSectionType.household),
           ),
           const SizedBox(height: 14),
-          _PhotoSection(photos: details.photos),
+          _PhotoSection(
+            photos: details.photos,
+            isExpanded: _expandedSections.contains(_DetailSectionType.photos),
+            onToggle: () => _toggleSection(_DetailSectionType.photos),
+          ),
           if (details.cancellationDescription != null ||
               details.cancellationDate != null) ...[
             const SizedBox(height: 14),
             _Section(
+              toggleKey: const Key('application-detail-section-cancellation'),
               icon: Icons.cancel_outlined,
               title: 'İptal Bilgileri',
+              isExpanded: _expandedSections.contains(
+                _DetailSectionType.cancellation,
+              ),
+              onToggle: () => _toggleSection(_DetailSectionType.cancellation),
               children: [
                 _Row('İptal Tarihi', _formatDateTime(details.cancellationDate)),
                 _Row('İptal Açıklaması', details.cancellationDescription),
               ],
             ),
           ],
-          if (onEdit != null) ...[
+          if (widget.onEdit != null || widget.onDelete != null) ...[
             const SizedBox(height: 22),
             SizedBox(
               height: 50,
-              child: FilledButton.icon(
-                key: const Key('application-detail-edit-button'),
-                onPressed: isOpeningEditor ? null : onEdit,
-                style: FilledButton.styleFrom(
-                  backgroundColor: AppColors.primary,
-                  disabledBackgroundColor: AppColors.primaryMuted,
-                  foregroundColor: AppColors.white,
-                  shape: RoundedRectangleBorder(
-                    borderRadius: BorderRadius.circular(15),
-                  ),
-                ),
-                icon: isOpeningEditor
-                    ? const SizedBox.square(
-                        dimension: 18,
-                        child: CircularProgressIndicator(
-                          strokeWidth: 2,
-                          color: AppColors.white,
+              child: Row(
+                children: [
+                  if (widget.onDelete != null)
+                    Expanded(
+                      flex: 37,
+                      child: FilledButton.icon(
+                        key: const Key('application-detail-delete-button'),
+                        onPressed: widget.isOpeningEditor || widget.isDeleting
+                            ? null
+                            : widget.onDelete,
+                        style: FilledButton.styleFrom(
+                          backgroundColor: AppColors.statusRejected,
+                          disabledBackgroundColor: AppColors.statusRejected
+                              .withValues(alpha: 0.45),
+                          foregroundColor: AppColors.white,
+                          shape: RoundedRectangleBorder(
+                            borderRadius: BorderRadius.circular(15),
+                          ),
                         ),
-                      )
-                    : const Icon(Icons.edit_outlined, size: 19),
-                label: const Text(
-                  'Düzenle',
-                  style: TextStyle(fontSize: 14, fontWeight: FontWeight.w600),
-                ),
+                        icon: widget.isDeleting
+                            ? const SizedBox.square(
+                                dimension: 18,
+                                child: CircularProgressIndicator(
+                                  strokeWidth: 2,
+                                  color: AppColors.white,
+                                ),
+                              )
+                            : const Icon(
+                                Icons.delete_outline_rounded,
+                                size: 19,
+                              ),
+                        label: const Text(
+                          'Sil',
+                          style: TextStyle(
+                            fontSize: 14,
+                            fontWeight: FontWeight.w600,
+                          ),
+                        ),
+                      ),
+                    ),
+                  if (widget.onDelete != null && widget.onEdit != null)
+                    const SizedBox(width: 10),
+                  if (widget.onEdit != null)
+                    Expanded(
+                      flex: 63,
+                      child: FilledButton.icon(
+                        key: const Key('application-detail-edit-button'),
+                        onPressed: widget.isOpeningEditor || widget.isDeleting
+                            ? null
+                            : widget.onEdit,
+                        style: FilledButton.styleFrom(
+                          backgroundColor: AppColors.primary,
+                          disabledBackgroundColor: AppColors.primaryMuted,
+                          foregroundColor: AppColors.white,
+                          shape: RoundedRectangleBorder(
+                            borderRadius: BorderRadius.circular(15),
+                          ),
+                        ),
+                        icon: widget.isOpeningEditor
+                            ? const SizedBox.square(
+                                dimension: 18,
+                                child: CircularProgressIndicator(
+                                  strokeWidth: 2,
+                                  color: AppColors.white,
+                                ),
+                              )
+                            : const Icon(Icons.edit_outlined, size: 19),
+                        label: const Text(
+                          'Düzenle',
+                          style: TextStyle(
+                            fontSize: 14,
+                            fontWeight: FontWeight.w600,
+                          ),
+                        ),
+                      ),
+                    ),
+                ],
               ),
             ),
           ],
@@ -427,25 +608,50 @@ class _ApplicationSummary extends StatelessWidget {
   }
 }
 
-class _FamilySection extends StatelessWidget {
-  const _FamilySection({required this.members, required this.catalog});
+class _FamilySection extends StatefulWidget {
+  const _FamilySection({
+    required this.members,
+    required this.catalog,
+    required this.isExpanded,
+    required this.onToggle,
+  });
 
   final List<SubmittedApplicationFamilyMember> members;
   final ApplicationReferenceCatalog catalog;
+  final bool isExpanded;
+  final VoidCallback onToggle;
+
+  @override
+  State<_FamilySection> createState() => _FamilySectionState();
+}
+
+class _FamilySectionState extends State<_FamilySection> {
+  int? _expandedMemberIndex;
+
+  void _toggleMember(int index) {
+    setState(() {
+      _expandedMemberIndex = _expandedMemberIndex == index ? null : index;
+    });
+  }
 
   @override
   Widget build(BuildContext context) {
     return _Section(
+      toggleKey: const Key('application-detail-section-family'),
       icon: Icons.groups_2_outlined,
-      title: 'Aile Bilgileri',
-      children: members.isEmpty
+      title: 'Aile Bilgileri (${widget.members.length})',
+      isExpanded: widget.isExpanded,
+      onToggle: widget.onToggle,
+      children: widget.members.isEmpty
           ? const [_EmptyValue('Kayıtlı aile ferdi bulunmuyor.')]
           : [
-              for (var index = 0; index < members.length; index++)
+              for (var index = 0; index < widget.members.length; index++)
                 _FamilyCard(
-                  member: members[index],
-                  catalog: catalog,
+                  member: widget.members[index],
+                  catalog: widget.catalog,
                   index: index,
+                  isExpanded: _expandedMemberIndex == index,
+                  onTap: () => _toggleMember(index),
                 ),
             ],
     );
@@ -457,80 +663,151 @@ class _FamilyCard extends StatelessWidget {
     required this.member,
     required this.catalog,
     required this.index,
+    required this.isExpanded,
+    required this.onTap,
   });
 
   final SubmittedApplicationFamilyMember member;
   final ApplicationReferenceCatalog catalog;
   final int index;
+  final bool isExpanded;
+  final VoidCallback onTap;
 
   @override
   Widget build(BuildContext context) {
     final relationship = member.relationshipCode == 'DIGER'
         ? member.otherRelationshipDescription
         : _optionLabel(catalog.relationships, member.relationshipCode);
-    return Container(
-      key: ValueKey<int>(index),
-      margin: const EdgeInsets.only(bottom: 10),
-      padding: const EdgeInsets.all(14),
-      decoration: BoxDecoration(
+    return Padding(
+      key: ValueKey<String>('application-family-card-$index'),
+      padding: const EdgeInsets.only(bottom: 10),
+      child: Material(
         color: AppColors.primarySurface,
         borderRadius: BorderRadius.circular(14),
-      ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Text(
-            member.fullName,
-            style: const TextStyle(
-              color: AppColors.neutralDark,
-              fontSize: 15,
-              fontWeight: FontWeight.w700,
+        clipBehavior: Clip.antiAlias,
+        child: InkWell(
+          key: ValueKey<String>('application-family-toggle-$index'),
+          onTap: onTap,
+          child: Padding(
+            padding: const EdgeInsets.all(14),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Row(
+                  children: [
+                    Expanded(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text(
+                            member.fullName,
+                            style: const TextStyle(
+                              color: AppColors.neutralDark,
+                              fontSize: 15,
+                              fontWeight: FontWeight.w700,
+                            ),
+                          ),
+                          const SizedBox(height: 4),
+                          Text(
+                            '$relationship • ${member.age} yaş',
+                            style: const TextStyle(
+                              color: AppColors.neutralSecondary,
+                              fontSize: 13,
+                              fontWeight: FontWeight.w500,
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                    AnimatedRotation(
+                      turns: isExpanded ? 0.5 : 0,
+                      duration: const Duration(milliseconds: 180),
+                      curve: Curves.easeOutCubic,
+                      child: const Icon(
+                        Icons.keyboard_arrow_down_rounded,
+                        color: AppColors.primary,
+                      ),
+                    ),
+                  ],
+                ),
+                AnimatedSize(
+                  duration: const Duration(milliseconds: 180),
+                  curve: Curves.easeOutCubic,
+                  alignment: Alignment.topCenter,
+                  child: isExpanded
+                      ? Column(
+                          children: [
+                            const Padding(
+                              padding: EdgeInsets.symmetric(vertical: 10),
+                              child: Divider(height: 1),
+                            ),
+                            _CompactRow(
+                              'Engel',
+                              member.hasDisability
+                                  ? _optionLabel(
+                                      catalog.disabilityStatuses,
+                                      member.disabilityTypeCode,
+                                    )
+                                  : _optionLabel(
+                                      catalog.disabilityStatuses,
+                                      'YOK',
+                                    ),
+                            ),
+                            _CompactRow(
+                              'Çalışma',
+                              _optionLabel(
+                                catalog.employmentStatuses,
+                                member.employmentStatusCode,
+                              ),
+                            ),
+                            _CompactRow(
+                              'Eğitim',
+                              _optionLabel(
+                                catalog.educationStatuses,
+                                member.educationStatusCode,
+                              ),
+                            ),
+                            _CompactRow(
+                              'Yaşam Durumu',
+                              _optionLabel(
+                                catalog.vitalStatuses,
+                                member.vitalStatusCode,
+                              ),
+                            ),
+                          ],
+                        )
+                      : const SizedBox.shrink(),
+                ),
+              ],
             ),
           ),
-          const SizedBox(height: 10),
-          _CompactRow('Yakınlık', relationship),
-          _CompactRow('Yaş', member.age.toString()),
-          _CompactRow(
-            'Engel',
-            member.hasDisability
-                ? _optionLabel(
-                    catalog.disabilityStatuses,
-                    member.disabilityTypeCode,
-                  )
-                : _optionLabel(catalog.disabilityStatuses, 'YOK'),
-          ),
-          _CompactRow(
-            'Çalışma',
-            _optionLabel(
-              catalog.employmentStatuses,
-              member.employmentStatusCode,
-            ),
-          ),
-          _CompactRow(
-            'Eğitim',
-            _optionLabel(catalog.educationStatuses, member.educationStatusCode),
-          ),
-          _CompactRow(
-            'Yaşam Durumu',
-            _optionLabel(catalog.vitalStatuses, member.vitalStatusCode),
-          ),
-        ],
+        ),
       ),
     );
   }
 }
 
 class _HouseholdSection extends StatelessWidget {
-  const _HouseholdSection({required this.answers, required this.catalog});
+  const _HouseholdSection({
+    required this.answers,
+    required this.catalog,
+    required this.isExpanded,
+    required this.onToggle,
+  });
 
   final List<SubmittedApplicationHouseholdAnswer> answers;
   final ApplicationReferenceCatalog catalog;
+  final bool isExpanded;
+  final VoidCallback onToggle;
 
   @override
   Widget build(BuildContext context) {
     return _Section(
+      toggleKey: const Key('application-detail-section-household'),
       icon: Icons.home_outlined,
       title: 'Hane Bilgileri',
+      isExpanded: isExpanded,
+      onToggle: onToggle,
       children: answers.isEmpty
           ? const [_EmptyValue('Kayıtlı hane cevabı bulunmuyor.')]
           : [
@@ -545,15 +822,24 @@ class _HouseholdSection extends StatelessWidget {
 }
 
 class _PhotoSection extends StatelessWidget {
-  const _PhotoSection({required this.photos});
+  const _PhotoSection({
+    required this.photos,
+    required this.isExpanded,
+    required this.onToggle,
+  });
 
   final List<SubmittedApplicationPhoto> photos;
+  final bool isExpanded;
+  final VoidCallback onToggle;
 
   @override
   Widget build(BuildContext context) {
     return _Section(
+      toggleKey: const Key('application-detail-section-photos'),
       icon: Icons.photo_library_outlined,
-      title: 'Hane Fotoğrafları',
+      title: 'Hane Fotoğrafları (${photos.length})',
+      isExpanded: isExpanded,
+      onToggle: onToggle,
       children: photos.isEmpty
           ? const [_EmptyValue('Kayıtlı hane fotoğrafı bulunmuyor.')]
           : [
@@ -610,19 +896,24 @@ class _PhotoSection extends StatelessWidget {
 
 class _Section extends StatelessWidget {
   const _Section({
+    required this.toggleKey,
     required this.icon,
     required this.title,
+    required this.isExpanded,
+    required this.onToggle,
     required this.children,
   });
 
+  final Key toggleKey;
   final IconData icon;
   final String title;
+  final bool isExpanded;
+  final VoidCallback onToggle;
   final List<Widget> children;
 
   @override
   Widget build(BuildContext context) {
     return Container(
-      padding: const EdgeInsets.fromLTRB(16, 16, 16, 8),
       decoration: BoxDecoration(
         color: AppColors.white,
         borderRadius: BorderRadius.circular(18),
@@ -635,37 +926,71 @@ class _Section extends StatelessWidget {
           ),
         ],
       ),
+      clipBehavior: Clip.antiAlias,
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Row(
-            children: [
-              Container(
-                width: 34,
-                height: 34,
-                decoration: BoxDecoration(
-                  color: AppColors.primarySurface,
-                  borderRadius: BorderRadius.circular(10),
+          Material(
+            color: Colors.transparent,
+            child: InkWell(
+              key: toggleKey,
+              onTap: onToggle,
+              child: Padding(
+                padding: const EdgeInsets.all(16),
+                child: Row(
+                  children: [
+                    Container(
+                      width: 34,
+                      height: 34,
+                      decoration: BoxDecoration(
+                        color: AppColors.primarySurface,
+                        borderRadius: BorderRadius.circular(10),
+                      ),
+                      child: Icon(icon, color: AppColors.primary, size: 20),
+                    ),
+                    const SizedBox(width: 10),
+                    Expanded(
+                      child: Text(
+                        title,
+                        maxLines: 2,
+                        overflow: TextOverflow.ellipsis,
+                        style: const TextStyle(
+                          color: AppColors.neutralDark,
+                          fontSize: 16,
+                          fontWeight: FontWeight.w700,
+                        ),
+                      ),
+                    ),
+                    const SizedBox(width: 8),
+                    AnimatedRotation(
+                      turns: isExpanded ? 0.5 : 0,
+                      duration: const Duration(milliseconds: 200),
+                      curve: Curves.easeOutCubic,
+                      child: const Icon(
+                        Icons.keyboard_arrow_down_rounded,
+                        color: AppColors.primary,
+                        size: 24,
+                      ),
+                    ),
+                  ],
                 ),
-                child: Icon(icon, color: AppColors.primary, size: 20),
               ),
-              const SizedBox(width: 10),
-              Expanded(
-                child: Text(
-                  title,
-                  maxLines: 2,
-                  overflow: TextOverflow.ellipsis,
-                  style: const TextStyle(
-                    color: AppColors.neutralDark,
-                    fontSize: 16,
-                    fontWeight: FontWeight.w700,
-                  ),
-                ),
-              ),
-            ],
+            ),
           ),
-          const SizedBox(height: 14),
-          ...children,
+          AnimatedSize(
+            duration: const Duration(milliseconds: 200),
+            curve: Curves.easeOutCubic,
+            alignment: Alignment.topCenter,
+            child: isExpanded
+                ? Padding(
+                    padding: const EdgeInsets.fromLTRB(16, 0, 16, 8),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: children,
+                    ),
+                  )
+                : const SizedBox.shrink(),
+          ),
         ],
       ),
     );

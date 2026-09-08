@@ -51,6 +51,7 @@ class _HomePageState extends State<HomePage> {
   late HomeListFilter _selectedFilter;
   List<WorkItem> _workItems = const [];
   bool _isLoading = true;
+  bool _showOnlyOwnedApplications = false;
   String? _loadErrorMessage;
   String? _openingDraftId;
   int? _openingApplicationId;
@@ -235,13 +236,21 @@ class _HomePageState extends State<HomePage> {
   @override
   Widget build(BuildContext context) {
     final screenWidth = MediaQuery.sizeOf(context).width;
+    final bottomInset = MediaQuery.paddingOf(context).bottom;
     final scale = screenWidth / _referenceWidth;
-    final visibleWorkItems = _workItems.where((item) {
+    final statusFilteredWorkItems = _workItems.where((item) {
       return _selectedFilter == HomeListFilter.completed
           ? item.isCompleted
           : !item.isCompleted;
     });
-    final listedWorkItems = visibleWorkItems.toList(growable: false);
+    final listedWorkItems = statusFilteredWorkItems
+        .where(
+          (item) =>
+              !_showOnlyOwnedApplications ||
+              item.isOwnedByCurrentUser ||
+              item.isLocalDraft,
+        )
+        .toList(growable: false);
     final applications = listedWorkItems
         .map(WorkItemCardMapper.toViewData)
         .toList(growable: false);
@@ -361,6 +370,21 @@ class _HomePageState extends State<HomePage> {
                       scale,
                     ),
                   ),
+                  SizedBox(height: 10 * scale),
+                  _OwnApplicationsFilter(
+                    isActive: _showOnlyOwnedApplications,
+                    scale: scale,
+                    onToggle: () {
+                      setState(
+                        () => _showOnlyOwnedApplications =
+                            !_showOnlyOwnedApplications,
+                      );
+                    },
+                    onClear: () {
+                      setState(() => _showOnlyOwnedApplications = false);
+                    },
+                  ),
+                  SizedBox(height: math.max(14 * scale, bottomInset + 6)),
                 ],
               ),
             ),
@@ -400,6 +424,18 @@ class _HomePageState extends State<HomePage> {
 
     if (applications.isEmpty) {
       final completed = _selectedFilter == HomeListFilter.completed;
+      if (_showOnlyOwnedApplications) {
+        return _HomeListMessage(
+          key: const Key('home-empty-owned-state'),
+          icon: Icons.person_search_outlined,
+          title: completed
+              ? 'Tamamlanan başvurunuz bulunmuyor'
+              : 'Bekleyen başvurunuz bulunmuyor',
+          message:
+              'Filtreyi kaldırarak diğer başvuru ve görevleri görebilirsiniz.',
+          scale: scale,
+        );
+      }
       return _HomeListMessage(
         key: const Key('home-empty-state'),
         icon: completed ? Icons.task_alt_rounded : Icons.assignment_outlined,
@@ -458,6 +494,97 @@ class _HomePageState extends State<HomePage> {
                 : ValueKey('delete-local-draft-$localDraftId'),
           );
         },
+      ),
+    );
+  }
+}
+
+class _OwnApplicationsFilter extends StatelessWidget {
+  const _OwnApplicationsFilter({
+    required this.isActive,
+    required this.scale,
+    required this.onToggle,
+    required this.onClear,
+  });
+
+  final bool isActive;
+  final double scale;
+  final VoidCallback onToggle;
+  final VoidCallback onClear;
+
+  @override
+  Widget build(BuildContext context) {
+    final label = Text(
+      'Başvurularımı Gör',
+      style: TextStyle(
+        fontSize: 13 * scale,
+        fontWeight: FontWeight.w600,
+        height: 18 / 13,
+      ),
+    );
+
+    final filterButton = SizedBox(
+      height: 40 * scale,
+      child: isActive
+          ? FilledButton.icon(
+              key: const Key('home-owned-filter-button'),
+              onPressed: onToggle,
+              style: FilledButton.styleFrom(
+                backgroundColor: AppColors.primary,
+                foregroundColor: AppColors.white,
+                padding: EdgeInsets.symmetric(horizontal: 12 * scale),
+                shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(14 * scale),
+                ),
+              ),
+              icon: Icon(Icons.person_rounded, size: 18 * scale),
+              label: label,
+            )
+          : OutlinedButton.icon(
+              key: const Key('home-owned-filter-button'),
+              onPressed: onToggle,
+              style: OutlinedButton.styleFrom(
+                backgroundColor: AppColors.white,
+                foregroundColor: AppColors.primary,
+                side: const BorderSide(color: AppColors.primary),
+                padding: EdgeInsets.symmetric(horizontal: 12 * scale),
+                shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(14 * scale),
+                ),
+              ),
+              icon: Icon(Icons.person_outline_rounded, size: 18 * scale),
+              label: label,
+            ),
+    );
+
+    return Semantics(
+      selected: isActive,
+      child: Row(
+        mainAxisAlignment: MainAxisAlignment.center,
+        children: [
+          filterButton,
+          if (isActive) ...[
+            SizedBox(width: 6 * scale),
+            SizedBox(
+              width: 38 * scale,
+              height: 40 * scale,
+              child: IconButton(
+                key: const Key('home-owned-filter-clear'),
+                tooltip: 'Başvurularım filtresini kaldır',
+                onPressed: onClear,
+                style: IconButton.styleFrom(
+                  foregroundColor: AppColors.primary,
+                  backgroundColor: AppColors.primarySurface,
+                  side: const BorderSide(color: AppColors.primary),
+                  shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(14 * scale),
+                  ),
+                ),
+                icon: Icon(Icons.close_rounded, size: 20 * scale),
+              ),
+            ),
+          ],
+        ],
       ),
     );
   }

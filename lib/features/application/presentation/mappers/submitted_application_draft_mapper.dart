@@ -86,8 +86,16 @@ abstract final class SubmittedApplicationDraftMapper {
           for (final answer in details.householdAnswers)
             answer.questionCode: answer.optionCode,
         }),
-        photos: const [],
+        photos: List.unmodifiable(
+          details.photos.map(
+            (photo) => HouseholdPhotoViewData.remote(
+              path: photo.urlPath,
+              photoId: photo.photoId,
+            ),
+          ),
+        ),
         saveToBeneficiaryDirectory: false,
+        replaceRemotePhotosOnSave: true,
       ),
       completionNote: details.fieldInspectionNote ?? '',
     );

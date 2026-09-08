@@ -32,4 +32,7 @@ public enum RequestLogStage
     LoadApplicationForUpdate,
     ResolveApplicationUpdateReferences,
     SaveApplicationUpdate,
+    ValidateApplicationDelete,
+    LoadApplicationForDelete,
+    SaveApplicationDelete,
 }

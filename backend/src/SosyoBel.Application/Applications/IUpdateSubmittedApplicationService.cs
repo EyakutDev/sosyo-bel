@@ -15,12 +15,17 @@ public sealed record SubmittedApplicationEditableData(
     string? Description,
     string? FieldInspectionNote);
 
+public sealed record SubmittedApplicationPhotoUpdateData(
+    IReadOnlyCollection<int> RetainedPhotoIds,
+    IReadOnlyCollection<ApplicationPhotoUpload> NewPhotos);
+
 public sealed record UpdateSubmittedApplicationCommand(
     ApplicationActorContext Actor,
     int ApplicationId,
     SubmittedApplicationEditableData Application,
     IReadOnlyCollection<ApplicationFamilyMemberData> FamilyMembers,
-    IReadOnlyCollection<ApplicationHouseholdAnswerData> HouseholdAnswers);
+    IReadOnlyCollection<ApplicationHouseholdAnswerData> HouseholdAnswers,
+    SubmittedApplicationPhotoUpdateData? Photos = null);
 
 public sealed record UpdatedSubmittedApplication(
     int ApplicationId,

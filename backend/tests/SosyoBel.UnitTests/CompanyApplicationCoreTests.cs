@@ -525,6 +525,33 @@ public sealed class CompanyApplicationCoreTests
             CompanyApplicationPhotoPreparer.ToCompanyWebPath(storageKey));
     }
 
+    [Theory]
+    [InlineData(
+        "/uploads/hanefotograflari/application/01-photo.jpg",
+        "application/01-photo.jpg")]
+    [InlineData(
+        "/UPLOADS/HANEFOTOGRAFLARI/application/01-photo.png",
+        "application/01-photo.png")]
+    public void CompanyWebPhotoPathConvertsBackToStorageKey(
+        string companyWebPath,
+        string expected)
+    {
+        Assert.Equal(
+            expected,
+            CompanyApplicationPhotoPreparer.ToStorageKey(companyWebPath));
+    }
+
+    [Theory]
+    [InlineData("/uploads/other/application/photo.jpg")]
+    [InlineData("/uploads/hanefotograflari/application/../photo.jpg")]
+    [InlineData("/uploads/hanefotograflari/photo.jpg")]
+    public void CompanyWebPhotoPathRejectsForeignAndUnsafePaths(
+        string companyWebPath)
+    {
+        Assert.Throws<InvalidDataException>(() =>
+            CompanyApplicationPhotoPreparer.ToStorageKey(companyWebPath));
+    }
+
     private static ApplicationFamilyMemberData FamilyMember(
         string fullName = "Ayşe Yılmaz",
         string relationshipCode = "YAKINLIK:4",

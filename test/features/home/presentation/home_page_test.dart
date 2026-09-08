@@ -95,6 +95,81 @@ void main() {
     expect(find.text('B-2026-151'), findsOneWidget);
   });
 
+  testWidgets('başvurularım filtresi yalnız kendi kayıtlarını gösterir', (
+    tester,
+  ) async {
+    final items = [
+      WorkItem(
+        applicationId: 101,
+        applicationNumber: 'B-OWN-PENDING',
+        sourceCode: 'APPLICATION',
+        statusCode: 'KURUL_BEKLIYOR',
+        isCompleted: false,
+        isEditable: true,
+        isOwnedByCurrentUser: true,
+        activityAtUtc: DateTime.utc(2026, 9, 8, 9),
+      ),
+      WorkItem(
+        applicationId: 102,
+        applicationNumber: 'B-OTHER-PENDING',
+        sourceCode: 'APPLICATION',
+        statusCode: 'KURUL_BEKLIYOR',
+        isCompleted: false,
+        isEditable: false,
+        isOwnedByCurrentUser: false,
+        activityAtUtc: DateTime.utc(2026, 9, 8, 10),
+      ),
+      WorkItem(
+        applicationId: 103,
+        applicationNumber: 'B-OWN-COMPLETED',
+        sourceCode: 'APPLICATION',
+        statusCode: 'TAMAMLANDI',
+        isCompleted: true,
+        isEditable: false,
+        isOwnedByCurrentUser: true,
+        activityAtUtc: DateTime.utc(2026, 9, 8, 11),
+      ),
+      WorkItem(
+        taskId: 104,
+        applicationNumber: 'B-OTHER-COMPLETED',
+        sourceCode: 'ASSIGNED_TASK',
+        statusCode: 'TAMAMLANDI',
+        isCompleted: true,
+        isEditable: false,
+        isOwnedByCurrentUser: false,
+        activityAtUtc: DateTime.utc(2026, 9, 8, 12),
+      ),
+    ];
+    await pumpHome(
+      tester,
+      repository: _FakeWorkItemsRepository(() async => items),
+    );
+    await tester.pumpAndSettle();
+
+    expect(find.text('B-OWN-PENDING'), findsOneWidget);
+    expect(find.text('B-OTHER-PENDING'), findsOneWidget);
+    expect(find.byKey(const Key('home-owned-filter-clear')), findsNothing);
+
+    await tester.tap(find.byKey(const Key('home-owned-filter-button')));
+    await tester.pumpAndSettle();
+
+    expect(find.text('B-OWN-PENDING'), findsOneWidget);
+    expect(find.text('B-OTHER-PENDING'), findsNothing);
+    expect(find.byKey(const Key('home-owned-filter-clear')), findsOneWidget);
+
+    await tester.tap(find.text('Tamamlanan'));
+    await tester.pumpAndSettle();
+
+    expect(find.text('B-OWN-COMPLETED'), findsOneWidget);
+    expect(find.text('B-OTHER-COMPLETED'), findsNothing);
+
+    await tester.tap(find.byKey(const Key('home-owned-filter-clear')));
+    await tester.pumpAndSettle();
+
+    expect(find.text('B-OWN-COMPLETED'), findsOneWidget);
+    expect(find.text('B-OTHER-COMPLETED'), findsOneWidget);
+  });
+
   testWidgets('kısa sekme sürüklemesi mevcut listeye geri döner', (
     tester,
   ) async {

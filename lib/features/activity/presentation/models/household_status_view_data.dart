@@ -24,18 +24,28 @@ final class HouseholdQuestionOptionViewData {
   final String label;
 }
 
-/// Fotoğrafın uygulama varlığından mı, cihaz kamerasından mı geldiğini belirtir.
-enum HouseholdPhotoKind { asset, file }
+/// Fotoğrafın uygulama varlığından, cihazdan veya sunucudan geldiğini belirtir.
+enum HouseholdPhotoKind { asset, file, remote }
 
 /// Ekranın gösterebildiği tek bir hane fotoğrafı.
 class HouseholdPhotoViewData {
   const HouseholdPhotoViewData.asset(this.path)
-    : kind = HouseholdPhotoKind.asset;
+    : kind = HouseholdPhotoKind.asset,
+      remotePhotoId = null;
 
-  const HouseholdPhotoViewData.file(this.path) : kind = HouseholdPhotoKind.file;
+  const HouseholdPhotoViewData.file(this.path)
+    : kind = HouseholdPhotoKind.file,
+      remotePhotoId = null;
+
+  const HouseholdPhotoViewData.remote({
+    required this.path,
+    required int photoId,
+  }) : kind = HouseholdPhotoKind.remote,
+       remotePhotoId = photoId;
 
   final String path;
   final HouseholdPhotoKind kind;
+  final int? remotePhotoId;
 }
 
 /// Hane Durumu adımında oluşan veriyi sonraki katmana tek parça halinde taşır.

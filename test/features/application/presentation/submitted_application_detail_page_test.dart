@@ -12,6 +12,7 @@ void main() {
     required SubmittedApplicationDetailsLoader loader,
     VoidCallback? onBack,
     SubmittedApplicationEditor? onEdit,
+    SubmittedApplicationDeleter? onDelete,
   }) {
     tester.view.physicalSize = const Size(375, 812);
     tester.view.devicePixelRatio = 1;
@@ -26,6 +27,7 @@ void main() {
           loadDetails: loader,
           onBack: onBack ?? () {},
           onEdit: onEdit,
+          onDelete: onDelete,
         ),
       ),
     );
@@ -46,34 +48,77 @@ void main() {
     expect(find.text('#3751'), findsWidgets);
     expect(find.text('Beklemede'), findsOneWidget);
     expect(find.text('HÜRİYE BUCAK'), findsOneWidget);
-    expect(find.text('Gıda Yardımı'), findsOneWidget);
-    expect(find.text('Ortopedik'), findsOneWidget);
+    expect(find.text('Gıda Yardımı'), findsNothing);
+    expect(find.text('Ayşe Yılmaz'), findsNothing);
     expect(
       find.byKey(const Key('application-detail-edit-button')),
       findsNothing,
     );
 
+    final requestSection = find.byKey(
+      const Key('application-detail-section-request'),
+    );
+    await tester.ensureVisible(requestSection);
+    await tester.pumpAndSettle();
+    await tester.tap(requestSection);
+    await tester.pumpAndSettle();
+    expect(find.text('HÜRİYE BUCAK'), findsOneWidget);
+    expect(find.text('Gıda Yardımı'), findsOneWidget);
+    expect(find.text('Ortopedik'), findsOneWidget);
+
     await tester.scrollUntilVisible(
-      find.text('Aile Bilgileri'),
+      find.text('Aile Bilgileri (2)'),
       250,
       scrollable: find.byType(Scrollable),
     );
+    await tester.tap(
+      find.byKey(const Key('application-detail-section-family')),
+    );
+    await tester.pumpAndSettle();
+    expect(find.text('Gıda Yardımı'), findsOneWidget);
     expect(find.text('Ayşe Yılmaz'), findsOneWidget);
-    expect(find.text('Teyze'), findsOneWidget);
+    expect(find.textContaining('Teyze'), findsOneWidget);
+    expect(find.text('Mehmet Bucak'), findsOneWidget);
+    expect(find.text('Çalışıyor'), findsNothing);
+
+    await tester.tap(find.byKey(const Key('application-family-toggle-0')));
+    await tester.pumpAndSettle();
+    expect(find.text('Çalışıyor'), findsOneWidget);
+
+    final secondMember = find.byKey(const Key('application-family-toggle-1'));
+    await tester.ensureVisible(secondMember);
+    await tester.pumpAndSettle();
+    await tester.tap(secondMember);
+    await tester.pumpAndSettle();
+    expect(find.text('Çalışıyor'), findsNothing);
+    expect(find.text('Emekli'), findsOneWidget);
+
+    await tester.tap(secondMember);
+    await tester.pumpAndSettle();
+    expect(find.text('Emekli'), findsNothing);
 
     await tester.scrollUntilVisible(
       find.text('Hane Bilgileri'),
       250,
       scrollable: find.byType(Scrollable),
     );
+    await tester.tap(
+      find.byKey(const Key('application-detail-section-household')),
+    );
+    await tester.pumpAndSettle();
     expect(find.text('Mülkiyet Durumu'), findsOneWidget);
     expect(find.text('Kiracı'), findsOneWidget);
 
     await tester.scrollUntilVisible(
-      find.text('Hane Fotoğrafları'),
+      find.text('Hane Fotoğrafları (1)'),
       250,
       scrollable: find.byType(Scrollable),
     );
+    await tester.tap(
+      find.byKey(const Key('application-detail-section-photos')),
+    );
+    await tester.pumpAndSettle();
+    expect(find.text('Mülkiyet Durumu'), findsOneWidget);
     expect(find.text('Salon fotoğrafı'), findsOneWidget);
 
     await tester.tap(find.byKey(const Key('application-detail-back')));
@@ -137,6 +182,66 @@ void main() {
     expect(editedDetails, same(_details));
     expect(loadCount, 2);
   });
+
+  testWidgets(
+    'sil ve duzenle butonlarini 37 63 oraninda gosterip onayla siler',
+    (tester) async {
+      var deleteCount = 0;
+      var backCount = 0;
+      SubmittedApplicationDetails? deletedDetails;
+      await pumpPage(
+        tester,
+        loader: () async => _details,
+        onBack: () => backCount += 1,
+        onEdit: (_) async => false,
+        onDelete: (details) async {
+          deleteCount += 1;
+          deletedDetails = details;
+        },
+      );
+      await tester.pumpAndSettle();
+
+      final deleteButton = find.byKey(
+        const Key('application-detail-delete-button'),
+      );
+      final editButton = find.byKey(
+        const Key('application-detail-edit-button'),
+      );
+      await tester.scrollUntilVisible(
+        deleteButton,
+        300,
+        scrollable: find.byType(Scrollable),
+      );
+      await tester.pumpAndSettle();
+
+      final deleteWidth = tester.getSize(deleteButton).width;
+      final editWidth = tester.getSize(editButton).width;
+      expect(deleteWidth / (deleteWidth + editWidth), closeTo(0.37, 0.01));
+
+      await tester.tap(deleteButton);
+      await tester.pumpAndSettle();
+      expect(
+        find.byKey(const Key('application-delete-dialog')),
+        findsOneWidget,
+      );
+      await tester.tap(
+        find.byKey(const Key('application-delete-cancel-button')),
+      );
+      await tester.pumpAndSettle();
+      expect(deleteCount, 0);
+
+      await tester.tap(deleteButton);
+      await tester.pumpAndSettle();
+      await tester.tap(
+        find.byKey(const Key('application-delete-confirm-button')),
+      );
+      await tester.pumpAndSettle();
+
+      expect(deleteCount, 1);
+      expect(deletedDetails, same(_details));
+      expect(backCount, 1);
+    },
+  );
 }
 
 final _details = SubmittedApplicationDetails(
@@ -170,6 +275,15 @@ final _details = SubmittedApplicationDetails(
       hasDisability: false,
       employmentStatusCode: 'CALISIYOR',
       educationStatusCode: 'LISE',
+      vitalStatusCode: 'SAG',
+    ),
+    SubmittedApplicationFamilyMember(
+      fullName: 'Mehmet Bucak',
+      age: 65,
+      relationshipCode: 'BABA',
+      hasDisability: false,
+      employmentStatusCode: 'EMEKLI',
+      educationStatusCode: 'ILKOGRETIM',
       vitalStatusCode: 'SAG',
     ),
   ],

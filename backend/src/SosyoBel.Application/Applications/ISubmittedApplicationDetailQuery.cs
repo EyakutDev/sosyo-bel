@@ -46,3 +46,12 @@ public interface ISubmittedApplicationDetailQuery
         int applicationId,
         CancellationToken cancellationToken);
 }
+
+public interface ISubmittedApplicationPhotoQuery
+{
+    Task<ApplicationLifecycleResult<ApplicationPhotoContent>> OpenReadAsync(
+        ApplicationActorContext actor,
+        int applicationId,
+        int photoId,
+        CancellationToken cancellationToken);
+}

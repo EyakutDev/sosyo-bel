@@ -323,6 +323,9 @@ class _AppFlowState extends State<AppFlow> {
             details,
             references,
           ),
+          onDelete: (details) => widget.applicationRepository.deleteSubmitted(
+            applicationId: details.applicationId,
+          ),
           onBack: () => Navigator.of(detailContext).pop(),
         ),
       ),
@@ -449,8 +452,18 @@ class _AppFlowState extends State<AppFlow> {
           onBack: () => Navigator.of(householdContext).pop(),
           questions: _householdQuestions(_requiredApplicationReferences),
           initialDraft: _applicationDraft.householdStatus,
-          allowPhotoChanges: _editingSubmittedApplicationId == null,
+          allowPhotoChanges: true,
           existingPhotoCount: _editingSubmittedPhotoCount,
+          onLoadRemotePhoto: (photoId) {
+            final applicationId = _editingSubmittedApplicationId;
+            if (applicationId == null) {
+              throw StateError('Fotoğrafın bağlı olduğu başvuru bulunamadı.');
+            }
+            return widget.applicationRepository.getSubmittedPhoto(
+              applicationId: applicationId,
+              photoId: photoId,
+            );
+          },
           onDraftChanged: (draft) {
             _applicationDraft = _applicationDraft.copyWith(
               householdStatus: draft,

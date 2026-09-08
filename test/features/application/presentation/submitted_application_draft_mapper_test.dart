@@ -24,7 +24,9 @@ void main() {
       'CALISIYOR',
     );
     expect(draft.householdStatus?.answers['MULKIYET_DURUMU'], 'KIRACI');
-    expect(draft.householdStatus?.photos, isEmpty);
+    expect(draft.householdStatus?.photos, hasLength(1));
+    expect(draft.householdStatus?.photos.single.remotePhotoId, 91);
+    expect(draft.householdStatus?.replaceRemotePhotosOnSave, isTrue);
     expect(draft.completionNote, 'Mevcut saha notu');
   });
 
@@ -109,5 +111,12 @@ final _details = SubmittedApplicationDetails(
       optionCode: 'KIRACI',
     ),
   ],
-  photos: const [],
+  photos: [
+    SubmittedApplicationPhoto(
+      photoId: 91,
+      urlPath:
+          '/uploads/hanefotograflari/22222222222222222222222222222222/salon.jpg',
+      uploadedAt: DateTime.utc(2026, 9, 7, 10, 31),
+    ),
+  ],
 );

@@ -12,6 +12,7 @@ import 'package:sosyo_bel/features/activity/presentation/widgets/activity_step_t
 typedef HouseholdPhotoCapture = Future<HouseholdPhotoViewData?> Function();
 typedef HouseholdLostPhotoRecovery =
     Future<List<HouseholdPhotoViewData>> Function();
+typedef HouseholdRemotePhotoLoader = Future<Uint8List> Function(int photoId);
 
 enum HouseholdStatusStage { questions, photos }
 
@@ -30,6 +31,7 @@ class HouseholdStatusPage extends StatefulWidget {
     this.onHeaderBack,
     this.onDraftChanged,
     this.onRecoverLostPhotos,
+    this.onLoadRemotePhoto,
     this.initialPhotos = const [],
     this.initialDraft,
     this.initialStage = HouseholdStatusStage.questions,
@@ -47,6 +49,7 @@ class HouseholdStatusPage extends StatefulWidget {
   final ValueChanged<HouseholdStatusDraft>? onDraftChanged;
   final HouseholdPhotoCapture onCapturePhoto;
   final HouseholdLostPhotoRecovery? onRecoverLostPhotos;
+  final HouseholdRemotePhotoLoader? onLoadRemotePhoto;
   final List<HouseholdQuestionViewData> questions;
   final List<HouseholdPhotoViewData> initialPhotos;
   final HouseholdStatusDraft? initialDraft;
@@ -329,6 +332,7 @@ class _HouseholdStatusPageState extends State<HouseholdStatusPage> {
                               _saveToBeneficiaryDirectory,
                           onCapture: _capturePhoto,
                           onRemovePhoto: _removePhoto,
+                          onLoadRemotePhoto: widget.onLoadRemotePhoto,
                           onToggleSave: () {
                             setState(
                               () => _saveToBeneficiaryDirectory =
@@ -582,6 +586,7 @@ class _PhotosCard extends StatelessWidget {
     required this.saveToBeneficiaryDirectory,
     required this.onCapture,
     required this.onRemovePhoto,
+    required this.onLoadRemotePhoto,
     required this.onToggleSave,
   });
 
@@ -593,6 +598,7 @@ class _PhotosCard extends StatelessWidget {
   final bool saveToBeneficiaryDirectory;
   final VoidCallback onCapture;
   final ValueChanged<int> onRemovePhoto;
+  final HouseholdRemotePhotoLoader? onLoadRemotePhoto;
   final VoidCallback onToggleSave;
 
   @override
@@ -667,6 +673,7 @@ class _PhotosCard extends StatelessWidget {
                     photoNumber: index + 1,
                     scale: scale,
                     onRemove: () => onRemovePhoto(index),
+                    onLoadRemotePhoto: onLoadRemotePhoto,
                   );
                 },
               ),
@@ -809,12 +816,13 @@ class _HouseholdCard extends StatelessWidget {
   }
 }
 
-class _PhotoTile extends StatelessWidget {
+class _PhotoTile extends StatefulWidget {
   const _PhotoTile({
     required this.photo,
     required this.photoNumber,
     required this.scale,
     required this.onRemove,
+    required this.onLoadRemotePhoto,
     super.key,
   });
 
@@ -822,9 +830,45 @@ class _PhotoTile extends StatelessWidget {
   final int photoNumber;
   final double scale;
   final VoidCallback onRemove;
+  final HouseholdRemotePhotoLoader? onLoadRemotePhoto;
+
+  @override
+  State<_PhotoTile> createState() => _PhotoTileState();
+}
+
+class _PhotoTileState extends State<_PhotoTile> {
+  Future<Uint8List>? _remotePhoto;
+
+  @override
+  void initState() {
+    super.initState();
+    _prepareRemotePhoto();
+  }
+
+  @override
+  void didUpdateWidget(covariant _PhotoTile oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (oldWidget.photo.remotePhotoId != widget.photo.remotePhotoId ||
+        oldWidget.onLoadRemotePhoto != widget.onLoadRemotePhoto) {
+      _prepareRemotePhoto();
+    }
+  }
+
+  void _prepareRemotePhoto() {
+    final photoId = widget.photo.remotePhotoId;
+    final loader = widget.onLoadRemotePhoto;
+    _remotePhoto =
+        widget.photo.kind == HouseholdPhotoKind.remote &&
+            photoId != null &&
+            loader != null
+        ? loader(photoId)
+        : null;
+  }
 
   @override
   Widget build(BuildContext context) {
+    final photo = widget.photo;
+    final scale = widget.scale;
     final image = switch (photo.kind) {
       HouseholdPhotoKind.asset => Image.asset(
         photo.path,
@@ -840,6 +884,7 @@ class _PhotoTile extends StatelessWidget {
           child: Icon(Icons.broken_image_outlined, color: AppColors.primary),
         ),
       ),
+      HouseholdPhotoKind.remote => _RemotePhoto(photo: _remotePhoto),
     };
 
     return Stack(
@@ -878,13 +923,13 @@ class _PhotoTile extends StatelessWidget {
           height: 28 * scale,
           child: Semantics(
             button: true,
-            label: '$photoNumber. fotoğrafı sil',
+            label: '${widget.photoNumber}. fotoğrafı sil',
             child: Tooltip(
               message: 'Fotoğrafı sil',
               child: GestureDetector(
-                key: Key('household-photo-remove-${photoNumber - 1}'),
+                key: Key('household-photo-remove-${widget.photoNumber - 1}'),
                 behavior: HitTestBehavior.opaque,
-                onTap: onRemove,
+                onTap: widget.onRemove,
                 child: Align(
                   alignment: Alignment.topRight,
                   child: Container(
@@ -908,6 +953,55 @@ class _PhotoTile extends StatelessWidget {
       ],
     );
   }
+}
+
+class _RemotePhoto extends StatelessWidget {
+  const _RemotePhoto({required this.photo});
+
+  final Future<Uint8List>? photo;
+
+  @override
+  Widget build(BuildContext context) {
+    final future = photo;
+    if (future == null) return const _RemotePhotoError();
+    return FutureBuilder<Uint8List>(
+      future: future,
+      builder: (context, snapshot) {
+        if (snapshot.connectionState != ConnectionState.done) {
+          return const ColoredBox(
+            color: AppColors.primarySurface,
+            child: Center(
+              child: CircularProgressIndicator(
+                strokeWidth: 2,
+                color: AppColors.primary,
+              ),
+            ),
+          );
+        }
+        final bytes = snapshot.data;
+        if (snapshot.hasError || bytes == null || bytes.isEmpty) {
+          return const _RemotePhotoError();
+        }
+        return Image.memory(
+          bytes,
+          fit: BoxFit.cover,
+          filterQuality: FilterQuality.high,
+          gaplessPlayback: true,
+          errorBuilder: (_, _, _) => const _RemotePhotoError(),
+        );
+      },
+    );
+  }
+}
+
+class _RemotePhotoError extends StatelessWidget {
+  const _RemotePhotoError();
+
+  @override
+  Widget build(BuildContext context) => const ColoredBox(
+    color: AppColors.primarySurface,
+    child: Icon(Icons.broken_image_outlined, color: AppColors.primary),
+  );
 }
 
 class _BottomActionButton extends StatelessWidget {

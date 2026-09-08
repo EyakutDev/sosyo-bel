@@ -125,6 +125,37 @@ internal sealed class CompanyApplicationPhotoPreparer(
         }
     }
 
+    public Task<Stream> OpenReadAsync(
+        string companyWebPath,
+        CancellationToken cancellationToken) =>
+        storage.OpenReadAsync(ToStorageKey(companyWebPath), cancellationToken);
+
+    public async Task DeleteCompanyPathsAsync(
+        IEnumerable<string> companyWebPaths,
+        IEnumerable<string>? protectedCompanyWebPaths = null)
+    {
+        var protectedPaths = (protectedCompanyWebPaths ?? [])
+            .ToHashSet(StringComparer.OrdinalIgnoreCase);
+        foreach (var companyWebPath in companyWebPaths
+                     .Where(value => !protectedPaths.Contains(value))
+                     .Distinct(StringComparer.OrdinalIgnoreCase))
+        {
+            try
+            {
+                await storage.DeleteAsync(
+                    ToStorageKey(companyWebPath),
+                    CancellationToken.None);
+            }
+            catch (Exception exception)
+            {
+                logger.LogWarning(
+                    new EventId(1003),
+                    exception,
+                    "Photo cleanup failed.");
+            }
+        }
+    }
+
     internal static string ToCompanyWebPath(string storageKey)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(storageKey);
@@ -141,4 +172,37 @@ internal sealed class CompanyApplicationPhotoPreparer(
         // veritabanına fiziksel disk yolu değil, web uygulamasının URL yolu yazılır.
         return CompanyWebUploadPrefix + string.Join('/', segments);
     }
+
+    internal static string ToStorageKey(string companyWebPath)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(companyWebPath);
+        var normalized = companyWebPath.Replace('\\', '/');
+        if (!normalized.StartsWith(
+                CompanyWebUploadPrefix,
+                StringComparison.OrdinalIgnoreCase))
+        {
+            throw new InvalidDataException("Geçersiz şirket fotoğraf yolu.");
+        }
+
+        var storageKey = normalized[CompanyWebUploadPrefix.Length..].Trim('/');
+        var segments = storageKey.Split(
+            '/',
+            StringSplitOptions.RemoveEmptyEntries);
+        if (segments.Length != 2 ||
+            segments.Any(segment => segment is "." or ".."))
+        {
+            throw new InvalidDataException("Geçersiz şirket fotoğraf yolu.");
+        }
+        return string.Join('/', segments);
+    }
+
+    internal static string ContentTypeForPath(string companyWebPath) =>
+        Path.GetExtension(companyWebPath).ToLowerInvariant() switch
+        {
+            ".jpg" or ".jpeg" => "image/jpeg",
+            ".png" => "image/png",
+            ".heic" => "image/heic",
+            ".heif" => "image/heif",
+            _ => "application/octet-stream",
+        };
 }

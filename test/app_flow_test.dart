@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:typed_data';
 
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -191,6 +192,10 @@ void main() {
     );
     await tester.pumpAndSettle();
 
+    await tester.tap(find.byKey(const Key('household-continue-button')));
+    await tester.pumpAndSettle();
+
+    expect(find.byKey(const Key('household-photo-0')), findsOneWidget);
     await tester.tap(find.byKey(const Key('household-continue-button')));
     await tester.pumpAndSettle();
 
@@ -751,6 +756,7 @@ class _FakeApplicationRepository implements ApplicationRepository {
   int submitCount = 0;
   int detailsLoadCount = 0;
   int updateCount = 0;
+  int deleteCount = 0;
   int? lastUpdatedApplicationId;
   ApplicationDraft? lastSubmittedDraft;
   ApplicationDraft? lastUpdatedDraft;
@@ -761,6 +767,17 @@ class _FakeApplicationRepository implements ApplicationRepository {
   }) async {
     detailsLoadCount += 1;
     return _editableSubmittedApplicationDetails();
+  }
+
+  @override
+  Future<Uint8List> getSubmittedPhoto({
+    required int applicationId,
+    required int photoId,
+  }) async => Uint8List.fromList(const [1, 2, 3]);
+
+  @override
+  Future<void> deleteSubmitted({required int applicationId}) async {
+    deleteCount += 1;
   }
 
   @override

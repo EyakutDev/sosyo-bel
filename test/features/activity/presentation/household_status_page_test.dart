@@ -1,3 +1,5 @@
+import 'dart:convert';
+
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:sosyo_bel/core/constants/app_assets.dart';
@@ -17,8 +19,10 @@ void main() {
     VoidCallback? onHeaderBack,
     ValueChanged<HouseholdStatusDraft>? onContinue,
     HouseholdPhotoCapture? onCapturePhoto,
+    HouseholdRemotePhotoLoader? onLoadRemotePhoto,
     HouseholdStatusStage initialStage = HouseholdStatusStage.questions,
     List<HouseholdPhotoViewData> initialPhotos = const [],
+    HouseholdStatusDraft? initialDraft,
     List<HouseholdQuestionViewData> questions = householdQuestionTestViewData,
     bool allowPhotoChanges = true,
     int existingPhotoCount = 0,
@@ -41,12 +45,14 @@ void main() {
             questions: questions,
             initialStage: initialStage,
             initialPhotos: initialPhotos,
+            initialDraft: initialDraft,
             allowPhotoChanges: allowPhotoChanges,
             existingPhotoCount: existingPhotoCount,
             onBack: onBack ?? () {},
             onHeaderBack: onHeaderBack,
             onContinue: onContinue ?? (_) {},
             onCapturePhoto: onCapturePhoto ?? () async => null,
+            onLoadRemotePhoto: onLoadRemotePhoto,
           ),
         ),
       ),
@@ -223,6 +229,44 @@ void main() {
 
     expect(captureCount, 1);
     expect(submittedDraft?.photos, hasLength(15));
+  });
+
+  testWidgets('sunucu fotografini yukler ve silmeyi taslakta isaretler', (
+    tester,
+  ) async {
+    var loadCount = 0;
+    HouseholdStatusDraft? submittedDraft;
+    await pumpPage(
+      tester,
+      initialStage: HouseholdStatusStage.photos,
+      initialDraft: const HouseholdStatusDraft(
+        answers: {},
+        photos: [
+          HouseholdPhotoViewData.remote(
+            path: '/uploads/hanefotograflari/app/salon.jpg',
+            photoId: 91,
+          ),
+        ],
+        saveToBeneficiaryDirectory: false,
+        replaceRemotePhotosOnSave: true,
+      ),
+      onLoadRemotePhoto: (_) async {
+        loadCount++;
+        return base64Decode(
+          'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+A8AAQUBAScY42YAAAAASUVORK5CYII=',
+        );
+      },
+      onContinue: (draft) => submittedDraft = draft,
+    );
+    await tester.pumpAndSettle();
+
+    expect(loadCount, 1);
+    expect(find.byKey(const Key('household-photo-0')), findsOneWidget);
+    await tester.tap(find.byKey(const Key('household-photo-remove-0')));
+    await tester.tap(find.byKey(const Key('household-continue-button')));
+
+    expect(submittedDraft?.photos, isEmpty);
+    expect(submittedDraft?.replaceRemotePhotosOnSave, isTrue);
   });
 
   testWidgets('duzenlemede mevcut fotograflari koruyup degistirmez', (

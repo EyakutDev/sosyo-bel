@@ -20,6 +20,7 @@ internal enum SubmittedApplicationUpdateAccess
 /// </summary>
 internal sealed class SubmittedApplicationUpdateService(
     IDbContextFactory<CompanyApplicationDbContext> contextFactory,
+    CompanyApplicationPhotoPreparer photoPreparer,
     ILogger<SubmittedApplicationUpdateService> logger,
     RequestLogContext logContext) : IUpdateSubmittedApplicationService
 {
@@ -33,12 +34,21 @@ internal sealed class SubmittedApplicationUpdateService(
         var validation = ValidateAndNormalize(command);
         if (validation.Result is not null) return validation.Result;
 
-        await using var strategyContext =
-            await contextFactory.CreateDbContextAsync(cancellationToken);
-        var strategy = strategyContext.Database.CreateExecutionStrategy();
+        var photoPreparation = await PreparePhotoUpdateAsync(
+            command,
+            validation.Photos,
+            cancellationToken);
+        if (photoPreparation.Result is not null)
+            return photoPreparation.Result;
+        var preparedPhotos = photoPreparation.Prepared;
+        IReadOnlyCollection<string> removedPhotoPaths = [];
+
         try
         {
-            return await strategy.ExecuteAsync(async () =>
+            await using var strategyContext =
+                await contextFactory.CreateDbContextAsync(cancellationToken);
+            var strategy = strategyContext.Database.CreateExecutionStrategy();
+            var result = await strategy.ExecuteAsync(async () =>
             {
                 await using var context =
                     await contextFactory.CreateDbContextAsync(cancellationToken);
@@ -132,8 +142,36 @@ internal sealed class SubmittedApplicationUpdateService(
                     .Set<CompanyApplicationHouseholdAnswerRecord>()
                     .Where(answer => answer.ApplicationId == application.Id)
                     .ToArrayAsync(cancellationToken);
+                CompanyHouseholdPhotoRecord[] removedPhotos = [];
+                if (preparedPhotos is not null)
+                {
+                    var pathPrefix =
+                        $"/uploads/hanefotograflari/{preparedPhotos.PublicId:N}/";
+                    var currentPhotos = await context
+                        .Set<CompanyHouseholdPhotoRecord>()
+                        .Where(photo =>
+                            photo.CitizenId == preparedPhotos.CitizenId &&
+                            photo.PhotoPath.StartsWith(pathPrefix))
+                        .ToArrayAsync(cancellationToken);
+                    if (preparedPhotos.RetainedPhotoIds.Any(
+                            photoId => currentPhotos.All(
+                                photo => photo.Id != photoId)))
+                    {
+                        return Conflict(
+                            "application_photos_changed",
+                            "Başvuru fotoğrafları başka bir işlem tarafından değiştirildi.");
+                    }
+                    removedPhotos = currentPhotos
+                        .Where(photo => !preparedPhotos.RetainedPhotoIds.Contains(
+                            photo.Id))
+                        .ToArray();
+                    removedPhotoPaths = removedPhotos
+                        .Select(photo => photo.PhotoPath)
+                        .ToArray();
+                }
                 context.RemoveRange(existingFamily);
                 context.RemoveRange(existingHousehold);
+                context.RemoveRange(removedPhotos);
 
                 logContext.Stage = RequestLogStage.SaveApplicationUpdate;
                 // Önce eski çocuk kayıtlar silinir. Aynı transaction içinde ikinci
@@ -145,6 +183,15 @@ internal sealed class SubmittedApplicationUpdateService(
                         CompanyApplicationHouseholdAnswerRecord.Create(
                             application.Id,
                             answer)));
+                if (preparedPhotos is not null)
+                {
+                    context.AddRange(preparedPhotos.NewRecords.Select(photo =>
+                        CompanyHouseholdPhotoRecord.Create(
+                            preparedPhotos.CitizenId,
+                            photo.PhotoPath,
+                            photo.Description,
+                            photo.UploadedAt)));
+                }
                 await context.SaveChangesAsync(cancellationToken);
                 await transaction.CommitAsync(cancellationToken);
 
@@ -156,9 +203,26 @@ internal sealed class SubmittedApplicationUpdateService(
                         application.PublicToken,
                         WorkItemStatusCodes.BoardPending));
             });
+
+            if (preparedPhotos is not null)
+            {
+                if (result.Status == ApplicationLifecycleStatus.Succeeded)
+                {
+                    await photoPreparer.DeleteCompanyPathsAsync(
+                        removedPhotoPaths,
+                        preparedPhotos.NewRecords.Select(value => value.PhotoPath));
+                }
+                else
+                {
+                    await photoPreparer.DiscardAsync(preparedPhotos.StoredPhotos);
+                }
+            }
+            return result;
         }
         catch (DbUpdateException exception)
         {
+            if (preparedPhotos is not null)
+                await photoPreparer.DiscardAsync(preparedPhotos.StoredPhotos);
             logger.LogWarning(
                 new EventId(1004),
                 exception,
@@ -166,6 +230,12 @@ internal sealed class SubmittedApplicationUpdateService(
             return Conflict(
                 "company_application_update_conflict",
                 "Başvuru güncellemesi mevcut şirket verileriyle çakıştı.");
+        }
+        catch
+        {
+            if (preparedPhotos is not null)
+                await photoPreparer.DiscardAsync(preparedPhotos.StoredPhotos);
+            throw;
         }
     }
 
@@ -195,6 +265,100 @@ internal sealed class SubmittedApplicationUpdateService(
             StringComparison.Ordinal)
                 ? SubmittedApplicationUpdateAccess.Allowed
                 : SubmittedApplicationUpdateAccess.NotPending;
+    }
+
+    private async Task<PhotoPreparationOutcome> PreparePhotoUpdateAsync(
+        UpdateSubmittedApplicationCommand command,
+        SubmittedApplicationPhotoUpdateData? photos,
+        CancellationToken cancellationToken)
+    {
+        if (photos is null) return new();
+
+        await using var context =
+            await contextFactory.CreateDbContextAsync(cancellationToken);
+        var application = await BuildUpdateTargetQuery(
+                context,
+                command.ApplicationId)
+            .AsNoTracking()
+            .SingleOrDefaultAsync(cancellationToken);
+        if (application is null) return new(Result: NotFound());
+
+        var statusCode = await CompanyApplicationStatusResolver.FindCodeAsync(
+            context,
+            application.StatusId,
+            cancellationToken);
+        var access = ClassifyAccess(
+            application.CreatedByUserId,
+            command.Actor.ActorUserId,
+            statusCode);
+        if (access == SubmittedApplicationUpdateAccess.NotOwner)
+            return new(Result: Forbidden());
+        if (access == SubmittedApplicationUpdateAccess.NotPending)
+        {
+            return new(Result: Conflict(
+                "application_not_editable",
+                "Yalnız Beklemede durumundaki başvuru güncellenebilir."));
+        }
+        if (application.CitizenId is not > 0 ||
+            !Guid.TryParseExact(application.PublicToken, "N", out var publicId))
+        {
+            return new(Result: Conflict(
+                "application_photo_identity_missing",
+                "Başvurunun fotoğraf bağlantısı bulunamadı."));
+        }
+
+        var pathPrefix = $"/uploads/hanefotograflari/{publicId:N}/";
+        var currentPhotoIds = await context
+            .Set<CompanyHouseholdPhotoRecord>()
+            .AsNoTracking()
+            .Where(photo =>
+                photo.CitizenId == application.CitizenId.Value &&
+                photo.PhotoPath.StartsWith(pathPrefix))
+            .Select(photo => photo.Id)
+            .ToArrayAsync(cancellationToken);
+        if (photos.RetainedPhotoIds.Any(
+                photoId => !currentPhotoIds.Contains(photoId)))
+        {
+            return new(Result: Invalid(
+                "invalid_retained_application_photos",
+                new Dictionary<string, string[]>
+                {
+                    ["retainedPhotoIds"] =
+                        ["Korunacak fotoğraflardan biri bu başvuruya ait değil."],
+                }));
+        }
+
+        logContext.Stage = RequestLogStage.StorePhotos;
+        var preparation = await photoPreparer.PrepareAsync(
+            application.CitizenId.Value,
+            publicId,
+            photos.NewPhotos,
+            cancellationToken);
+        if (preparation.Status !=
+            CompanyApplicationPhotoPreparationStatus.Prepared)
+        {
+            return preparation.Status ==
+                   CompanyApplicationPhotoPreparationStatus.InvalidInput
+                ? new(Result: Invalid(
+                    preparation.Code ?? "invalid_application_photos",
+                    preparation.Errors ?? new Dictionary<string, string[]>()))
+                : new(Result: Conflict(
+                    preparation.Code ?? "photo_storage_error",
+                    "Fotoğraflar kalıcı depoya hazırlanamadı."));
+        }
+
+        var records = (preparation.Records ?? [])
+            .Select(value => new PreparedPhotoRecord(
+                value.PhotoPath,
+                value.Description,
+                value.UploadedAt))
+            .ToArray();
+        return new(Prepared: new PreparedPhotoUpdate(
+            publicId,
+            application.CitizenId.Value,
+            photos.RetainedPhotoIds.ToHashSet(),
+            records,
+            preparation.StoredPhotos ?? []));
     }
 
     private static UpdateValidation ValidateAndNormalize(
@@ -227,6 +391,7 @@ internal sealed class SubmittedApplicationUpdateService(
         IReadOnlyCollection<ApplicationFamilyMemberData>? normalizedFamily = null;
         IReadOnlyCollection<ApplicationHouseholdAnswerData>? normalizedHousehold =
             null;
+        SubmittedApplicationPhotoUpdateData? normalizedPhotos = null;
         if (!ApplicationFieldDataValidation.TryNormalize(
                 command.FamilyMembers,
                 command.HouseholdAnswers,
@@ -260,6 +425,27 @@ internal sealed class SubmittedApplicationUpdateService(
             }
         }
 
+        if (command.Photos is not null)
+        {
+            var retainedIds = command.Photos.RetainedPhotoIds?.ToArray() ?? [];
+            if (retainedIds.Any(value => value <= 0) ||
+                retainedIds.Distinct().Count() != retainedIds.Length)
+            {
+                errors["retainedPhotoIds"] =
+                    ["Korunacak fotoğraf kimlikleri pozitif ve benzersiz olmalıdır."];
+            }
+            if (retainedIds.Length + command.Photos.NewPhotos.Count >
+                ApplicationPhotoPolicy.MaximumPhotoCount)
+            {
+                errors["photos"] =
+                    [$"Toplam en fazla {ApplicationPhotoPolicy.MaximumPhotoCount} fotoğraf bulunabilir."];
+            }
+            AddErrors(
+                errors,
+                ApplicationPhotoPolicy.Validate(command.Photos.NewPhotos));
+            normalizedPhotos = new(retainedIds, command.Photos.NewPhotos);
+        }
+
         return errors.Count > 0
             ? new UpdateValidation(
                 Result: Invalid(
@@ -268,7 +454,8 @@ internal sealed class SubmittedApplicationUpdateService(
             : new(
                 normalizedApplication,
                 normalizedFamily,
-                normalizedHousehold);
+                normalizedHousehold,
+                normalizedPhotos);
     }
 
     private static void AddErrors(
@@ -332,5 +519,22 @@ internal sealed class SubmittedApplicationUpdateService(
         IReadOnlyCollection<ApplicationFamilyMemberData>? FamilyMembers = null,
         IReadOnlyCollection<ApplicationHouseholdAnswerData>? HouseholdAnswers =
             null,
+        SubmittedApplicationPhotoUpdateData? Photos = null,
         ApplicationLifecycleResult<UpdatedSubmittedApplication>? Result = null);
+
+    private sealed record PhotoPreparationOutcome(
+        PreparedPhotoUpdate? Prepared = null,
+        ApplicationLifecycleResult<UpdatedSubmittedApplication>? Result = null);
+
+    private sealed record PreparedPhotoUpdate(
+        Guid PublicId,
+        int CitizenId,
+        IReadOnlySet<int> RetainedPhotoIds,
+        IReadOnlyCollection<PreparedPhotoRecord> NewRecords,
+        IReadOnlyCollection<StoredApplicationPhoto> StoredPhotos);
+
+    private sealed record PreparedPhotoRecord(
+        string PhotoPath,
+        string? Description,
+        DateTime UploadedAt);
 }

@@ -156,6 +156,50 @@ void main() {
       );
     });
 
+    test('gonderilmis basvurunun fotografini yetkili olarak indirir', () async {
+      final adapter = _RecordingAdapter(
+        (_) => ResponseBody.fromBytes(
+          const [1, 2, 3, 4],
+          200,
+          headers: {
+            Headers.contentTypeHeader: ['image/jpeg'],
+          },
+        ),
+      );
+      final repository = _repository(adapter);
+
+      final bytes = await repository.getSubmittedPhoto(
+        applicationId: 3751,
+        photoId: 91,
+      );
+
+      expect(bytes, const [1, 2, 3, 4]);
+      expect(adapter.lastRequest?.method, 'GET');
+      expect(
+        adapter.lastRequest?.uri.path,
+        '/sosyo-bel/api/v1/applications/3751/photos/91',
+      );
+    });
+
+    test('kendi bekleyen basvurusunu delete istegiyle siler', () async {
+      final adapter = _RecordingAdapter(
+        (_) => _jsonResponse(200, {'applicationId': 3751}),
+      );
+      final repository = _repository(adapter);
+
+      await repository.deleteSubmitted(applicationId: 3751);
+
+      expect(adapter.lastRequest?.method, 'DELETE');
+      expect(
+        adapter.lastRequest?.uri.path,
+        '/sosyo-bel/api/v1/applications/3751',
+      );
+      expect(
+        adapter.lastRequest?.headers[ApiClient.authorizationHeader],
+        'Bearer access-token',
+      );
+    });
+
     test('yalniz duzenlenebilir alanlari put istegiyle gunceller', () async {
       final adapter = _RecordingAdapter(
         (_) => _jsonResponse(200, {
@@ -204,6 +248,60 @@ void main() {
       expect(payload['householdAnswers'], hasLength(2));
     });
 
+    test(
+      'fotograf degisikligini ayni put isteginde multipart gonderir',
+      () async {
+        final temporaryDirectory = await Directory.systemTemp.createTemp(
+          'sosyo-bel-photo-update-test-',
+        );
+        try {
+          final newPhoto = File.fromUri(
+            temporaryDirectory.uri.resolve('mutfak.jpg'),
+          );
+          await newPhoto.writeAsBytes(const [255, 216, 255, 217]);
+          final adapter = _RecordingAdapter(
+            (_) => _jsonResponse(200, {
+              'applicationId': 3751,
+              'applicationPublicId': '22222222-2222-2222-2222-222222222222',
+              'applicationNumber': '#3751',
+              'statusCode': 'KURUL_BEKLIYOR',
+              'isEditable': true,
+            }),
+          );
+          final repository = _repository(adapter);
+          final draft = _fieldDraft.copyWith(
+            householdStatus: HouseholdStatusDraft(
+              answers: _fieldDraft.householdStatus!.answers,
+              photos: [
+                const HouseholdPhotoViewData.remote(
+                  path: '/uploads/hanefotograflari/app/salon.jpg',
+                  photoId: 91,
+                ),
+                HouseholdPhotoViewData.file(newPhoto.path),
+              ],
+              saveToBeneficiaryDirectory: false,
+              replaceRemotePhotosOnSave: true,
+            ),
+          );
+
+          await repository.updateSubmitted(applicationId: 3751, draft: draft);
+
+          final formData = adapter.lastRequest?.data as FormData;
+          expect(formData.files, hasLength(1));
+          expect(formData.files.single.value.filename, 'mutfak.jpg');
+          final fields = Map<String, String>.fromEntries(formData.fields);
+          final payload =
+              jsonDecode(fields['payload']!) as Map<String, dynamic>;
+          expect(payload['retainedPhotoIds'], [91]);
+          expect(payload['application'], isA<Map<String, dynamic>>());
+          expect(payload['familyMembers'], hasLength(1));
+          expect(payload['householdAnswers'], hasLength(2));
+        } finally {
+          await temporaryDirectory.delete(recursive: true);
+        }
+      },
+    );
+
     test('bozuk detay cevabini gecersiz sunucu cevabina cevirir', () async {
       final adapter = _RecordingAdapter(
         (_) => _jsonResponse(200, {
@@ -237,6 +335,10 @@ void main() {
       );
       await expectLater(
         repository.updateSubmitted(applicationId: -1, draft: _fieldDraft),
+        throwsArgumentError,
+      );
+      await expectLater(
+        repository.deleteSubmitted(applicationId: 0),
         throwsArgumentError,
       );
       expect(adapter.fetchCount, 0);
