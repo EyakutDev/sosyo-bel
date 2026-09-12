@@ -78,9 +78,6 @@ public static class DependencyInjection
         services.AddScoped<
             IUpdateSubmittedApplicationService,
             SubmittedApplicationUpdateService>();
-        services.AddScoped<
-            IDeleteSubmittedApplicationService,
-            SubmittedApplicationDeleteService>();
         services.AddScoped<IAssignedFieldTaskQuery, AssignedFieldTaskQuery>();
         services.AddScoped<IApplicationReferenceQuery, ApplicationReferenceQuery>();
         services.AddScoped<IUserWorkItemQuery, UserWorkItemQuery>();

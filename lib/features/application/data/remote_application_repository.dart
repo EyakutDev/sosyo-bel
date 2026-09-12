@@ -124,21 +124,6 @@ class RemoteApplicationRepository implements ApplicationRepository {
   }
 
   @override
-  Future<void> deleteSubmitted({required int applicationId}) async {
-    _validateApplicationId(applicationId);
-    final response = await _apiClient.delete<Map<String, dynamic>>(
-      'api/v1/applications/$applicationId',
-    );
-    final deletedApplicationId = response.data?['applicationId'];
-    if (deletedApplicationId is! int || deletedApplicationId != applicationId) {
-      throw const ApiException(
-        kind: ApiErrorKind.invalidResponse,
-        message: 'Sunucunun başvuru silme cevabı geçersiz.',
-      );
-    }
-  }
-
-  @override
   Future<SubmittedApplicationUpdateResult> updateSubmitted({
     required int applicationId,
     required ApplicationDraft draft,

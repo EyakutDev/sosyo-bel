@@ -151,11 +151,17 @@ void main() {
     expect(find.byKey(const Key('home-owned-filter-clear')), findsNothing);
 
     await tester.tap(find.byKey(const Key('home-owned-filter-button')));
-    await tester.pumpAndSettle();
+    await tester.pump();
 
     expect(find.text('B-OWN-PENDING'), findsOneWidget);
     expect(find.text('B-OTHER-PENDING'), findsNothing);
     expect(find.byKey(const Key('home-owned-filter-clear')), findsOneWidget);
+    expect(find.text('Yalnızca başvurularınız gösteriliyor'), findsOneWidget);
+    final notice = tester.widget<Container>(
+      find.byKey(const Key('home-owned-filter-notice')),
+    );
+    expect((notice.decoration! as BoxDecoration).color, Colors.white);
+    await tester.pumpAndSettle();
 
     await tester.tap(find.text('Tamamlanan'));
     await tester.pumpAndSettle();
@@ -163,11 +169,31 @@ void main() {
     expect(find.text('B-OWN-COMPLETED'), findsOneWidget);
     expect(find.text('B-OTHER-COMPLETED'), findsNothing);
 
-    await tester.tap(find.byKey(const Key('home-owned-filter-clear')));
+    await tester.tap(find.byKey(const Key('home-owned-filter-button')));
     await tester.pumpAndSettle();
 
     expect(find.text('B-OWN-COMPLETED'), findsOneWidget);
     expect(find.text('B-OTHER-COMPLETED'), findsOneWidget);
+  });
+
+  testWidgets('liste sekmelerini ve yuvarlak filtreyi alt alanda gosterir', (
+    tester,
+  ) async {
+    await pumpHome(tester);
+    await tester.pumpAndSettle();
+
+    final tabs = find.byKey(const Key('home-list-tabs'));
+    final filter = find.byKey(const Key('home-owned-filter-button'));
+    final filterSize = tester.getSize(filter);
+
+    expect(tester.getCenter(tabs).dy, greaterThan(700));
+    expect(find.byKey(const Key('home-bottom-controls')), findsOneWidget);
+    expect((filterSize.width - filterSize.height).abs(), lessThan(0.01));
+    expect(find.text('Başvurularımı Gör'), findsNothing);
+    expect(
+      find.byKey(const Key('home-owned-filter-person-icon')),
+      findsOneWidget,
+    );
   });
 
   testWidgets('kısa sekme sürüklemesi mevcut listeye geri döner', (
@@ -375,6 +401,66 @@ void main() {
       expect(openedItem, same(submittedApplication));
     },
   );
+
+  testWidgets('detaydan donuste liste konumunu koruyarak yeniler', (
+    tester,
+  ) async {
+    final items = List<WorkItem>.generate(
+      10,
+      (index) => WorkItem(
+        applicationId: 4000 + index,
+        applicationNumber: '#${4000 + index}',
+        applicantFullName: 'Basvuru Sahibi $index',
+        sourceCode: 'APPLICATION',
+        statusCode: 'KURUL_BEKLIYOR',
+        isCompleted: false,
+        isEditable: false,
+        activityAtUtc: DateTime.utc(2026, 9, 8, 10, index),
+      ),
+    );
+    final refreshCompleter = Completer<List<WorkItem>>();
+    var loadCount = 0;
+    await pumpHome(
+      tester,
+      repository: _FakeWorkItemsRepository(() {
+        loadCount += 1;
+        return loadCount == 1
+            ? Future<List<WorkItem>>.value(items)
+            : refreshCompleter.future;
+      }),
+      onOpenSubmittedApplication: (_) async {},
+    );
+    await tester.pumpAndSettle();
+
+    await tester.drag(find.byType(ListView), const Offset(0, -500));
+    await tester.pumpAndSettle();
+    expect(find.text('#4004'), findsOneWidget);
+
+    final scrollable = find.byType(Scrollable);
+    final offsetBeforeDetail = tester
+        .state<ScrollableState>(scrollable)
+        .position
+        .pixels;
+    expect(offsetBeforeDetail, greaterThan(0));
+
+    await tester.tap(find.text('#4004'));
+    await tester.pump();
+
+    expect(loadCount, 2);
+    expect(find.byKey(const Key('home-loading-indicator')), findsNothing);
+    expect(
+      tester.state<ScrollableState>(scrollable).position.pixels,
+      closeTo(offsetBeforeDetail, 0.1),
+    );
+
+    refreshCompleter.complete(items);
+    await tester.pumpAndSettle();
+
+    expect(
+      tester.state<ScrollableState>(scrollable).position.pixels,
+      closeTo(offsetBeforeDetail, 0.1),
+    );
+  });
 }
 
 final _workItems = <WorkItem>[

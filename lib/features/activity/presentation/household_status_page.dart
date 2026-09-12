@@ -6,6 +6,7 @@ import 'package:flutter/services.dart';
 import 'package:flutter_svg/flutter_svg.dart';
 import 'package:sosyo_bel/core/constants/app_assets.dart';
 import 'package:sosyo_bel/core/theme/app_colors.dart';
+import 'package:sosyo_bel/core/widgets/app_notice.dart';
 import 'package:sosyo_bel/features/activity/presentation/models/household_status_view_data.dart';
 import 'package:sosyo_bel/features/activity/presentation/widgets/activity_step_tabs.dart';
 
@@ -119,7 +120,10 @@ class _HouseholdStatusPageState extends State<HouseholdStatusPage> {
       _notifyDraftChanged();
     } catch (_) {
       if (mounted) {
-        _showMessage('Kamera işlemi kurtarılamadı. Lütfen tekrar deneyin.');
+        _showMessage(
+          'Kamera işlemi kurtarılamadı. Lütfen tekrar deneyin.',
+          tone: AppNoticeTone.error,
+        );
       }
     }
   }
@@ -187,7 +191,10 @@ class _HouseholdStatusPageState extends State<HouseholdStatusPage> {
       }
     } catch (_) {
       if (mounted) {
-        _showMessage('Fotoğraf alınamadı. Lütfen tekrar deneyin.');
+        _showMessage(
+          'Fotoğraf alınamadı. Lütfen tekrar deneyin.',
+          tone: AppNoticeTone.error,
+        );
       }
     } finally {
       if (mounted) {
@@ -206,12 +213,8 @@ class _HouseholdStatusPageState extends State<HouseholdStatusPage> {
     _notifyDraftChanged();
   }
 
-  void _showMessage(String message) {
-    ScaffoldMessenger.of(context)
-      ..hideCurrentSnackBar()
-      ..showSnackBar(
-        SnackBar(content: Text(message), backgroundColor: AppColors.primary),
-      );
+  void _showMessage(String message, {AppNoticeTone tone = AppNoticeTone.info}) {
+    showAppNotice(context, message: message, tone: tone);
   }
 
   @override

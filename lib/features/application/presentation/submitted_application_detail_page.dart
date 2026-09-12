@@ -2,15 +2,16 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:sosyo_bel/core/network/api_exception.dart';
 import 'package:sosyo_bel/core/theme/app_colors.dart';
+import 'package:sosyo_bel/core/widgets/app_notice.dart';
 import 'package:sosyo_bel/features/application/domain/application_reference_catalog.dart';
 import 'package:sosyo_bel/features/application/domain/submitted_application_details.dart';
 
 typedef SubmittedApplicationDetailsLoader =
     Future<SubmittedApplicationDetails> Function();
+typedef SubmittedApplicationPhotoLoader =
+    Future<Uint8List> Function(int photoId);
 typedef SubmittedApplicationEditor =
     Future<bool> Function(SubmittedApplicationDetails details);
-typedef SubmittedApplicationDeleter =
-    Future<void> Function(SubmittedApplicationDetails details);
 
 /// Kurula gönderilmiş bir başvuruyu değiştirmeden görüntüler.
 class SubmittedApplicationDetailPage extends StatefulWidget {
@@ -18,18 +19,18 @@ class SubmittedApplicationDetailPage extends StatefulWidget {
     required this.applicationNumber,
     required this.referenceCatalog,
     required this.loadDetails,
+    required this.loadPhoto,
     required this.onBack,
     this.onEdit,
-    this.onDelete,
     super.key,
   });
 
   final String applicationNumber;
   final ApplicationReferenceCatalog referenceCatalog;
   final SubmittedApplicationDetailsLoader loadDetails;
+  final SubmittedApplicationPhotoLoader loadPhoto;
   final VoidCallback onBack;
   final SubmittedApplicationEditor? onEdit;
-  final SubmittedApplicationDeleter? onDelete;
 
   @override
   State<SubmittedApplicationDetailPage> createState() =>
@@ -42,7 +43,6 @@ class _SubmittedApplicationDetailPageState
   String? _errorMessage;
   bool _isLoading = true;
   bool _isOpeningEditor = false;
-  bool _isDeleting = false;
 
   @override
   void initState() {
@@ -84,8 +84,7 @@ class _SubmittedApplicationDetailPageState
         editor == null ||
         !details.isOwnedByCurrentUser ||
         !details.isEditable ||
-        _isOpeningEditor ||
-        _isDeleting) {
+        _isOpeningEditor) {
       return;
     }
     setState(() => _isOpeningEditor = true);
@@ -103,70 +102,9 @@ class _SubmittedApplicationDetailPageState
     }
   }
 
-  Future<void> _deleteApplication() async {
-    final details = _details;
-    final deleter = widget.onDelete;
-    if (details == null ||
-        deleter == null ||
-        !details.isOwnedByCurrentUser ||
-        !details.isEditable ||
-        _isOpeningEditor ||
-        _isDeleting) {
-      return;
-    }
-
-    final confirmed = await showDialog<bool>(
-      context: context,
-      barrierDismissible: false,
-      builder: (dialogContext) => AlertDialog(
-        key: const Key('application-delete-dialog'),
-        title: const Text('Başvuruyu sil'),
-        content: const Text(
-          'Bu başvuru kalıcı olarak silinecek. Bu işlem geri alınamaz.',
-        ),
-        actions: [
-          TextButton(
-            key: const Key('application-delete-cancel-button'),
-            onPressed: () => Navigator.of(dialogContext).pop(false),
-            child: const Text('Vazgeç'),
-          ),
-          FilledButton(
-            key: const Key('application-delete-confirm-button'),
-            onPressed: () => Navigator.of(dialogContext).pop(true),
-            style: FilledButton.styleFrom(
-              backgroundColor: AppColors.statusRejected,
-              foregroundColor: AppColors.white,
-            ),
-            child: const Text('Sil'),
-          ),
-        ],
-      ),
-    );
-    if (!mounted || confirmed != true) return;
-
-    setState(() => _isDeleting = true);
-    try {
-      await deleter(details);
-      if (!mounted) return;
-      final messenger = ScaffoldMessenger.of(context);
-      messenger
-        ..hideCurrentSnackBar()
-        ..showSnackBar(const SnackBar(content: Text('Başvuru silindi.')));
-      widget.onBack();
-    } on ApiException catch (error) {
-      _showEditError(error.message);
-    } catch (_) {
-      _showEditError('Başvuru silinemedi. Lütfen tekrar deneyin.');
-    } finally {
-      if (mounted) setState(() => _isDeleting = false);
-    }
-  }
-
   void _showEditError(String message) {
     if (!mounted) return;
-    ScaffoldMessenger.of(context)
-      ..hideCurrentSnackBar()
-      ..showSnackBar(SnackBar(content: Text(message)));
+    showAppNotice(context, message: message, tone: AppNoticeTone.error);
   }
 
   @override
@@ -225,20 +163,14 @@ class _SubmittedApplicationDetailPageState
       details: _details!,
       catalog: widget.referenceCatalog,
       onRefresh: _load,
+      loadPhoto: widget.loadPhoto,
       onEdit:
           widget.onEdit != null &&
               _details!.isOwnedByCurrentUser &&
               _details!.isEditable
           ? _openEditor
           : null,
-      onDelete:
-          widget.onDelete != null &&
-              _details!.isOwnedByCurrentUser &&
-              _details!.isEditable
-          ? _deleteApplication
-          : null,
       isOpeningEditor: _isOpeningEditor,
-      isDeleting: _isDeleting,
     );
   }
 }
@@ -314,19 +246,17 @@ class _DetailContent extends StatefulWidget {
     required this.details,
     required this.catalog,
     required this.onRefresh,
+    required this.loadPhoto,
     required this.onEdit,
-    required this.onDelete,
     required this.isOpeningEditor,
-    required this.isDeleting,
   });
 
   final SubmittedApplicationDetails details;
   final ApplicationReferenceCatalog catalog;
   final Future<void> Function() onRefresh;
+  final SubmittedApplicationPhotoLoader loadPhoto;
   final VoidCallback? onEdit;
-  final VoidCallback? onDelete;
   final bool isOpeningEditor;
-  final bool isDeleting;
 
   @override
   State<_DetailContent> createState() => _DetailContentState();
@@ -422,6 +352,7 @@ class _DetailContentState extends State<_DetailContent> {
           const SizedBox(height: 14),
           _PhotoSection(
             photos: details.photos,
+            loadPhoto: widget.loadPhoto,
             isExpanded: _expandedSections.contains(_DetailSectionType.photos),
             onToggle: () => _toggleSection(_DetailSectionType.photos),
           ),
@@ -442,87 +373,35 @@ class _DetailContentState extends State<_DetailContent> {
               ],
             ),
           ],
-          if (widget.onEdit != null || widget.onDelete != null) ...[
+          if (widget.onEdit != null) ...[
             const SizedBox(height: 22),
             SizedBox(
               height: 50,
-              child: Row(
-                children: [
-                  if (widget.onDelete != null)
-                    Expanded(
-                      flex: 37,
-                      child: FilledButton.icon(
-                        key: const Key('application-detail-delete-button'),
-                        onPressed: widget.isOpeningEditor || widget.isDeleting
-                            ? null
-                            : widget.onDelete,
-                        style: FilledButton.styleFrom(
-                          backgroundColor: AppColors.statusRejected,
-                          disabledBackgroundColor: AppColors.statusRejected
-                              .withValues(alpha: 0.45),
-                          foregroundColor: AppColors.white,
-                          shape: RoundedRectangleBorder(
-                            borderRadius: BorderRadius.circular(15),
-                          ),
+              width: double.infinity,
+              child: FilledButton.icon(
+                key: const Key('application-detail-edit-button'),
+                onPressed: widget.isOpeningEditor ? null : widget.onEdit,
+                style: FilledButton.styleFrom(
+                  backgroundColor: AppColors.primary,
+                  disabledBackgroundColor: AppColors.primaryMuted,
+                  foregroundColor: AppColors.white,
+                  shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(15),
+                  ),
+                ),
+                icon: widget.isOpeningEditor
+                    ? const SizedBox.square(
+                        dimension: 18,
+                        child: CircularProgressIndicator(
+                          strokeWidth: 2,
+                          color: AppColors.white,
                         ),
-                        icon: widget.isDeleting
-                            ? const SizedBox.square(
-                                dimension: 18,
-                                child: CircularProgressIndicator(
-                                  strokeWidth: 2,
-                                  color: AppColors.white,
-                                ),
-                              )
-                            : const Icon(
-                                Icons.delete_outline_rounded,
-                                size: 19,
-                              ),
-                        label: const Text(
-                          'Sil',
-                          style: TextStyle(
-                            fontSize: 14,
-                            fontWeight: FontWeight.w600,
-                          ),
-                        ),
-                      ),
-                    ),
-                  if (widget.onDelete != null && widget.onEdit != null)
-                    const SizedBox(width: 10),
-                  if (widget.onEdit != null)
-                    Expanded(
-                      flex: 63,
-                      child: FilledButton.icon(
-                        key: const Key('application-detail-edit-button'),
-                        onPressed: widget.isOpeningEditor || widget.isDeleting
-                            ? null
-                            : widget.onEdit,
-                        style: FilledButton.styleFrom(
-                          backgroundColor: AppColors.primary,
-                          disabledBackgroundColor: AppColors.primaryMuted,
-                          foregroundColor: AppColors.white,
-                          shape: RoundedRectangleBorder(
-                            borderRadius: BorderRadius.circular(15),
-                          ),
-                        ),
-                        icon: widget.isOpeningEditor
-                            ? const SizedBox.square(
-                                dimension: 18,
-                                child: CircularProgressIndicator(
-                                  strokeWidth: 2,
-                                  color: AppColors.white,
-                                ),
-                              )
-                            : const Icon(Icons.edit_outlined, size: 19),
-                        label: const Text(
-                          'Düzenle',
-                          style: TextStyle(
-                            fontSize: 14,
-                            fontWeight: FontWeight.w600,
-                          ),
-                        ),
-                      ),
-                    ),
-                ],
+                      )
+                    : const Icon(Icons.edit_outlined, size: 19),
+                label: const Text(
+                  'Düzenle',
+                  style: TextStyle(fontSize: 14, fontWeight: FontWeight.w600),
+                ),
               ),
             ),
           ],
@@ -824,11 +703,13 @@ class _HouseholdSection extends StatelessWidget {
 class _PhotoSection extends StatelessWidget {
   const _PhotoSection({
     required this.photos,
+    required this.loadPhoto,
     required this.isExpanded,
     required this.onToggle,
   });
 
   final List<SubmittedApplicationPhoto> photos;
+  final SubmittedApplicationPhotoLoader loadPhoto;
   final bool isExpanded;
   final VoidCallback onToggle;
 
@@ -843,53 +724,266 @@ class _PhotoSection extends StatelessWidget {
       children: photos.isEmpty
           ? const [_EmptyValue('Kayıtlı hane fotoğrafı bulunmuyor.')]
           : [
-              for (var index = 0; index < photos.length; index++)
-                Padding(
-                  padding: const EdgeInsets.only(bottom: 10),
-                  child: Row(
-                    children: [
-                      Container(
-                        width: 42,
-                        height: 42,
-                        decoration: BoxDecoration(
-                          color: AppColors.primarySurface,
-                          borderRadius: BorderRadius.circular(12),
-                        ),
-                        child: const Icon(
-                          Icons.image_outlined,
-                          color: AppColors.primary,
-                          size: 22,
+              GridView.builder(
+                key: const Key('application-photo-grid'),
+                shrinkWrap: true,
+                physics: const NeverScrollableScrollPhysics(),
+                padding: const EdgeInsets.only(bottom: 8),
+                itemCount: photos.length,
+                gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
+                  crossAxisCount: 3,
+                  crossAxisSpacing: 8,
+                  mainAxisSpacing: 8,
+                ),
+                itemBuilder: (context, index) => _PhotoThumbnail(
+                  key: ValueKey(photos[index].photoId),
+                  photo: photos[index],
+                  index: index,
+                  loadPhoto: loadPhoto,
+                ),
+              ),
+            ],
+    );
+  }
+}
+
+class _PhotoThumbnail extends StatefulWidget {
+  const _PhotoThumbnail({
+    required this.photo,
+    required this.index,
+    required this.loadPhoto,
+    super.key,
+  });
+
+  final SubmittedApplicationPhoto photo;
+  final int index;
+  final SubmittedApplicationPhotoLoader loadPhoto;
+
+  @override
+  State<_PhotoThumbnail> createState() => _PhotoThumbnailState();
+}
+
+class _PhotoThumbnailState extends State<_PhotoThumbnail> {
+  late Future<Uint8List> _photoBytes;
+
+  @override
+  void initState() {
+    super.initState();
+    _load();
+  }
+
+  @override
+  void didUpdateWidget(covariant _PhotoThumbnail oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (oldWidget.photo.photoId != widget.photo.photoId) _load();
+  }
+
+  void _load() {
+    _photoBytes = widget.loadPhoto(widget.photo.photoId);
+  }
+
+  void _retry() => setState(_load);
+
+  @override
+  Widget build(BuildContext context) {
+    final label =
+        widget.photo.description ?? 'Hane fotoğrafı ${widget.index + 1}';
+    return FutureBuilder<Uint8List>(
+      future: _photoBytes,
+      builder: (context, snapshot) {
+        if (snapshot.connectionState != ConnectionState.done) {
+          return _PhotoFrame(
+            child: Center(
+              child: SizedBox.square(
+                dimension: 22,
+                child: CircularProgressIndicator(
+                  strokeWidth: 2,
+                  color: AppColors.primary.withValues(alpha: 0.75),
+                ),
+              ),
+            ),
+          );
+        }
+        final bytes = snapshot.data;
+        if (snapshot.hasError || bytes == null || bytes.isEmpty) {
+          return _PhotoFrame(
+            child: InkWell(
+              key: Key('application-photo-retry-${widget.photo.photoId}'),
+              onTap: _retry,
+              child: const Center(
+                child: Icon(
+                  Icons.refresh_rounded,
+                  color: AppColors.neutralSecondary,
+                  size: 26,
+                ),
+              ),
+            ),
+          );
+        }
+        return Semantics(
+          button: true,
+          label: '$label fotoğrafını büyüt',
+          child: _PhotoFrame(
+            child: InkWell(
+              key: Key('application-photo-thumbnail-${widget.photo.photoId}'),
+              onTap: () => _showPhotoPreview(context, bytes, label),
+              child: Stack(
+                fit: StackFit.expand,
+                children: [
+                  Image.memory(
+                    bytes,
+                    fit: BoxFit.cover,
+                    gaplessPlayback: true,
+                    errorBuilder: (_, _, _) => const Center(
+                      child: Icon(
+                        Icons.broken_image_outlined,
+                        color: AppColors.neutralSecondary,
+                      ),
+                    ),
+                  ),
+                  Positioned(
+                    left: 0,
+                    right: 0,
+                    bottom: 0,
+                    child: DecoratedBox(
+                      decoration: const BoxDecoration(
+                        gradient: LinearGradient(
+                          begin: Alignment.topCenter,
+                          end: Alignment.bottomCenter,
+                          colors: [Colors.transparent, Color(0xB3000000)],
                         ),
                       ),
-                      const SizedBox(width: 12),
-                      Expanded(
-                        child: Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            Text(
-                              photos[index].description ??
-                                  'Hane fotoğrafı ${index + 1}',
-                              style: const TextStyle(
-                                color: AppColors.neutralDark,
-                                fontSize: 13,
-                                fontWeight: FontWeight.w600,
-                              ),
-                            ),
-                            const SizedBox(height: 3),
-                            Text(
-                              _formatDateTime(photos[index].uploadedAt),
-                              style: const TextStyle(
-                                color: AppColors.neutralSecondary,
-                                fontSize: 11,
-                              ),
-                            ),
-                          ],
+                      child: Padding(
+                        padding: const EdgeInsets.fromLTRB(6, 14, 28, 6),
+                        child: Text(
+                          label,
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                          style: const TextStyle(
+                            color: AppColors.white,
+                            fontSize: 10,
+                            fontWeight: FontWeight.w600,
+                          ),
                         ),
                       ),
-                    ],
+                    ),
+                  ),
+                  const Positioned(
+                    right: 6,
+                    top: 6,
+                    child: DecoratedBox(
+                      decoration: BoxDecoration(
+                        color: Color(0x99000000),
+                        shape: BoxShape.circle,
+                      ),
+                      child: Padding(
+                        padding: EdgeInsets.all(5),
+                        child: Icon(
+                          Icons.zoom_out_map_rounded,
+                          color: AppColors.white,
+                          size: 15,
+                        ),
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ),
+        );
+      },
+    );
+  }
+
+  Future<void> _showPhotoPreview(
+    BuildContext context,
+    Uint8List bytes,
+    String label,
+  ) {
+    return showDialog<void>(
+      context: context,
+      barrierColor: const Color(0xE6000000),
+      builder: (dialogContext) => Dialog(
+        key: Key('application-photo-preview-${widget.photo.photoId}'),
+        insetPadding: EdgeInsets.zero,
+        backgroundColor: Colors.black,
+        shape: const RoundedRectangleBorder(),
+        child: SafeArea(
+          child: Stack(
+            fit: StackFit.expand,
+            children: [
+              Padding(
+                padding: const EdgeInsets.fromLTRB(12, 64, 12, 72),
+                child: InteractiveViewer(
+                  minScale: 0.8,
+                  maxScale: 4,
+                  child: Center(
+                    child: Image.memory(
+                      bytes,
+                      fit: BoxFit.contain,
+                      gaplessPlayback: true,
+                      errorBuilder: (_, _, _) => const Icon(
+                        Icons.broken_image_outlined,
+                        color: AppColors.white,
+                        size: 48,
+                      ),
+                    ),
                   ),
                 ),
+              ),
+              Positioned(
+                top: 12,
+                right: 12,
+                child: DecoratedBox(
+                  decoration: const BoxDecoration(
+                    color: Color(0x66000000),
+                    shape: BoxShape.circle,
+                  ),
+                  child: IconButton(
+                    key: const Key('application-photo-preview-close'),
+                    tooltip: 'Kapat',
+                    onPressed: () => Navigator.of(dialogContext).pop(),
+                    icon: const Icon(Icons.close_rounded),
+                    color: AppColors.white,
+                  ),
+                ),
+              ),
+              Positioned(
+                left: 24,
+                right: 24,
+                bottom: 24,
+                child: Text(
+                  label,
+                  maxLines: 2,
+                  overflow: TextOverflow.ellipsis,
+                  textAlign: TextAlign.center,
+                  style: const TextStyle(
+                    color: AppColors.white,
+                    fontSize: 14,
+                    fontWeight: FontWeight.w600,
+                  ),
+                ),
+              ),
             ],
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+class _PhotoFrame extends StatelessWidget {
+  const _PhotoFrame({required this.child});
+
+  final Widget child;
+
+  @override
+  Widget build(BuildContext context) {
+    return Material(
+      color: AppColors.primarySurface,
+      borderRadius: BorderRadius.circular(12),
+      clipBehavior: Clip.antiAlias,
+      child: child,
     );
   }
 }

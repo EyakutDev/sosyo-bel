@@ -60,7 +60,9 @@ internal static class ApplicationEndpoints
                 "korunacak fotoğraf kimliklerini ve yeni fotoğrafları birlikte günceller.")
             .WithMetadata(new Microsoft.AspNetCore.Mvc.RequestSizeLimitAttribute(
                 160L * 1024 * 1024))
-            .Accepts<UpdateSubmittedApplicationRequest>("application/json")
+            .Accepts<UpdateSubmittedApplicationRequest>(
+                "application/json",
+                "multipart/form-data")
             .Produces<UpdatedSubmittedApplication>(StatusCodes.Status200OK)
             .ProducesValidationProblem(StatusCodes.Status400BadRequest)
             .ProducesProblem(StatusCodes.Status401Unauthorized)
@@ -69,20 +71,6 @@ internal static class ApplicationEndpoints
             .ProducesProblem(StatusCodes.Status409Conflict)
             .ProducesProblem(StatusCodes.Status500InternalServerError)
             .DisableAntiforgery();
-
-        group.MapDelete("/{applicationId:int}", DeleteSubmittedApplicationAsync)
-            .WithSummary("Bekleyen başvuruyu siler")
-            .WithDescription(
-                "Başvuruyu yalnız oluşturan kullanıcı ve yalnız Beklemede durumundayken fiziksel olarak silebilir. " +
-                "Başvuru, aile fertleri, hane cevapları ve bu başvuruya ait mobil fotoğraflar tek SQL " +
-                "transaction içinde kaldırılır.")
-            .Produces<DeletedSubmittedApplication>(StatusCodes.Status200OK)
-            .ProducesValidationProblem(StatusCodes.Status400BadRequest)
-            .ProducesProblem(StatusCodes.Status401Unauthorized)
-            .ProducesProblem(StatusCodes.Status403Forbidden)
-            .ProducesProblem(StatusCodes.Status404NotFound)
-            .ProducesProblem(StatusCodes.Status409Conflict)
-            .ProducesProblem(StatusCodes.Status500InternalServerError);
 
         group.MapPost("/submit", SubmitCompletedAsync)
             .WithSummary("Tamamlanmış mobil başvuruyu tek işlemde kurula gönderir")
@@ -291,26 +279,6 @@ internal static class ApplicationEndpoints
         {
             foreach (var stream in streams) await stream.DisposeAsync();
         }
-    }
-
-    private static async Task<IResult> DeleteSubmittedApplicationAsync(
-        int applicationId,
-        ClaimsPrincipal principal,
-        IDeleteSubmittedApplicationService service,
-        CancellationToken cancellationToken)
-    {
-        var errors = new Dictionary<string, string[]>();
-        var actor = ReadActor(principal, errors);
-        if (applicationId <= 0)
-        {
-            errors["applicationId"] =
-                ["Başvuru kimliği sıfırdan büyük olmalıdır."];
-        }
-        if (errors.Count > 0) return Results.ValidationProblem(errors);
-
-        return ToHttpResult(await service.DeleteAsync(
-            new DeleteSubmittedApplicationCommand(actor!, applicationId),
-            cancellationToken));
     }
 
     private static async Task<IResult> SubmitCompletedAsync(

@@ -26,6 +26,4 @@ abstract interface class ApplicationRepository {
     required int applicationId,
     required ApplicationDraft draft,
   });
-
-  Future<void> deleteSubmitted({required int applicationId});
 }

@@ -5,6 +5,7 @@ import 'package:flutter/services.dart';
 import 'package:flutter_svg/flutter_svg.dart';
 import 'package:sosyo_bel/core/constants/app_assets.dart';
 import 'package:sosyo_bel/core/theme/app_colors.dart';
+import 'package:sosyo_bel/core/widgets/app_notice.dart';
 import 'package:sosyo_bel/features/activity/presentation/fixtures/family_information_design_fixture.dart';
 import 'package:sosyo_bel/features/activity/presentation/family_information_editor_page.dart';
 import 'package:sosyo_bel/features/activity/presentation/models/family_information_view_data.dart';
@@ -76,14 +77,10 @@ class _FamilyInformationPageState extends State<FamilyInformationPage> {
     // Figma yalnızca Emel YILMAZ için ayrıntı değerleri veriyor. Diğer kişilere
     // veri uydurmak yerine eksik ayrıntıyı açıkça bildiriyoruz.
     if (member.details == null) {
-      ScaffoldMessenger.of(context)
-        ..hideCurrentSnackBar()
-        ..showSnackBar(
-          const SnackBar(
-            content: Text('Aile üyesinin ayrıntı bilgisi bulunamadı.'),
-            backgroundColor: AppColors.primary,
-          ),
-        );
+      showAppNotice(
+        context,
+        message: 'Aile üyesinin ayrıntı bilgisi bulunamadı.',
+      );
       return;
     }
 

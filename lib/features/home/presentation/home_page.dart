@@ -7,6 +7,7 @@ import 'package:sosyo_bel/core/branding/municipality_branding.dart';
 import 'package:sosyo_bel/core/constants/app_assets.dart';
 import 'package:sosyo_bel/core/network/api_exception.dart';
 import 'package:sosyo_bel/core/theme/app_colors.dart';
+import 'package:sosyo_bel/core/widgets/app_notice.dart';
 import 'package:sosyo_bel/core/widgets/municipality_logo.dart';
 import 'package:sosyo_bel/features/application/presentation/widgets/application_exit_dialog.dart';
 import 'package:sosyo_bel/features/home/domain/work_item.dart';
@@ -69,7 +70,7 @@ class _HomePageState extends State<HomePage> {
     setState(() => _openingApplicationId = applicationId);
     try {
       await callback(item);
-      if (mounted) await _loadWorkItems();
+      if (mounted) await _loadWorkItems(keepCurrentContent: true);
     } on ApiException catch (error) {
       _showOpenError(error.message);
     } catch (_) {
@@ -102,9 +103,28 @@ class _HomePageState extends State<HomePage> {
 
   void _showOpenError(String message) {
     if (!mounted) return;
+    showAppNotice(context, message: message, tone: AppNoticeTone.error);
+  }
+
+  void _toggleOwnedApplicationsFilter() {
+    final willEnable = !_showOnlyOwnedApplications;
+    setState(() => _showOnlyOwnedApplications = willEnable);
+    if (!willEnable) return;
+
     ScaffoldMessenger.of(context)
       ..hideCurrentSnackBar()
-      ..showSnackBar(SnackBar(content: Text(message)));
+      ..showSnackBar(
+        const SnackBar(
+          key: Key('home-owned-filter-message'),
+          backgroundColor: Colors.transparent,
+          elevation: 0,
+          padding: EdgeInsets.zero,
+          content: _OwnedFilterNotice(),
+          behavior: SnackBarBehavior.floating,
+          duration: Duration(milliseconds: 1600),
+          margin: EdgeInsets.fromLTRB(24, 0, 24, 82),
+        ),
+      );
   }
 
   Future<void> _deleteLocalDraft(WorkItem item) async {
@@ -129,9 +149,11 @@ class _HomePageState extends State<HomePage> {
             .where((workItem) => workItem.localDraftId != draftId)
             .toList(growable: false);
       });
-      ScaffoldMessenger.of(context)
-        ..hideCurrentSnackBar()
-        ..showSnackBar(const SnackBar(content: Text('Yerel taslak silindi.')));
+      showAppNotice(
+        context,
+        message: 'Yerel taslak silindi.',
+        tone: AppNoticeTone.success,
+      );
     } on ApiException catch (error) {
       _showOpenError(error.message);
     } catch (_) {
@@ -154,22 +176,34 @@ class _HomePageState extends State<HomePage> {
     }
   }
 
-  Future<void> _loadWorkItems() async {
-    setState(() {
-      _isLoading = true;
-      _loadErrorMessage = null;
-    });
+  Future<void> _loadWorkItems({bool keepCurrentContent = false}) async {
+    if (!keepCurrentContent) {
+      setState(() {
+        _isLoading = true;
+        _loadErrorMessage = null;
+      });
+    }
     try {
       final workItems = await widget.workItemsRepository.getMyWorkItems();
       if (!mounted) return;
       setState(() {
         _workItems = workItems;
         _isLoading = false;
+        _loadErrorMessage = null;
       });
     } on ApiException catch (error) {
-      _finishLoadingWithError(error.message);
+      if (keepCurrentContent) {
+        _showOpenError(error.message);
+      } else {
+        _finishLoadingWithError(error.message);
+      }
     } catch (_) {
-      _finishLoadingWithError('İşler yüklenemedi. Lütfen tekrar deneyin.');
+      const message = 'İşler yüklenemedi. Lütfen tekrar deneyin.';
+      if (keepCurrentContent) {
+        _showOpenError(message);
+      } else {
+        _finishLoadingWithError(message);
+      }
     }
   }
 
@@ -238,6 +272,8 @@ class _HomePageState extends State<HomePage> {
     final screenWidth = MediaQuery.sizeOf(context).width;
     final bottomInset = MediaQuery.paddingOf(context).bottom;
     final scale = screenWidth / _referenceWidth;
+    final bottomControlsOffset = math.max(14 * scale, bottomInset + 6);
+    final listBottomPadding = bottomControlsOffset + (76 * scale);
     final statusFilteredWorkItems = _workItems.where((item) {
       return _selectedFilter == HomeListFilter.completed
           ? item.isCompleted
@@ -353,38 +389,42 @@ class _HomePageState extends State<HomePage> {
               right: 24 * scale,
               top: 233 * scale,
               bottom: 0,
-              child: Column(
+              child: Stack(
                 children: [
-                  HomeListTabs(
-                    selectedFilter: _selectedFilter,
-                    scale: scale,
-                    onChanged: (filter) {
-                      setState(() => _selectedFilter = filter);
-                    },
-                  ),
-                  SizedBox(height: 36 * scale),
-                  Expanded(
+                  Positioned.fill(
                     child: _buildTaskContent(
                       listedWorkItems,
                       applications,
                       scale,
+                      listBottomPadding,
                     ),
                   ),
-                  SizedBox(height: 10 * scale),
-                  _OwnApplicationsFilter(
-                    isActive: _showOnlyOwnedApplications,
-                    scale: scale,
-                    onToggle: () {
-                      setState(
-                        () => _showOnlyOwnedApplications =
-                            !_showOnlyOwnedApplications,
-                      );
-                    },
-                    onClear: () {
-                      setState(() => _showOnlyOwnedApplications = false);
-                    },
+                  Positioned(
+                    key: const Key('home-bottom-controls'),
+                    left: 0,
+                    right: 0,
+                    bottom: bottomControlsOffset,
+                    child: Row(
+                      crossAxisAlignment: CrossAxisAlignment.center,
+                      children: [
+                        Expanded(
+                          child: HomeListTabs(
+                            selectedFilter: _selectedFilter,
+                            scale: scale,
+                            onChanged: (filter) {
+                              setState(() => _selectedFilter = filter);
+                            },
+                          ),
+                        ),
+                        SizedBox(width: 12 * scale),
+                        _OwnApplicationsFilter(
+                          isActive: _showOnlyOwnedApplications,
+                          scale: scale,
+                          onToggle: _toggleOwnedApplicationsFilter,
+                        ),
+                      ],
+                    ),
                   ),
-                  SizedBox(height: math.max(14 * scale, bottomInset + 6)),
                 ],
               ),
             ),
@@ -398,6 +438,7 @@ class _HomePageState extends State<HomePage> {
     List<WorkItem> listedWorkItems,
     List<ApplicationCardViewData> applications,
     double scale,
+    double bottomPadding,
   ) {
     if (_isLoading) {
       return const Center(
@@ -454,7 +495,7 @@ class _HomePageState extends State<HomePage> {
       onRefresh: _loadWorkItems,
       child: ListView.separated(
         physics: const AlwaysScrollableScrollPhysics(),
-        padding: EdgeInsets.only(bottom: 24 * scale),
+        padding: EdgeInsets.only(bottom: bottomPadding),
         itemCount: applications.length,
         separatorBuilder: (context, index) => SizedBox(height: 20 * scale),
         itemBuilder: (context, index) {
@@ -499,91 +540,179 @@ class _HomePageState extends State<HomePage> {
   }
 }
 
+class _OwnedFilterNotice extends StatelessWidget {
+  const _OwnedFilterNotice();
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      key: const Key('home-owned-filter-notice'),
+      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+      decoration: BoxDecoration(
+        color: AppColors.white,
+        borderRadius: BorderRadius.circular(16),
+        border: Border.all(color: const Color(0x263629B7)),
+        boxShadow: const [
+          BoxShadow(
+            color: Color(0x243629B7),
+            offset: Offset(0, 6),
+            blurRadius: 18,
+          ),
+        ],
+      ),
+      child: const Row(
+        children: [
+          DecoratedBox(
+            decoration: BoxDecoration(
+              color: AppColors.primarySurface,
+              shape: BoxShape.circle,
+            ),
+            child: Padding(
+              padding: EdgeInsets.all(8),
+              child: Icon(
+                Icons.person_search_rounded,
+                color: AppColors.primary,
+                size: 18,
+              ),
+            ),
+          ),
+          SizedBox(width: 10),
+          Expanded(
+            child: Text(
+              'Yalnızca başvurularınız gösteriliyor',
+              style: TextStyle(
+                color: AppColors.neutralDark,
+                fontSize: 13,
+                fontWeight: FontWeight.w600,
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
 class _OwnApplicationsFilter extends StatelessWidget {
   const _OwnApplicationsFilter({
     required this.isActive,
     required this.scale,
     required this.onToggle,
-    required this.onClear,
   });
 
   final bool isActive;
   final double scale;
   final VoidCallback onToggle;
-  final VoidCallback onClear;
 
   @override
   Widget build(BuildContext context) {
-    final label = Text(
-      'Başvurularımı Gör',
-      style: TextStyle(
-        fontSize: 13 * scale,
-        fontWeight: FontWeight.w600,
-        height: 18 / 13,
+    return Semantics(
+      button: true,
+      selected: isActive,
+      label: isActive
+          ? 'Başvurularım filtresini kaldır'
+          : 'Yalnızca başvurularımı göster',
+      child: Tooltip(
+        message: isActive
+            ? 'Başvurularım filtresini kaldır'
+            : 'Başvurularımı göster',
+        child: Container(
+          width: 52 * scale,
+          height: 52 * scale,
+          decoration: BoxDecoration(
+            shape: BoxShape.circle,
+            boxShadow: [
+              BoxShadow(
+                color: AppColors.primary.withValues(alpha: 0.14),
+                offset: Offset(0, 4 * scale),
+                blurRadius: 12 * scale,
+              ),
+            ],
+          ),
+          child: Material(
+            color: isActive ? AppColors.primary : AppColors.white,
+            shape: CircleBorder(
+              side: BorderSide(
+                color: AppColors.primary,
+                width: isActive ? 0 : 1.25,
+              ),
+            ),
+            clipBehavior: Clip.antiAlias,
+            child: InkWell(
+              key: const Key('home-owned-filter-button'),
+              onTap: onToggle,
+              child: Center(
+                child: AnimatedSwitcher(
+                  duration: const Duration(milliseconds: 180),
+                  transitionBuilder: (child, animation) => FadeTransition(
+                    opacity: animation,
+                    child: RotationTransition(
+                      turns: Tween<double>(begin: 0.88, end: 1).animate(
+                        CurvedAnimation(
+                          parent: animation,
+                          curve: Curves.easeOutCubic,
+                        ),
+                      ),
+                      child: child,
+                    ),
+                  ),
+                  child: isActive
+                      ? Icon(
+                          Icons.close_rounded,
+                          key: const Key('home-owned-filter-clear'),
+                          color: AppColors.white,
+                          size: 25 * scale,
+                        )
+                      : _PersonFilterIcon(scale: scale),
+                ),
+              ),
+            ),
+          ),
+        ),
       ),
     );
+  }
+}
 
-    final filterButton = SizedBox(
-      height: 40 * scale,
-      child: isActive
-          ? FilledButton.icon(
-              key: const Key('home-owned-filter-button'),
-              onPressed: onToggle,
-              style: FilledButton.styleFrom(
-                backgroundColor: AppColors.primary,
-                foregroundColor: AppColors.white,
-                padding: EdgeInsets.symmetric(horizontal: 12 * scale),
-                shape: RoundedRectangleBorder(
-                  borderRadius: BorderRadius.circular(14 * scale),
-                ),
-              ),
-              icon: Icon(Icons.person_rounded, size: 18 * scale),
-              label: label,
-            )
-          : OutlinedButton.icon(
-              key: const Key('home-owned-filter-button'),
-              onPressed: onToggle,
-              style: OutlinedButton.styleFrom(
-                backgroundColor: AppColors.white,
-                foregroundColor: AppColors.primary,
-                side: const BorderSide(color: AppColors.primary),
-                padding: EdgeInsets.symmetric(horizontal: 12 * scale),
-                shape: RoundedRectangleBorder(
-                  borderRadius: BorderRadius.circular(14 * scale),
-                ),
-              ),
-              icon: Icon(Icons.person_outline_rounded, size: 18 * scale),
-              label: label,
-            ),
-    );
+class _PersonFilterIcon extends StatelessWidget {
+  const _PersonFilterIcon({required this.scale});
 
-    return Semantics(
-      selected: isActive,
-      child: Row(
-        mainAxisAlignment: MainAxisAlignment.center,
+  final double scale;
+
+  @override
+  Widget build(BuildContext context) {
+    return SizedBox.square(
+      key: const Key('home-owned-filter-person-icon'),
+      dimension: 30 * scale,
+      child: Stack(
+        clipBehavior: Clip.none,
         children: [
-          filterButton,
-          if (isActive) ...[
-            SizedBox(width: 6 * scale),
-            SizedBox(
-              width: 38 * scale,
-              height: 40 * scale,
-              child: IconButton(
-                key: const Key('home-owned-filter-clear'),
-                tooltip: 'Başvurularım filtresini kaldır',
-                onPressed: onClear,
-                style: IconButton.styleFrom(
-                  foregroundColor: AppColors.primary,
-                  backgroundColor: AppColors.primarySurface,
-                  side: const BorderSide(color: AppColors.primary),
-                  shape: RoundedRectangleBorder(
-                    borderRadius: BorderRadius.circular(14 * scale),
-                  ),
+          Align(
+            alignment: const Alignment(-0.2, -0.1),
+            child: Icon(
+              Icons.person_outline_rounded,
+              color: AppColors.primary,
+              size: 26 * scale,
+            ),
+          ),
+          Positioned(
+            right: -1 * scale,
+            bottom: 0,
+            child: DecoratedBox(
+              decoration: const BoxDecoration(
+                color: AppColors.primary,
+                shape: BoxShape.circle,
+              ),
+              child: Padding(
+                padding: EdgeInsets.all(3 * scale),
+                child: Icon(
+                  Icons.filter_alt_rounded,
+                  color: AppColors.white,
+                  size: 10 * scale,
                 ),
-                icon: Icon(Icons.close_rounded, size: 20 * scale),
               ),
             ),
-          ],
+          ),
         ],
       ),
     );

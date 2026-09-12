@@ -181,25 +181,6 @@ void main() {
       );
     });
 
-    test('kendi bekleyen basvurusunu delete istegiyle siler', () async {
-      final adapter = _RecordingAdapter(
-        (_) => _jsonResponse(200, {'applicationId': 3751}),
-      );
-      final repository = _repository(adapter);
-
-      await repository.deleteSubmitted(applicationId: 3751);
-
-      expect(adapter.lastRequest?.method, 'DELETE');
-      expect(
-        adapter.lastRequest?.uri.path,
-        '/sosyo-bel/api/v1/applications/3751',
-      );
-      expect(
-        adapter.lastRequest?.headers[ApiClient.authorizationHeader],
-        'Bearer access-token',
-      );
-    });
-
     test('yalniz duzenlenebilir alanlari put istegiyle gunceller', () async {
       final adapter = _RecordingAdapter(
         (_) => _jsonResponse(200, {
@@ -335,10 +316,6 @@ void main() {
       );
       await expectLater(
         repository.updateSubmitted(applicationId: -1, draft: _fieldDraft),
-        throwsArgumentError,
-      );
-      await expectLater(
-        repository.deleteSubmitted(applicationId: 0),
         throwsArgumentError,
       );
       expect(adapter.fetchCount, 0);

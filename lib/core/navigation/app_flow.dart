@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
 import 'package:sosyo_bel/core/auth/token_store.dart';
 import 'package:sosyo_bel/core/branding/municipality_branding.dart';
 import 'package:sosyo_bel/core/network/api_exception.dart';
+import 'package:sosyo_bel/core/widgets/app_notice.dart';
 import 'package:sosyo_bel/features/action_selection/presentation/action_selection_page.dart';
 import 'package:sosyo_bel/features/activity/data/device_household_photo_picker.dart';
 import 'package:sosyo_bel/features/activity/presentation/application_completion_page.dart';
@@ -318,13 +319,15 @@ class _AppFlowState extends State<AppFlow> {
           loadDetails: () => widget.applicationRepository.getSubmittedDetails(
             applicationId: applicationId,
           ),
+          loadPhoto: (photoId) =>
+              widget.applicationRepository.getSubmittedPhoto(
+                applicationId: applicationId,
+                photoId: photoId,
+              ),
           onEdit: (details) => _openSubmittedApplicationEditor(
             detailContext,
             details,
             references,
-          ),
-          onDelete: (details) => widget.applicationRepository.deleteSubmitted(
-            applicationId: details.applicationId,
           ),
           onBack: () => Navigator.of(detailContext).pop(),
         ),
@@ -641,9 +644,11 @@ class _AppFlowState extends State<AppFlow> {
       return catalog;
     } on ApiException catch (error) {
       if (context.mounted) {
-        ScaffoldMessenger.of(
+        showAppNotice(
           context,
-        ).showSnackBar(SnackBar(content: Text(error.message)));
+          message: error.message,
+          tone: AppNoticeTone.error,
+        );
       }
       return null;
     }

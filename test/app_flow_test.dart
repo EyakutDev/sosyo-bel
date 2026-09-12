@@ -756,7 +756,6 @@ class _FakeApplicationRepository implements ApplicationRepository {
   int submitCount = 0;
   int detailsLoadCount = 0;
   int updateCount = 0;
-  int deleteCount = 0;
   int? lastUpdatedApplicationId;
   ApplicationDraft? lastSubmittedDraft;
   ApplicationDraft? lastUpdatedDraft;
@@ -774,11 +773,6 @@ class _FakeApplicationRepository implements ApplicationRepository {
     required int applicationId,
     required int photoId,
   }) async => Uint8List.fromList(const [1, 2, 3]);
-
-  @override
-  Future<void> deleteSubmitted({required int applicationId}) async {
-    deleteCount += 1;
-  }
 
   @override
   Future<ApplicationLifecycleEntry> submitCompleted({

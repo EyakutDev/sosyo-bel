@@ -1,3 +1,5 @@
+import 'dart:convert';
+
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:sosyo_bel/core/network/api_exception.dart';
@@ -10,9 +12,9 @@ void main() {
   Future<void> pumpPage(
     WidgetTester tester, {
     required SubmittedApplicationDetailsLoader loader,
+    SubmittedApplicationPhotoLoader? photoLoader,
     VoidCallback? onBack,
     SubmittedApplicationEditor? onEdit,
-    SubmittedApplicationDeleter? onDelete,
   }) {
     tester.view.physicalSize = const Size(375, 812);
     tester.view.devicePixelRatio = 1;
@@ -25,9 +27,10 @@ void main() {
           applicationNumber: '#3751',
           referenceCatalog: applicationReferenceTestCatalog,
           loadDetails: loader,
+          loadPhoto:
+              photoLoader ?? (_) async => base64Decode(_onePixelPngBase64),
           onBack: onBack ?? () {},
           onEdit: onEdit,
-          onDelete: onDelete,
         ),
       ),
     );
@@ -120,6 +123,20 @@ void main() {
     await tester.pumpAndSettle();
     expect(find.text('Mülkiyet Durumu'), findsOneWidget);
     expect(find.text('Salon fotoğrafı'), findsOneWidget);
+    final thumbnail = find.byKey(const Key('application-photo-thumbnail-91'));
+    expect(thumbnail, findsOneWidget);
+
+    await tester.ensureVisible(thumbnail);
+    await tester.pumpAndSettle();
+    await tester.tap(thumbnail);
+    await tester.pumpAndSettle();
+    expect(
+      find.byKey(const Key('application-photo-preview-91')),
+      findsOneWidget,
+    );
+    expect(find.byType(InteractiveViewer), findsOneWidget);
+    await tester.tap(find.byKey(const Key('application-photo-preview-close')));
+    await tester.pumpAndSettle();
 
     await tester.tap(find.byKey(const Key('application-detail-back')));
     expect(backCount, 1);
@@ -183,66 +200,34 @@ void main() {
     expect(loadCount, 2);
   });
 
-  testWidgets(
-    'sil ve duzenle butonlarini 37 63 oraninda gosterip onayla siler',
-    (tester) async {
-      var deleteCount = 0;
-      var backCount = 0;
-      SubmittedApplicationDetails? deletedDetails;
-      await pumpPage(
-        tester,
-        loader: () async => _details,
-        onBack: () => backCount += 1,
-        onEdit: (_) async => false,
-        onDelete: (details) async {
-          deleteCount += 1;
-          deletedDetails = details;
-        },
-      );
-      await tester.pumpAndSettle();
+  testWidgets('yalniz tam genislikte duzenle butonunu gosterir', (
+    tester,
+  ) async {
+    await pumpPage(
+      tester,
+      loader: () async => _details,
+      onEdit: (_) async => false,
+    );
+    await tester.pumpAndSettle();
 
-      final deleteButton = find.byKey(
-        const Key('application-detail-delete-button'),
-      );
-      final editButton = find.byKey(
-        const Key('application-detail-edit-button'),
-      );
-      await tester.scrollUntilVisible(
-        deleteButton,
-        300,
-        scrollable: find.byType(Scrollable),
-      );
-      await tester.pumpAndSettle();
+    final editButton = find.byKey(const Key('application-detail-edit-button'));
+    await tester.scrollUntilVisible(
+      editButton,
+      300,
+      scrollable: find.byType(Scrollable),
+    );
+    await tester.pumpAndSettle();
 
-      final deleteWidth = tester.getSize(deleteButton).width;
-      final editWidth = tester.getSize(editButton).width;
-      expect(deleteWidth / (deleteWidth + editWidth), closeTo(0.37, 0.01));
-
-      await tester.tap(deleteButton);
-      await tester.pumpAndSettle();
-      expect(
-        find.byKey(const Key('application-delete-dialog')),
-        findsOneWidget,
-      );
-      await tester.tap(
-        find.byKey(const Key('application-delete-cancel-button')),
-      );
-      await tester.pumpAndSettle();
-      expect(deleteCount, 0);
-
-      await tester.tap(deleteButton);
-      await tester.pumpAndSettle();
-      await tester.tap(
-        find.byKey(const Key('application-delete-confirm-button')),
-      );
-      await tester.pumpAndSettle();
-
-      expect(deleteCount, 1);
-      expect(deletedDetails, same(_details));
-      expect(backCount, 1);
-    },
-  );
+    expect(
+      find.byKey(const Key('application-detail-delete-button')),
+      findsNothing,
+    );
+    expect(tester.getSize(editButton).width, greaterThan(320));
+  });
 }
+
+const _onePixelPngBase64 =
+    'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+A8AAQUBAScY42YAAAAASUVORK5CYII=';
 
 final _details = SubmittedApplicationDetails(
   applicationId: 3751,

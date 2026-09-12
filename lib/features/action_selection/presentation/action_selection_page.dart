@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:sosyo_bel/core/theme/app_colors.dart';
+import 'package:sosyo_bel/core/widgets/app_notice.dart';
 import 'package:sosyo_bel/features/auth/presentation/widgets/logout_confirmation_dialog.dart';
 
 /// Kullanıcının girişten sonra yapacağı işlemi seçtiği ara ekran.
@@ -182,12 +183,10 @@ class _ActionSelectionPageState extends State<ActionSelectionPage> {
       await widget.onLogout();
     } catch (_) {
       if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text('Çıkış yapılamadı. Lütfen tekrar deneyin.'),
-          backgroundColor: AppColors.statusRejected,
-          behavior: SnackBarBehavior.floating,
-        ),
+      showAppNotice(
+        context,
+        message: 'Çıkış yapılamadı. Lütfen tekrar deneyin.',
+        tone: AppNoticeTone.error,
       );
     } finally {
       if (mounted) {

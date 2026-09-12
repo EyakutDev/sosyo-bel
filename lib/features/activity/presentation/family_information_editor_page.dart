@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:sosyo_bel/core/theme/app_colors.dart';
+import 'package:sosyo_bel/core/widgets/app_notice.dart';
 import 'package:sosyo_bel/features/activity/presentation/models/family_information_view_data.dart';
 import 'package:sosyo_bel/features/activity/presentation/widgets/family_member_form_sheet.dart';
 import 'package:sosyo_bel/features/application/domain/application_reference_catalog.dart';
@@ -68,15 +69,7 @@ class _FamilyInformationEditorPageState
   }
 
   void _showSavedMessage(String message) {
-    ScaffoldMessenger.of(context)
-      ..hideCurrentSnackBar()
-      ..showSnackBar(
-        SnackBar(
-          behavior: SnackBarBehavior.floating,
-          backgroundColor: AppColors.primary,
-          content: Text(message),
-        ),
-      );
+    showAppNotice(context, message: message, tone: AppNoticeTone.success);
   }
 
   @override
