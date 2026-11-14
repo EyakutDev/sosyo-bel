@@ -41,6 +41,10 @@ class _NewApplicationPageState extends State<NewApplicationPage> {
   late final TextEditingController _birthDateController;
   late final TextEditingController _phoneController;
   late final TextEditingController _descriptionController;
+  late final FocusNode _identityNumberFocusNode;
+  late final FocusNode _birthDateFocusNode;
+  late final FocusNode _phoneFocusNode;
+  late final FocusNode _descriptionFocusNode;
 
   late String _selectedDisabilityStatusCode;
   late String? _selectedHelpTypeCode;
@@ -66,6 +70,13 @@ class _NewApplicationPageState extends State<NewApplicationPage> {
     _descriptionController = TextEditingController(
       text: initialData?.description ?? '',
     );
+    _identityNumberFocusNode = FocusNode(debugLabel: 'identityNumber');
+    _birthDateFocusNode = FocusNode(debugLabel: 'birthDate');
+    _phoneFocusNode = FocusNode(debugLabel: 'phone');
+    _descriptionFocusNode = FocusNode(debugLabel: 'description');
+    for (final focusNode in _allInputFocusNodes) {
+      focusNode.addListener(_handleInputFocusChanged);
+    }
     if (widget.referenceCatalog.disabilityStatuses.isEmpty) {
       throw const FormatException('Engel durumu seçenekleri bulunamadı.');
     }
@@ -77,11 +88,63 @@ class _NewApplicationPageState extends State<NewApplicationPage> {
 
   @override
   void dispose() {
+    for (final focusNode in _allInputFocusNodes) {
+      focusNode
+        ..removeListener(_handleInputFocusChanged)
+        ..dispose();
+    }
     _identityNumberController.dispose();
     _birthDateController.dispose();
     _phoneController.dispose();
     _descriptionController.dispose();
     super.dispose();
+  }
+
+  List<FocusNode> get _allInputFocusNodes => [
+    _identityNumberFocusNode,
+    _birthDateFocusNode,
+    _phoneFocusNode,
+    _descriptionFocusNode,
+  ];
+
+  List<FocusNode> get _editableInputFocusNodes => [
+    if (!widget.isEditingSubmittedApplication) ...[
+      _identityNumberFocusNode,
+      _birthDateFocusNode,
+    ],
+    _phoneFocusNode,
+    _descriptionFocusNode,
+  ];
+
+  bool get _isLastInputFocused => _editableInputFocusNodes.last.hasFocus;
+
+  void _handleInputFocusChanged() {
+    if (mounted) setState(() {});
+  }
+
+  void _moveToNextInput() {
+    final focusNodes = _editableInputFocusNodes;
+    final currentIndex = focusNodes.indexWhere((node) => node.hasFocus);
+
+    if (currentIndex == focusNodes.length - 1) {
+      FocusScope.of(context).unfocus();
+      return;
+    }
+
+    final nextIndex = currentIndex < 0 ? 0 : currentIndex + 1;
+    final nextFocusNode = focusNodes[nextIndex];
+    nextFocusNode.requestFocus();
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      final fieldContext = nextFocusNode.context;
+      if (!mounted || fieldContext == null) return;
+      Scrollable.ensureVisible(
+        fieldContext,
+        duration: const Duration(milliseconds: 240),
+        curve: Curves.easeOutCubic,
+        alignment: 0.42,
+        alignmentPolicy: ScrollPositionAlignmentPolicy.explicit,
+      );
+    });
   }
 
   Future<void> _submit() async {
@@ -285,6 +348,7 @@ class _NewApplicationPageState extends State<NewApplicationPage> {
                             label: 'T.C. Kimlik Numarası',
                             hintText: '11 haneli T.C. kimlik numarası',
                             controller: _identityNumberController,
+                            focusNode: _identityNumberFocusNode,
                             prefixIcon: Icons.badge_outlined,
                             requiredField: true,
                             keyboardType: TextInputType.number,
@@ -295,6 +359,7 @@ class _NewApplicationPageState extends State<NewApplicationPage> {
                             ],
                             validator: _identityNumberValidator,
                             readOnly: widget.isEditingSubmittedApplication,
+                            onFieldSubmitted: (_) => _moveToNextInput(),
                           ),
                           const SizedBox(height: 20),
                           ApplicationFormField(
@@ -302,6 +367,7 @@ class _NewApplicationPageState extends State<NewApplicationPage> {
                             label: 'Doğum Tarihi',
                             hintText: 'GG/AA/YYYY',
                             controller: _birthDateController,
+                            focusNode: _birthDateFocusNode,
                             prefixIcon: Icons.calendar_today_outlined,
                             requiredField: true,
                             keyboardType: TextInputType.datetime,
@@ -311,6 +377,7 @@ class _NewApplicationPageState extends State<NewApplicationPage> {
                             ],
                             validator: _birthDateValidator,
                             readOnly: widget.isEditingSubmittedApplication,
+                            onFieldSubmitted: (_) => _moveToNextInput(),
                           ),
                           const SizedBox(height: 20),
                           _buildDropdown(
@@ -341,6 +408,7 @@ class _NewApplicationPageState extends State<NewApplicationPage> {
                             label: 'Telefon Numarası',
                             hintText: '+90 (5XX)-XXX-XXXX',
                             controller: _phoneController,
+                            focusNode: _phoneFocusNode,
                             prefixIcon: Icons.phone_rounded,
                             requiredField: true,
                             keyboardType: TextInputType.phone,
@@ -349,6 +417,7 @@ class _NewApplicationPageState extends State<NewApplicationPage> {
                               PhoneNumberInputFormatter(),
                             ],
                             validator: _requiredValidator,
+                            onFieldSubmitted: (_) => _moveToNextInput(),
                           ),
                           const SizedBox(height: 20),
                           _buildInlineDropdown(
@@ -387,6 +456,7 @@ class _NewApplicationPageState extends State<NewApplicationPage> {
                                 'Talebinizi ve gerekçelerinizi buraya '
                                 'yazabilirsiniz...',
                             controller: _descriptionController,
+                            focusNode: _descriptionFocusNode,
                             prefixIcon: Icons.notes_rounded,
                             keyboardType: TextInputType.multiline,
                             textInputAction: TextInputAction.newline,
@@ -437,6 +507,28 @@ class _NewApplicationPageState extends State<NewApplicationPage> {
             ),
           ),
         ),
+        floatingActionButton: _isSubmitting
+            ? null
+            : FloatingActionButton.small(
+                key: const Key('new-application-next-field-button'),
+                heroTag: 'new-application-next-field-button',
+                onPressed: _moveToNextInput,
+                tooltip: _isLastInputFocused
+                    ? 'Klavyeyi kapat'
+                    : 'Sonraki alana geç',
+                elevation: 5,
+                highlightElevation: 2,
+                backgroundColor: AppColors.primary,
+                foregroundColor: AppColors.white,
+                shape: const CircleBorder(),
+                child: Icon(
+                  _isLastInputFocused
+                      ? Icons.keyboard_hide_rounded
+                      : Icons.keyboard_arrow_down_rounded,
+                  size: 27,
+                ),
+              ),
+        floatingActionButtonLocation: FloatingActionButtonLocation.endFloat,
       ),
     );
   }

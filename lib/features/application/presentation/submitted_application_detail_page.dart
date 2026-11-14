@@ -128,14 +128,15 @@ class _SubmittedApplicationDetailPageState
                 onBack: widget.onBack,
               ),
               Expanded(
-                child: DecoratedBox(
-                  decoration: const BoxDecoration(
-                    color: AppColors.white,
-                    borderRadius: BorderRadius.vertical(
-                      top: Radius.circular(30),
-                    ),
+                child: ClipRRect(
+                  key: const Key('application-detail-body-clip'),
+                  borderRadius: const BorderRadius.vertical(
+                    top: Radius.circular(30),
                   ),
-                  child: _buildBody(),
+                  child: ColoredBox(
+                    color: AppColors.white,
+                    child: _buildBody(),
+                  ),
                 ),
               ),
             ],
@@ -738,6 +739,7 @@ class _PhotoSection extends StatelessWidget {
                 itemBuilder: (context, index) => _PhotoThumbnail(
                   key: ValueKey(photos[index].photoId),
                   photo: photos[index],
+                  photos: photos,
                   index: index,
                   loadPhoto: loadPhoto,
                 ),
@@ -750,12 +752,14 @@ class _PhotoSection extends StatelessWidget {
 class _PhotoThumbnail extends StatefulWidget {
   const _PhotoThumbnail({
     required this.photo,
+    required this.photos,
     required this.index,
     required this.loadPhoto,
     super.key,
   });
 
   final SubmittedApplicationPhoto photo;
+  final List<SubmittedApplicationPhoto> photos;
   final int index;
   final SubmittedApplicationPhotoLoader loadPhoto;
 
@@ -826,7 +830,7 @@ class _PhotoThumbnailState extends State<_PhotoThumbnail> {
           child: _PhotoFrame(
             child: InkWell(
               key: Key('application-photo-thumbnail-${widget.photo.photoId}'),
-              onTap: () => _showPhotoPreview(context, bytes, label),
+              onTap: () => _showPhotoPreview(context, bytes),
               child: Stack(
                 fit: StackFit.expand,
                 children: [
@@ -895,65 +899,167 @@ class _PhotoThumbnailState extends State<_PhotoThumbnail> {
     );
   }
 
-  Future<void> _showPhotoPreview(
-    BuildContext context,
-    Uint8List bytes,
-    String label,
-  ) {
+  Future<void> _showPhotoPreview(BuildContext context, Uint8List bytes) {
     return showDialog<void>(
       context: context,
       barrierColor: const Color(0xE6000000),
-      builder: (dialogContext) => Dialog(
-        key: Key('application-photo-preview-${widget.photo.photoId}'),
-        insetPadding: EdgeInsets.zero,
-        backgroundColor: Colors.black,
-        shape: const RoundedRectangleBorder(),
-        child: SafeArea(
-          child: Stack(
-            fit: StackFit.expand,
-            children: [
-              Padding(
-                padding: const EdgeInsets.fromLTRB(12, 64, 12, 72),
-                child: InteractiveViewer(
-                  minScale: 0.8,
-                  maxScale: 4,
-                  child: Center(
-                    child: Image.memory(
-                      bytes,
-                      fit: BoxFit.contain,
-                      gaplessPlayback: true,
-                      errorBuilder: (_, _, _) => const Icon(
-                        Icons.broken_image_outlined,
-                        color: AppColors.white,
-                        size: 48,
-                      ),
+      builder: (_) => _PhotoGalleryDialog(
+        photos: widget.photos,
+        initialIndex: widget.index,
+        initialBytes: bytes,
+        loadPhoto: widget.loadPhoto,
+      ),
+    );
+  }
+}
+
+class _PhotoGalleryDialog extends StatefulWidget {
+  const _PhotoGalleryDialog({
+    required this.photos,
+    required this.initialIndex,
+    required this.initialBytes,
+    required this.loadPhoto,
+  }) : assert(photos.length > 0);
+
+  final List<SubmittedApplicationPhoto> photos;
+  final int initialIndex;
+  final Uint8List initialBytes;
+  final SubmittedApplicationPhotoLoader loadPhoto;
+
+  @override
+  State<_PhotoGalleryDialog> createState() => _PhotoGalleryDialogState();
+}
+
+class _PhotoGalleryDialogState extends State<_PhotoGalleryDialog> {
+  final Map<int, Future<Uint8List>> _photoFutures = {};
+  late final PageController _pageController;
+  late final int _initialPhotoId;
+  late int _currentIndex;
+
+  @override
+  void initState() {
+    super.initState();
+    _currentIndex = widget.initialIndex
+        .clamp(0, widget.photos.length - 1)
+        .toInt();
+    _pageController = PageController(initialPage: _currentIndex);
+    final initialPhoto = widget.photos[_currentIndex];
+    _initialPhotoId = initialPhoto.photoId;
+    _photoFutures[initialPhoto.photoId] = Future.value(widget.initialBytes);
+  }
+
+  @override
+  void dispose() {
+    _pageController.dispose();
+    super.dispose();
+  }
+
+  Future<Uint8List> _photoFuture(SubmittedApplicationPhoto photo) {
+    return _photoFutures.putIfAbsent(
+      photo.photoId,
+      () => widget.loadPhoto(photo.photoId),
+    );
+  }
+
+  void _retry(SubmittedApplicationPhoto photo) {
+    setState(() {
+      _photoFutures[photo.photoId] = widget.loadPhoto(photo.photoId);
+    });
+  }
+
+  String _labelFor(int index) {
+    final description = widget.photos[index].description?.trim();
+    return description == null || description.isEmpty
+        ? 'Hane fotoğrafı ${index + 1}'
+        : description;
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Dialog(
+      key: Key('application-photo-preview-$_initialPhotoId'),
+      insetPadding: EdgeInsets.zero,
+      backgroundColor: Colors.black,
+      shape: const RoundedRectangleBorder(),
+      child: SafeArea(
+        child: Stack(
+          fit: StackFit.expand,
+          children: [
+            Padding(
+              padding: const EdgeInsets.fromLTRB(0, 64, 0, 76),
+              child: PageView.builder(
+                key: const Key('application-photo-preview-gallery'),
+                controller: _pageController,
+                itemCount: widget.photos.length,
+                onPageChanged: (index) {
+                  setState(() => _currentIndex = index);
+                },
+                itemBuilder: (context, index) {
+                  final photo = widget.photos[index];
+                  return _PhotoGalleryPage(
+                    key: ValueKey(
+                      'application-photo-preview-page-${photo.photoId}',
+                    ),
+                    photo: photo,
+                    photoBytes: _photoFuture(photo),
+                    onRetry: () => _retry(photo),
+                  );
+                },
+              ),
+            ),
+            Positioned(
+              top: 16,
+              left: 20,
+              child: DecoratedBox(
+                decoration: BoxDecoration(
+                  color: const Color(0x66000000),
+                  borderRadius: BorderRadius.circular(16),
+                ),
+                child: Padding(
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 12,
+                    vertical: 7,
+                  ),
+                  child: Text(
+                    '${_currentIndex + 1} / ${widget.photos.length}',
+                    key: const Key('application-photo-preview-counter'),
+                    style: const TextStyle(
+                      color: AppColors.white,
+                      fontSize: 13,
+                      fontWeight: FontWeight.w600,
                     ),
                   ),
                 ),
               ),
-              Positioned(
-                top: 12,
-                right: 12,
-                child: DecoratedBox(
-                  decoration: const BoxDecoration(
-                    color: Color(0x66000000),
-                    shape: BoxShape.circle,
-                  ),
-                  child: IconButton(
-                    key: const Key('application-photo-preview-close'),
-                    tooltip: 'Kapat',
-                    onPressed: () => Navigator.of(dialogContext).pop(),
-                    icon: const Icon(Icons.close_rounded),
-                    color: AppColors.white,
-                  ),
+            ),
+            Positioned(
+              top: 12,
+              right: 12,
+              child: DecoratedBox(
+                decoration: const BoxDecoration(
+                  color: Color(0x66000000),
+                  shape: BoxShape.circle,
+                ),
+                child: IconButton(
+                  key: const Key('application-photo-preview-close'),
+                  tooltip: 'Kapat',
+                  onPressed: () => Navigator.of(context).pop(),
+                  icon: const Icon(Icons.close_rounded),
+                  color: AppColors.white,
                 ),
               ),
-              Positioned(
-                left: 24,
-                right: 24,
-                bottom: 24,
+            ),
+            Positioned(
+              left: 24,
+              right: 24,
+              bottom: 24,
+              child: AnimatedSwitcher(
+                duration: const Duration(milliseconds: 160),
                 child: Text(
-                  label,
+                  _labelFor(_currentIndex),
+                  key: ValueKey(
+                    'application-photo-preview-label-$_currentIndex',
+                  ),
                   maxLines: 2,
                   overflow: TextOverflow.ellipsis,
                   textAlign: TextAlign.center,
@@ -964,10 +1070,72 @@ class _PhotoThumbnailState extends State<_PhotoThumbnail> {
                   ),
                 ),
               ),
-            ],
-          ),
+            ),
+          ],
         ),
       ),
+    );
+  }
+}
+
+class _PhotoGalleryPage extends StatelessWidget {
+  const _PhotoGalleryPage({
+    required this.photo,
+    required this.photoBytes,
+    required this.onRetry,
+    super.key,
+  });
+
+  final SubmittedApplicationPhoto photo;
+  final Future<Uint8List> photoBytes;
+  final VoidCallback onRetry;
+
+  @override
+  Widget build(BuildContext context) {
+    return FutureBuilder<Uint8List>(
+      future: photoBytes,
+      builder: (context, snapshot) {
+        if (snapshot.connectionState != ConnectionState.done) {
+          return const Center(
+            child: CircularProgressIndicator(
+              color: AppColors.white,
+              strokeWidth: 2,
+            ),
+          );
+        }
+        final bytes = snapshot.data;
+        if (snapshot.hasError || bytes == null || bytes.isEmpty) {
+          return Center(
+            child: TextButton.icon(
+              key: Key('application-photo-preview-retry-${photo.photoId}'),
+              onPressed: onRetry,
+              style: TextButton.styleFrom(foregroundColor: AppColors.white),
+              icon: const Icon(Icons.refresh_rounded),
+              label: const Text('Fotoğrafı tekrar yükle'),
+            ),
+          );
+        }
+        return Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 12),
+          child: InteractiveViewer(
+            key: Key('application-photo-preview-interactive-${photo.photoId}'),
+            minScale: 0.8,
+            maxScale: 4,
+            child: Center(
+              child: Image.memory(
+                bytes,
+                fit: BoxFit.contain,
+                gaplessPlayback: true,
+                errorBuilder: (_, _, _) => const Icon(
+                  Icons.broken_image_outlined,
+                  color: AppColors.white,
+                  size: 48,
+                ),
+              ),
+            ),
+          ),
+        );
+      },
     );
   }
 }

@@ -62,6 +62,13 @@ void main() {
     expect(find.text('Ahmet Yılmaz'), findsOneWidget);
     expect(find.text('Bahçelievler Mahallesi No: 4'), findsOneWidget);
     expect(find.text('Beklemede'), findsOneWidget);
+    final cardSurface = tester.widget<DecoratedBox>(
+      find.byKey(const ValueKey('application-summary-card-surface-B-2026-150')),
+    );
+    final cardDecoration = cardSurface.decoration as BoxDecoration;
+    final cardBorder = cardDecoration.border! as Border;
+    expect(cardBorder.top.color, const Color(0x2E3629B7));
+    expect(cardBorder.top.width, 1);
     expect(find.text('B-2026-151'), findsNothing);
     // Gerçek bildirim akışı kurulana kadar görev sayısı bildirim rozeti gibi gösterilmez.
     expect(find.byKey(const Key('home-pending-count')), findsNothing);

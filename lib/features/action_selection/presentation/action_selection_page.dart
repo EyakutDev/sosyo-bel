@@ -136,7 +136,7 @@ class _ActionSelectionPageState extends State<ActionSelectionPage> {
                         height: 20 / 13,
                       ),
                     ),
-                    SizedBox(height: 32 * scale),
+                    SizedBox(height: 40 * scale),
                     _ActionCard(
                       title: 'Başvuru Yap',
                       description: 'Yeni sosyal yardım başvurusu oluşturun.',

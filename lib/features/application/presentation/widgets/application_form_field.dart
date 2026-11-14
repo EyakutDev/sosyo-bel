@@ -16,6 +16,8 @@ class ApplicationFormField extends StatelessWidget {
     this.maxLines = 1,
     this.validator,
     this.readOnly = false,
+    this.focusNode,
+    this.onFieldSubmitted,
     super.key,
   });
 
@@ -30,6 +32,8 @@ class ApplicationFormField extends StatelessWidget {
   final int maxLines;
   final FormFieldValidator<String>? validator;
   final bool readOnly;
+  final FocusNode? focusNode;
+  final ValueChanged<String>? onFieldSubmitted;
 
   @override
   Widget build(BuildContext context) {
@@ -40,6 +44,7 @@ class ApplicationFormField extends StatelessWidget {
         const SizedBox(height: 8),
         TextFormField(
           controller: controller,
+          focusNode: focusNode,
           readOnly: readOnly,
           keyboardType: keyboardType,
           textInputAction: textInputAction,
@@ -61,6 +66,7 @@ class ApplicationFormField extends StatelessWidget {
             readOnly: readOnly,
           ),
           validator: validator,
+          onFieldSubmitted: onFieldSubmitted,
         ),
       ],
     );

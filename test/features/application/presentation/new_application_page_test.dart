@@ -85,6 +85,45 @@ void main() {
       find.text('Talebinizi ve gerekçelerinizi buraya yazabilirsiniz...'),
       findsOneWidget,
     );
+    expect(
+      find.byKey(const Key('new-application-next-field-button')),
+      findsOneWidget,
+    );
+  });
+
+  testWidgets('sağdaki ok sıradaki yazı alanına geçirir', (tester) async {
+    await pumpPage(tester, onContinue: (_) async {});
+
+    EditableText editableField(String key) {
+      return tester.widget<EditableText>(
+        find.descendant(
+          of: find.byKey(Key(key)),
+          matching: find.byType(EditableText),
+        ),
+      );
+    }
+
+    await tester.tap(
+      find.descendant(
+        of: find.byKey(const Key('new-application-tckn-field')),
+        matching: find.byType(EditableText),
+      ),
+    );
+    await tester.pump();
+    expect(
+      editableField('new-application-tckn-field').focusNode.hasFocus,
+      isTrue,
+    );
+
+    await tester.tap(
+      find.byKey(const Key('new-application-next-field-button')),
+    );
+    await tester.pumpAndSettle();
+
+    expect(
+      editableField('new-application-birth-date-field').focusNode.hasFocus,
+      isTrue,
+    );
   });
 
   testWidgets('TCKN alanı yalnızca en fazla 11 rakam kabul eder', (

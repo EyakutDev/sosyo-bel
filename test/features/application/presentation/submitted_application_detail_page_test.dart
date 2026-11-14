@@ -48,6 +48,14 @@ void main() {
     await tester.pumpAndSettle();
 
     expect(find.text('Başvuru Detayı'), findsOneWidget);
+    final bodyClip = tester.widget<ClipRRect>(
+      find.byKey(const Key('application-detail-body-clip')),
+    );
+    expect(
+      bodyClip.borderRadius,
+      const BorderRadius.vertical(top: Radius.circular(30)),
+    );
+    expect(bodyClip.clipBehavior, Clip.antiAlias);
     expect(find.text('#3751'), findsWidgets);
     expect(find.text('Beklemede'), findsOneWidget);
     expect(find.text('HÜRİYE BUCAK'), findsOneWidget);
@@ -113,7 +121,7 @@ void main() {
     expect(find.text('Kiracı'), findsOneWidget);
 
     await tester.scrollUntilVisible(
-      find.text('Hane Fotoğrafları (1)'),
+      find.text('Hane Fotoğrafları (3)'),
       250,
       scrollable: find.byType(Scrollable),
     );
@@ -134,7 +142,27 @@ void main() {
       find.byKey(const Key('application-photo-preview-91')),
       findsOneWidget,
     );
-    expect(find.byType(InteractiveViewer), findsOneWidget);
+    expect(find.text('1 / 3'), findsOneWidget);
+    expect(
+      find.byKey(const Key('application-photo-preview-interactive-91')),
+      findsOneWidget,
+    );
+
+    await tester.drag(
+      find.byKey(const Key('application-photo-preview-gallery')),
+      const Offset(-300, 0),
+    );
+    await tester.pumpAndSettle();
+
+    expect(find.text('2 / 3'), findsOneWidget);
+    final galleryLabel = tester.widget<Text>(
+      find.byKey(const ValueKey('application-photo-preview-label-1')),
+    );
+    expect(galleryLabel.data, 'Mutfak fotoğrafı');
+    expect(
+      find.byKey(const Key('application-photo-preview-interactive-92')),
+      findsOneWidget,
+    );
     await tester.tap(find.byKey(const Key('application-photo-preview-close')));
     await tester.pumpAndSettle();
 
@@ -285,6 +313,20 @@ final _details = SubmittedApplicationDetails(
           '/uploads/hanefotograflari/22222222222222222222222222222222/salon.jpg',
       description: 'Salon fotoğrafı',
       uploadedAt: DateTime.utc(2026, 9, 7, 10, 31),
+    ),
+    SubmittedApplicationPhoto(
+      photoId: 92,
+      urlPath:
+          '/uploads/hanefotograflari/22222222222222222222222222222222/mutfak.jpg',
+      description: 'Mutfak fotoğrafı',
+      uploadedAt: DateTime.utc(2026, 9, 7, 10, 32),
+    ),
+    SubmittedApplicationPhoto(
+      photoId: 93,
+      urlPath:
+          '/uploads/hanefotograflari/22222222222222222222222222222222/banyo.jpg',
+      description: 'Banyo fotoğrafı',
+      uploadedAt: DateTime.utc(2026, 9, 7, 10, 33),
     ),
   ],
 );

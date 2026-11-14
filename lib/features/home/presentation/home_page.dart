@@ -497,7 +497,7 @@ class _HomePageState extends State<HomePage> {
         physics: const AlwaysScrollableScrollPhysics(),
         padding: EdgeInsets.only(bottom: bottomPadding),
         itemCount: applications.length,
-        separatorBuilder: (context, index) => SizedBox(height: 20 * scale),
+        separatorBuilder: (context, index) => SizedBox(height: 16 * scale),
         itemBuilder: (context, index) {
           final item = listedWorkItems[index];
           final localDraftId = item.localDraftId;

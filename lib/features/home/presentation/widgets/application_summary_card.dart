@@ -39,9 +39,13 @@ class ApplicationSummaryCard extends StatelessWidget {
           behavior: HitTestBehavior.opaque,
           onTap: onTap,
           child: DecoratedBox(
+            key: ValueKey(
+              'application-summary-card-surface-${data.applicationNumber}',
+            ),
             decoration: BoxDecoration(
               color: AppColors.white,
               borderRadius: BorderRadius.circular(15 * scale),
+              border: Border.all(color: const Color(0x2E3629B7), width: 1),
               boxShadow: const [
                 BoxShadow(
                   color: Color(0x123629B7),

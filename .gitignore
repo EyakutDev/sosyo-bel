@@ -43,6 +43,7 @@ Desktop.ini
 
 # Local runtime, QA and scratch outputs
 artifacts/
+.codex_work/
 *.ipynb
 .ipynb_checkpoints/
 *.apk
