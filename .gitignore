@@ -43,7 +43,12 @@ Desktop.ini
 
 # Local runtime, QA and scratch outputs
 artifacts/
-.codex_work/
+.codex_work/*
+!.codex_work/staj_defteri/
+.codex_work/staj_defteri/*
+!.codex_work/staj_defteri/emulator-captures/
+.codex_work/staj_defteri/emulator-captures/*
+!.codex_work/staj_defteri/emulator-captures/*.png
 *.ipynb
 .ipynb_checkpoints/
 *.apk
