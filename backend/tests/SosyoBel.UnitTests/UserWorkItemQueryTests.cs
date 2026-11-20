@@ -62,8 +62,8 @@ public sealed class UserWorkItemQueryTests
             {
                 ApplicationPublicToken = "web-token",
                 ApplicationId = 3751,
-                ApplicantFirstName = "Hüriye",
-                ApplicantLastName = "Bucak",
+                ApplicantFirstName = "Test",
+                ApplicantLastName = "Örnek",
                 CompanyStatusName = "Beklemede",
                 CreatedByUserId = "another-user",
                 ActivityAtUtc = new DateTime(2026, 9, 7, 12, 0, 0),

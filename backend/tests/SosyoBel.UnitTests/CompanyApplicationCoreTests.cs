@@ -46,7 +46,7 @@ public sealed class CompanyApplicationCoreTests
                 "KimlikNo": 12345678901,
                 "YerlesimYeriAdresi": {
                   "AcikAdres": " ÖRNEK MAH. TEST SK. NO: 1 ",
-                  "AdresNo": 5085115540,
+                  "AdresNo": 1000000001,
                   "IlIlceMerkezAdresi": {
                     "IlKodu": 44,
                     "IlceKodu": 1772,
@@ -67,7 +67,7 @@ public sealed class CompanyApplicationCoreTests
         var result = KpsResponseReader.ReadAddress(json, "12345678901");
 
         Assert.Equal("ÖRNEK MAH. TEST SK. NO: 1", result.FullAddress);
-        Assert.Equal(5085115540, result.AddressNumber);
+        Assert.Equal(1000000001, result.AddressNumber);
         Assert.Equal(44, result.ProvinceCode);
         Assert.Equal(1772, result.DistrictCode);
         Assert.Equal(165013, result.NeighborhoodCode);
@@ -106,7 +106,7 @@ public sealed class CompanyApplicationCoreTests
             "Evli",
             "Açık",
             "HANIMINÇİFTLİĞİ MAH. MALAZGİRT SK. NO: 83/1",
-            5085115540,
+            1000000001,
             44,
             1772,
             165013,
@@ -144,7 +144,7 @@ public sealed class CompanyApplicationCoreTests
         Assert.Equal(1772, record.DistrictCode);
         Assert.Equal(165013, record.NeighborhoodCode);
         Assert.Equal(612199, record.StreetCode);
-        Assert.Equal(5085115540, record.AddressNumber);
+        Assert.Equal(1000000001, record.AddressNumber);
         Assert.Equal(token, record.PublicToken);
         Assert.Null(record.HouseholdPhotoPath);
         Assert.Null(record.CancellationDate);

@@ -11,13 +11,13 @@ void main() {
       applicationReferenceTestCatalog,
     );
 
-    expect(draft.applicationForm?.identityNumber, '17611268484');
+    expect(draft.applicationForm?.identityNumber, '10000000146');
     expect(draft.applicationForm?.birthDate, '01/01/1982');
     expect(draft.applicationForm?.phoneNumber, '5345512873');
     expect(draft.applicationForm?.helpTypeCode, 'GIDA');
     expect(draft.applicationForm?.disabilityStatusCode, 'ORTOPEDIK');
-    expect(draft.kpsProfile?.fullAddress, 'ORDUZU MAH. KATMER SK.');
-    expect(draft.citizenProfile.fullName, 'HÜRİYE BUCAK');
+    expect(draft.kpsProfile?.fullAddress, 'ÖRNEK MAH. TEST SK.');
+    expect(draft.citizenProfile.fullName, 'TEST ÖRNEK');
     expect(draft.familyInformation.members.single.relationship, 'Teyze');
     expect(
       draft.familyInformation.members.single.details?.employmentStatusCode,
@@ -79,9 +79,9 @@ final _details = SubmittedApplicationDetails(
   isOwnedByCurrentUser: true,
   isEditable: true,
   applicationDate: DateTime.utc(2026, 9, 7, 10, 30),
-  identityNumber: '17611268484',
-  firstName: 'HÜRİYE',
-  lastName: 'BUCAK',
+  identityNumber: '10000000146',
+  firstName: 'TEST',
+  lastName: 'ÖRNEK',
   birthDate: DateTime(1982, 1, 1),
   phoneNumber: '5345512873',
   helpTypeCode: 'GIDA',
@@ -89,9 +89,9 @@ final _details = SubmittedApplicationDetails(
   disabilityTypeCode: 'ORTOPEDIK',
   description: 'Mevcut açıklama',
   fieldInspectionNote: 'Mevcut saha notu',
-  address: 'ORDUZU MAH. KATMER SK.',
+  address: 'ÖRNEK MAH. TEST SK.',
   gender: 'Kadın',
-  birthPlace: 'KAHTA',
+  birthPlace: 'MERKEZ',
   maritalStatus: 'Evli',
   familyMembers: const [
     SubmittedApplicationFamilyMember(

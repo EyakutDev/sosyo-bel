@@ -169,7 +169,7 @@ void main() {
     await tester.pumpAndSettle();
 
     expect(find.text('Başvuruyu Düzenle'), findsOneWidget);
-    expect(find.text('17611268484'), findsOneWidget);
+    expect(find.text('10000000146'), findsOneWidget);
     await tester.enterText(
       find.byKey(const Key('new-application-phone-field')),
       '(555)-999-8877',
@@ -624,8 +624,8 @@ class _SubmittedApplicationWorkItemsRepository implements WorkItemsRepository {
         applicationId: 3751,
         applicationPublicId: '22222222-2222-2222-2222-222222222222',
         applicationNumber: '#3751',
-        applicantFullName: 'HÜRİYE BUCAK',
-        address: 'ORDUZU MAH. KATMER SK. NO: 7',
+        applicantFullName: 'TEST ÖRNEK',
+        address: 'ÖRNEK MAH. TEST SK. NO: 7',
         sourceCode: 'APPLICATION',
         statusCode: 'KURUL_BEKLIYOR',
         isCompleted: false,
@@ -818,9 +818,9 @@ SubmittedApplicationDetails _editableSubmittedApplicationDetails() {
     isOwnedByCurrentUser: true,
     isEditable: true,
     applicationDate: DateTime.utc(2026, 9, 7, 10, 30),
-    identityNumber: '17611268484',
-    firstName: 'HÜRİYE',
-    lastName: 'BUCAK',
+    identityNumber: '10000000146',
+    firstName: 'TEST',
+    lastName: 'ÖRNEK',
     birthDate: DateTime(1982, 1, 1),
     phoneNumber: '5345512873',
     helpTypeCode: 'GIDA',
@@ -828,9 +828,9 @@ SubmittedApplicationDetails _editableSubmittedApplicationDetails() {
     disabilityTypeCode: 'ORTOPEDIK',
     description: 'Deneme başvurusudur.',
     fieldInspectionNote: 'Saha notu',
-    address: 'ORDUZU MAH. KATMER SK. NO: 7',
+    address: 'ÖRNEK MAH. TEST SK. NO: 7',
     gender: 'Kadın',
-    birthPlace: 'KAHTA',
+    birthPlace: 'MERKEZ',
     maritalStatus: 'Evli',
     familyMembers: const [
       SubmittedApplicationFamilyMember(

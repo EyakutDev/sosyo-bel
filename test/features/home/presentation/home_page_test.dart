@@ -385,7 +385,7 @@ void main() {
       final submittedApplication = WorkItem(
         applicationId: 3751,
         applicationNumber: '#3751',
-        applicantFullName: 'Huriye Bucak',
+        applicantFullName: 'Test Örnek',
         sourceCode: 'APPLICATION',
         statusCode: 'KURUL_BEKLIYOR',
         isCompleted: false,

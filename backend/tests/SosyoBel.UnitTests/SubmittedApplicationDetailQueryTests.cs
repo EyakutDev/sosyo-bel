@@ -57,7 +57,7 @@ public sealed class SubmittedApplicationDetailQueryTests
             new()
             {
                 Id = 3,
-                FullName = "Ayşe Bucak",
+                FullName = "Ayşe Örnek",
                 Age = 40,
                 HasDisability = false,
                 EmploymentStatusId = 6,
@@ -153,9 +153,9 @@ public sealed class SubmittedApplicationDetailQueryTests
             CompanyStatusName = "Beklemede",
             CreatedByUserId = ownerUserId,
             ApplicationDate = new DateTime(2026, 9, 7, 14, 0, 0),
-            IdentityNumber = "17611268484",
-            FirstName = "Hüriye",
-            LastName = "Bucak",
+            IdentityNumber = "10000000146",
+            FirstName = "Test",
+            LastName = "Örnek",
             BirthDateStorage = "01.01.1982",
             PhoneNumber = "5345512873",
             HelpTypeId = 12,
@@ -165,7 +165,7 @@ public sealed class SubmittedApplicationDetailQueryTests
             Description = "Talep açıklaması",
             Address = "Battalgazi / Malatya",
             Gender = "Kadın",
-            BirthPlace = "Kahta",
+            BirthPlace = "Merkez",
             MaritalStatus = "Evli",
         };
 }

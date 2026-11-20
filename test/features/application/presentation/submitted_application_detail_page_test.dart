@@ -58,7 +58,7 @@ void main() {
     expect(bodyClip.clipBehavior, Clip.antiAlias);
     expect(find.text('#3751'), findsWidgets);
     expect(find.text('Beklemede'), findsOneWidget);
-    expect(find.text('HÜRİYE BUCAK'), findsOneWidget);
+    expect(find.text('TEST ÖRNEK'), findsOneWidget);
     expect(find.text('Gıda Yardımı'), findsNothing);
     expect(find.text('Ayşe Yılmaz'), findsNothing);
     expect(
@@ -73,7 +73,7 @@ void main() {
     await tester.pumpAndSettle();
     await tester.tap(requestSection);
     await tester.pumpAndSettle();
-    expect(find.text('HÜRİYE BUCAK'), findsOneWidget);
+    expect(find.text('TEST ÖRNEK'), findsOneWidget);
     expect(find.text('Gıda Yardımı'), findsOneWidget);
     expect(find.text('Ortopedik'), findsOneWidget);
 
@@ -89,7 +89,7 @@ void main() {
     expect(find.text('Gıda Yardımı'), findsOneWidget);
     expect(find.text('Ayşe Yılmaz'), findsOneWidget);
     expect(find.textContaining('Teyze'), findsOneWidget);
-    expect(find.text('Mehmet Bucak'), findsOneWidget);
+    expect(find.text('Mehmet Örnek'), findsOneWidget);
     expect(find.text('Çalışıyor'), findsNothing);
 
     await tester.tap(find.byKey(const Key('application-family-toggle-0')));
@@ -265,9 +265,9 @@ final _details = SubmittedApplicationDetails(
   isOwnedByCurrentUser: true,
   isEditable: true,
   applicationDate: DateTime.utc(2026, 9, 7, 10, 30),
-  identityNumber: '17611268484',
-  firstName: 'HÜRİYE',
-  lastName: 'BUCAK',
+  identityNumber: '10000000146',
+  firstName: 'TEST',
+  lastName: 'ÖRNEK',
   birthDate: DateTime(1982, 1, 1),
   phoneNumber: '5345512873',
   helpTypeCode: 'GIDA',
@@ -275,9 +275,9 @@ final _details = SubmittedApplicationDetails(
   disabilityTypeCode: 'ORTOPEDIK',
   description: 'Deneme başvurusudur.',
   fieldInspectionNote: 'Saha notu',
-  address: 'ORDUZU MAH. KATMER SK. NO: 7',
+  address: 'ÖRNEK MAH. TEST SK. NO: 7',
   gender: 'Kadın',
-  birthPlace: 'KAHTA',
+  birthPlace: 'MERKEZ',
   maritalStatus: 'Evli',
   familyMembers: const [
     SubmittedApplicationFamilyMember(
@@ -291,7 +291,7 @@ final _details = SubmittedApplicationDetails(
       vitalStatusCode: 'SAG',
     ),
     SubmittedApplicationFamilyMember(
-      fullName: 'Mehmet Bucak',
+      fullName: 'Mehmet Örnek',
       age: 65,
       relationshipCode: 'BABA',
       hasDisability: false,

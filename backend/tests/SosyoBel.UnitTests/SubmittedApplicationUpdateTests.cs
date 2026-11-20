@@ -146,7 +146,7 @@ public sealed class SubmittedApplicationUpdateTests
     private static CompanyApplicationRecord CreatePendingApplication()
     {
         var draft = new ApplicationDraftData(
-            "17611268484",
+            "10000000146",
             new DateOnly(1982, 1, 1),
             "5345512873",
             "YARDIM_TURU:12",
@@ -159,24 +159,24 @@ public sealed class SubmittedApplicationUpdateTests
             null,
             null);
         var profile = new KpsProfile(
-            "17611268484",
-            "Hüriye",
-            "Bucak",
+            "10000000146",
+            "Test",
+            "Örnek",
             "Mehmet",
             "Kadriye",
             new DateOnly(1982, 1, 1),
-            "Kahta",
+            "Merkez",
             "Kadın",
             "Evli",
             "Açık",
-            "ORDUZU MAH. KATMER SK. NO: 7",
+            "ÖRNEK MAH. TEST SK. NO: 7",
             3019326028,
             44,
             1772,
             165111,
             840454,
-            "ORDUZU MAH.",
-            "KATMER SK.",
+            "ÖRNEK MAH.",
+            "TEST SK.",
             "7",
             "1");
 

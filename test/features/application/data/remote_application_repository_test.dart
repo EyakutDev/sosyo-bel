@@ -140,7 +140,7 @@ void main() {
       expect(details.applicationNumber, '#3751');
       expect(details.isOwnedByCurrentUser, isTrue);
       expect(details.isEditable, isTrue);
-      expect(details.firstName, 'HURIYE');
+      expect(details.firstName, 'TEST');
       expect(details.fieldInspectionNote, 'Saha notu');
       expect(details.familyMembers.single.relationshipCode, 'DIGER');
       expect(details.householdAnswers.single.optionCode, 'KIRACI');
@@ -331,9 +331,9 @@ final _submittedApplicationDetailsJson = <String, dynamic>{
   'isOwnedByCurrentUser': true,
   'isEditable': true,
   'applicationDate': '2026-09-07T10:30:00Z',
-  'identityNumber': '17611268484',
-  'firstName': 'HURIYE',
-  'lastName': 'BUCAK',
+  'identityNumber': '10000000146',
+  'firstName': 'TEST',
+  'lastName': 'ÖRNEK',
   'birthDate': '1982-01-01',
   'phoneNumber': '5345512873',
   'helpTypeCode': 'EV_ESYASI',
@@ -342,9 +342,9 @@ final _submittedApplicationDetailsJson = <String, dynamic>{
   'disabilityRate': null,
   'description': 'Basvuru aciklamasi',
   'fieldInspectionNote': 'Saha notu',
-  'address': 'ORDUZU MAH. KATMER SK.',
+  'address': 'ÖRNEK MAH. TEST SK.',
   'gender': 'Kadin',
-  'birthPlace': 'KAHTA',
+  'birthPlace': 'MERKEZ',
   'maritalStatus': 'Evli',
   'cancellationDescription': null,
   'cancellationDate': null,
